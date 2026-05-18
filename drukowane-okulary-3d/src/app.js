@@ -35,7 +35,7 @@ const translations = {
     accountFreeNote: "Free: access to selected starter models.",
     accountProNote: "Pro: unlocks premium collections.",
     accountDeveloperNote: "Developer: full access, Studio and collection deletion.",
-    lockedModel: "Plan required",
+    lockedModel: "Plan required to download",
     upgrade: "Plan",
     tabHome: "Start",
     tabConfigurator: "Editor",
@@ -1910,9 +1910,8 @@ function renderGallery() {
   els.sunGalleryGrid.innerHTML = "";
   els.opticalGalleryGrid.innerHTML = "";
   state.models.forEach((model, index) => {
-    const locked = !canAccessModel(model);
     const card = document.createElement("article");
-    card.className = `gallery-card${model.id === state.activeModelId ? " active" : ""}${locked ? " locked" : ""}`;
+    card.className = `gallery-card${model.id === state.activeModelId ? " active" : ""}`;
     card.dataset.modelId = model.id;
     const thumb = model.thumbnail
       ? `<img src="${model.thumbnail}" alt="Miniatura modelu ${escapeHtml(model.name)}" />`
@@ -1928,7 +1927,7 @@ function renderGallery() {
           <span class="access-badge access-${model.access || "free"}">${accessLabel(model.access)}</span>
         </div>
         <div class="gallery-actions">
-          <button type="button" class="accent" data-action="${locked ? "upgrade" : "open"}">${locked ? t("upgrade") : t("open")}</button>
+          <button type="button" class="accent" data-action="open">${t("open")}</button>
           ${isDeveloper() ? `<button type="button" data-action="edit">Edit</button>` : ""}
           ${isDeveloper() && model.id !== defaultModelId ? `<button type="button" class="delete-button" data-action="delete">${t("delete")}</button>` : ""}
         </div>
@@ -1944,11 +1943,6 @@ function handleGalleryClick(event) {
   const card = button.closest(".gallery-card");
   const model = state.models.find((item) => item.id === card?.dataset.modelId);
   if (!model) return;
-  if (button.dataset.action === "upgrade") {
-    els.accountPanel.hidden = false;
-    log(`${model.name}: ${t("lockedModel")} ${accessLabel(model.access)}.`);
-    return;
-  }
   if (button.dataset.action === "open") {
     selectModel(model.id);
     setActiveSection("configurator");
@@ -2498,6 +2492,12 @@ async function renderWithOpenScadEndpoint() {
 }
 
 async function generate3mf() {
+  const model = currentModelRecord();
+  if (model && !canAccessModel(model)) {
+    els.plansPanel.hidden = false;
+    log(`${model.name}: ${t("lockedModel")} ${accessLabel(model.access)}.`);
+    return;
+  }
   showLoader(true, "Generating 3MF", "Packing the current geometry for production...");
   await waitFrame();
   try {
