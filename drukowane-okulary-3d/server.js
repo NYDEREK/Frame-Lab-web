@@ -1,4 +1,4 @@
-import { createHash, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
+import { createHash, randomBytes, randomInt, scryptSync, timingSafeEqual } from "node:crypto";
 import { createReadStream, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { extname, join, normalize } from "node:path";
@@ -32,8 +32,16 @@ const mimeTypes = {
 };
 
 function defaultDb() {
-  return { users: [], sessions: [], payments: [], collections: [], downloads: [] };
+  return { users: [], sessions: [], payments: [], collections: [], downloads: [], licenseCodes: [] };
 }
+
+const planRank = { free: 0, pro: 1, studio: 2 };
+const licenseCodeTypes = {
+  pro_month: { label: "Pro / 1 month", plan: "pro", duration: "month" },
+  plus_month: { label: "Plus / 1 month", plan: "studio", duration: "month" },
+  pro_lifetime: { label: "Pro / lifetime", plan: "pro", duration: "lifetime" },
+  plus_lifetime: { label: "Plus / lifetime", plan: "studio", duration: "lifetime" }
+};
 
 function readDb() {
   if (!existsSync(dataDir)) mkdirSync(dataDir, { recursive: true });
@@ -142,6 +150,41 @@ function addOneMonth(date = new Date()) {
   return next.toISOString();
 }
 
+function normalizeLicenseCode(code) {
+  return String(code || "").replace(/\D/g, "").slice(0, 12);
+}
+
+function formatLicenseCode(code) {
+  const digits = normalizeLicenseCode(code);
+  return [digits.slice(0, 4), digits.slice(4, 8), digits.slice(8, 12)].filter(Boolean).join("-");
+}
+
+function generateLicenseCode(db, reserved = new Set()) {
+  const used = new Set([...(db.licenseCodes || []).map((item) => normalizeLicenseCode(item.code)), ...reserved]);
+  let code = "";
+  do {
+    code = Array.from({ length: 12 }, () => randomInt(0, 10)).join("");
+  } while (used.has(code));
+  reserved.add(code);
+  return formatLicenseCode(code);
+}
+
+function publicLicenseCode(item) {
+  const type = licenseCodeTypes[item.type] ? item.type : "pro_month";
+  return {
+    id: item.id,
+    code: formatLicenseCode(item.code),
+    type,
+    label: licenseCodeTypes[type].label,
+    plan: licenseCodeTypes[type].plan,
+    duration: licenseCodeTypes[type].duration,
+    status: item.status === "redeemed" ? "redeemed" : "active",
+    createdAt: item.createdAt,
+    redeemedAt: item.redeemedAt || null,
+    redeemedByEmail: item.redeemedByEmail || ""
+  };
+}
+
 function sanitizeCollection(model) {
   if (!model || typeof model !== "object") return null;
   return {
@@ -175,6 +218,45 @@ function sanitizeDownload(item, userId) {
     configuration: item.configuration && typeof item.configuration === "object" ? item.configuration : {},
     createdAt: Number.isNaN(createdAt.getTime()) ? new Date().toISOString() : createdAt.toISOString()
   };
+}
+
+function applyLicenseCode(user, license) {
+  const details = licenseCodeTypes[license.type];
+  if (!details) return { error: "Unknown license code type." };
+  if (user.role === "developer") {
+    user.plan = "studio";
+    user.subscriptionStatus = "admin";
+    user.subscriptionMode = "admin";
+    user.planEndsAt = null;
+    user.updatedAt = new Date().toISOString();
+    return { message: "Developer access is already unlimited.", consume: false };
+  }
+
+  const now = new Date();
+  const currentEnds = user.planEndsAt ? new Date(user.planEndsAt) : null;
+  const hasFutureAccess = currentEnds && !Number.isNaN(currentEnds.getTime()) && currentEnds > now;
+  const hasLifetime = user.subscriptionStatus === "lifetime";
+  if (hasLifetime && planRank[user.plan] >= planRank[details.plan]) {
+    return { error: "This account already has equal or higher lifetime access." };
+  }
+  if (details.duration === "month" && planRank[user.plan] > planRank[details.plan] && (hasFutureAccess || hasLifetime)) {
+    return { error: "This account already has a higher active plan." };
+  }
+
+  const previousPlan = user.plan;
+  user.plan = details.plan;
+  if (details.duration === "lifetime") {
+    user.subscriptionMode = "license_lifetime";
+    user.subscriptionStatus = "lifetime";
+    user.planEndsAt = null;
+  } else {
+    const extensionBase = previousPlan === details.plan && hasFutureAccess ? currentEnds : now;
+    user.subscriptionMode = "license_month";
+    user.subscriptionStatus = "paid_once";
+    user.planEndsAt = addOneMonth(extensionBase);
+  }
+  user.updatedAt = new Date().toISOString();
+  return { message: `${details.label} activated.`, consume: true };
 }
 
 async function handleApi(req, res, pathname) {
@@ -265,6 +347,56 @@ async function handleApi(req, res, pathname) {
     db.downloads = [download, ...userDownloads, ...otherDownloads].slice(0, 5000);
     writeDb(db);
     return sendJson(res, 200, { download });
+  }
+
+  if (req.method === "GET" && pathname === "/api/license-codes") {
+    const user = currentUser(req, db);
+    if (!user || user.role !== "developer") return sendJson(res, 403, { error: "Developer access is required." });
+    const codes = (db.licenseCodes || [])
+      .map(publicLicenseCode)
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    return sendJson(res, 200, { codes });
+  }
+
+  if (req.method === "POST" && pathname === "/api/license-codes") {
+    const user = currentUser(req, db);
+    if (!user || user.role !== "developer") return sendJson(res, 403, { error: "Developer access is required." });
+    const body = await readBody(req);
+    const type = licenseCodeTypes[body.type] ? body.type : "pro_month";
+    const quantity = Math.min(50, Math.max(1, Number(body.quantity) || 1));
+    const reserved = new Set();
+    const created = Array.from({ length: quantity }, () => ({
+      id: randomBytes(12).toString("hex"),
+      code: generateLicenseCode(db, reserved),
+      type,
+      status: "active",
+      createdBy: user.id,
+      createdAt: new Date().toISOString()
+    }));
+    db.licenseCodes = [...created, ...(db.licenseCodes || [])].slice(0, 5000);
+    writeDb(db);
+    return sendJson(res, 200, { codes: created.map(publicLicenseCode) });
+  }
+
+  if (req.method === "POST" && pathname === "/api/license-codes/redeem") {
+    const user = currentUser(req, db);
+    if (!user) return sendJson(res, 401, { error: "Login is required." });
+    const body = await readBody(req);
+    const code = normalizeLicenseCode(body.code);
+    if (code.length !== 12) return sendJson(res, 400, { error: "Enter a 12 digit activation code." });
+    const license = (db.licenseCodes || []).find((item) => normalizeLicenseCode(item.code) === code);
+    if (!license) return sendJson(res, 404, { error: "Activation code not found." });
+    if (license.status === "redeemed") return sendJson(res, 409, { error: "This activation code has already been used." });
+    const result = applyLicenseCode(user, license);
+    if (result.error) return sendJson(res, 409, { error: result.error });
+    if (result.consume !== false) {
+      license.status = "redeemed";
+      license.redeemedBy = user.id;
+      license.redeemedByEmail = user.email;
+      license.redeemedAt = new Date().toISOString();
+    }
+    writeDb(db);
+    return sendJson(res, 200, { user: publicUser(user), code: publicLicenseCode(license), message: result.message });
   }
 
   if (req.method === "POST" && pathname === "/api/auth/sign-out") {

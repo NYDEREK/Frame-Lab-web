@@ -144,6 +144,12 @@ const accountProfilesStorageKey = "framelab.accounts.v1";
 const hiddenComponentsStorageKey = "framelab.hiddenComponents.v1";
 const planRank = { free: 0, pro: 1, studio: 2 };
 const planPrices = { free: "$0", pro: "$29.99", studio: "$49.99" };
+const licenseCodeTypes = {
+  pro_month: { label: "Pro / 1 month", plan: "pro", duration: "month" },
+  plus_month: { label: "Plus / 1 month", plan: "studio", duration: "month" },
+  pro_lifetime: { label: "Pro / lifetime", plan: "pro", duration: "lifetime" },
+  plus_lifetime: { label: "Plus / lifetime", plan: "studio", duration: "lifetime" }
+};
 const lensOptions = [
   {
     id: "open",
@@ -374,6 +380,7 @@ const state = {
   authMode: "login",
   lensMode: "cut-template",
   downloads: [],
+  licenseCodes: [],
   editingModelId: null,
   cropImage: null,
   croppedCollectionImage: "",
@@ -409,6 +416,7 @@ const els = {
   accountPanel: document.querySelector("#accountPanel"),
   plansPanel: document.querySelector("#plansPanel"),
   paymentPanel: document.querySelector("#paymentPanel"),
+  licensePanel: document.querySelector("#licensePanel"),
   plansContext: document.querySelector("#plansContext"),
   accountButton: document.querySelector("#accountButton"),
   plansButton: document.querySelector("#plansButton"),
@@ -432,6 +440,9 @@ const els = {
   profileStatus: document.querySelector("#profileStatus"),
   profileExports: document.querySelector("#profileExports"),
   downloadFolder: document.querySelector("#downloadFolder"),
+  licenseCodeInput: document.querySelector("#licenseCodeInput"),
+  redeemLicenseCode: document.querySelector("#redeemLicenseCode"),
+  licenseCodeNote: document.querySelector("#licenseCodeNote"),
   profileOpenPlans: document.querySelector("#profileOpenPlans"),
   profileSignOut: document.querySelector("#profileSignOut"),
   cancelSubscription: document.querySelector("#cancelSubscription"),
@@ -480,6 +491,12 @@ const els = {
   openConfigurator: document.querySelector("#openConfigurator"),
   openGallery: document.querySelector("#openGallery"),
   openStudio: document.querySelector("#openStudio"),
+  openLicenses: document.querySelector("#openLicenses"),
+  licenseCodeType: document.querySelector("#licenseCodeType"),
+  licenseCodeQuantity: document.querySelector("#licenseCodeQuantity"),
+  generateLicenseCodes: document.querySelector("#generateLicenseCodes"),
+  licenseAdminNote: document.querySelector("#licenseAdminNote"),
+  licenseCodeList: document.querySelector("#licenseCodeList"),
   heroBrowse: document.querySelector("#heroBrowse"),
   heroEditor: document.querySelector("#heroEditor"),
   saveCurrentModel: document.querySelector("#saveCurrentModel"),
@@ -685,9 +702,19 @@ function bindUi() {
   els.signInAccount.addEventListener("click", () => signInAccount());
   els.accountPanel.addEventListener("keydown", (event) => {
     if (event.key !== "Enter") return;
+    if (event.target === els.licenseCodeInput) {
+      event.preventDefault();
+      redeemLicenseCode();
+      return;
+    }
+    if (state.account.role !== "visitor") return;
     event.preventDefault();
     signInAccount();
   });
+  els.licenseCodeInput.addEventListener("input", () => {
+    els.licenseCodeInput.value = formatLicenseCode(els.licenseCodeInput.value);
+  });
+  els.redeemLicenseCode.addEventListener("click", () => redeemLicenseCode());
   els.signOutAccount.addEventListener("click", () => signOutAccount());
   els.profileSignOut.addEventListener("click", () => signOutAccount());
   els.cancelSubscription.addEventListener("click", () => cancelSubscription());
@@ -735,6 +762,12 @@ function bindUi() {
     event.preventDefault();
     setActiveSection("studio");
   });
+  els.openLicenses.addEventListener("click", async (event) => {
+    event.preventDefault();
+    setActiveSection("licenses");
+    await loadLicenseCodes();
+  });
+  els.generateLicenseCodes.addEventListener("click", () => generateLicenseCodes());
   els.heroBrowse.addEventListener("click", scrollGalleryIntoView);
   els.heroEditor.addEventListener("click", () => setActiveSection("configurator"));
   els.saveCurrentModel.addEventListener("click", saveCurrentModel);
@@ -1650,14 +1683,18 @@ function scheduleModelPersist() {
 
 function setActiveSection(section) {
   if (section === "studio" && !isDeveloper()) section = "home";
+  if (section === "licenses" && !isDeveloper()) section = "home";
   const showEditor = section === "configurator";
   const showStudio = section === "studio";
-  els.homePage.hidden = showEditor || showStudio;
+  const showLicenses = section === "licenses";
+  els.homePage.hidden = showEditor || showStudio || showLicenses;
   els.workspace.hidden = !showEditor;
   els.studioPanel.hidden = !showStudio || !isDeveloper();
+  els.licensePanel.hidden = !showLicenses || !isDeveloper();
   els.openHome.classList.toggle("active", section === "home");
   els.openGallery.classList.toggle("active", false);
   els.openStudio.classList.toggle("active", showStudio && isDeveloper());
+  els.openLicenses.classList.toggle("active", showLicenses && isDeveloper());
   if (showEditor) {
     resize();
     render();
@@ -1669,6 +1706,7 @@ function scrollGalleryIntoView() {
   els.openHome.classList.remove("active");
   els.openGallery.classList.add("active");
   els.openStudio.classList.remove("active");
+  els.openLicenses.classList.remove("active");
 }
 
 function sessionToken() {
@@ -1706,6 +1744,7 @@ async function hydrateSessionFromBackend() {
     const payload = await apiRequest("/api/session");
     state.account = accountFromUser(payload.user);
     await loadDownloadFolder({ silent: true });
+    if (isDeveloper()) await loadLicenseCodes({ silent: true });
     persistActiveAccount({ skipProfile: true });
     return true;
   } catch {
@@ -1787,7 +1826,9 @@ function updateAccountUi() {
   els.accountButton.textContent = accountLabel();
   els.accountButton.classList.toggle("developer", isDeveloper());
   els.openStudio.hidden = !isDeveloper();
+  els.openLicenses.hidden = !isDeveloper();
   els.studioPanel.hidden = els.studioPanel.hidden || !isDeveloper();
+  els.licensePanel.hidden = els.licensePanel.hidden || !isDeveloper();
   els.accountEmail.value = state.account.email;
   els.authForm.hidden = signedIn;
   els.accountProfile.hidden = !signedIn;
@@ -1818,6 +1859,7 @@ function updateAccountUi() {
     button.classList.toggle("accent", !picked && button.dataset.planPick === "pro");
   });
   renderDownloadFolder();
+  renderLicenseCodeList();
   renderGallery();
 }
 
@@ -1888,11 +1930,129 @@ async function loadDownloadFolder(options = {}) {
   }
 }
 
+function normalizeLicenseCode(value) {
+  return String(value || "").replace(/\D/g, "").slice(0, 12);
+}
+
+function formatLicenseCode(value) {
+  const digits = normalizeLicenseCode(value);
+  return [digits.slice(0, 4), digits.slice(4, 8), digits.slice(8, 12)].filter(Boolean).join("-");
+}
+
+async function redeemLicenseCode() {
+  const code = normalizeLicenseCode(els.licenseCodeInput.value);
+  if (code.length !== 12) {
+    els.licenseCodeNote.textContent = "Enter a 12 digit activation code.";
+    return;
+  }
+  try {
+    els.redeemLicenseCode.disabled = true;
+    els.licenseCodeNote.textContent = "Activating code...";
+    const payload = await apiRequest("/api/license-codes/redeem", {
+      method: "POST",
+      body: JSON.stringify({ code })
+    });
+    state.account = accountFromUser(payload.user);
+    persistActiveAccount();
+    els.licenseCodeInput.value = "";
+    els.licenseCodeNote.textContent = payload.message || "Code activated.";
+    if (isDeveloper()) await loadLicenseCodes({ silent: true });
+    updateAccountUi();
+    log(payload.message || "Activation code applied.");
+  } catch (error) {
+    els.licenseCodeNote.textContent = error.message || "Could not activate code.";
+  } finally {
+    els.redeemLicenseCode.disabled = false;
+  }
+}
+
+async function loadLicenseCodes(options = {}) {
+  if (!isDeveloper() || !sessionToken()) {
+    state.licenseCodes = [];
+    renderLicenseCodeList();
+    return false;
+  }
+  try {
+    const payload = await apiRequest("/api/license-codes");
+    state.licenseCodes = Array.isArray(payload.codes) ? payload.codes : [];
+    renderLicenseCodeList();
+    return true;
+  } catch (error) {
+    state.licenseCodes = [];
+    renderLicenseCodeList();
+    if (!options.silent && els.licenseAdminNote) els.licenseAdminNote.textContent = error.message || "Could not load license codes.";
+    return false;
+  }
+}
+
+async function generateLicenseCodes() {
+  if (!isDeveloper()) return;
+  const type = licenseCodeTypes[els.licenseCodeType.value] ? els.licenseCodeType.value : "pro_month";
+  const quantity = Math.min(50, Math.max(1, Number(els.licenseCodeQuantity.value) || 1));
+  try {
+    els.generateLicenseCodes.disabled = true;
+    els.licenseAdminNote.textContent = "Generating codes...";
+    const payload = await apiRequest("/api/license-codes", {
+      method: "POST",
+      body: JSON.stringify({ type, quantity })
+    });
+    const created = Array.isArray(payload.codes) ? payload.codes : [];
+    state.licenseCodes = [...created, ...state.licenseCodes].slice(0, 500);
+    renderLicenseCodeList();
+    els.licenseAdminNote.textContent = `Generated ${created.length} ${licenseCodeTypes[type].label} code${created.length === 1 ? "" : "s"}.`;
+  } catch (error) {
+    els.licenseAdminNote.textContent = error.message || "Could not generate codes.";
+  } finally {
+    els.generateLicenseCodes.disabled = false;
+  }
+}
+
+function renderLicenseCodeList() {
+  if (!els.licenseCodeList) return;
+  if (!isDeveloper()) {
+    els.licenseCodeList.innerHTML = "";
+    return;
+  }
+  if (!state.licenseCodes.length) {
+    els.licenseCodeList.innerHTML = `
+      <div class="download-empty">
+        <strong>No activation codes yet.</strong>
+        <small>Generate a monthly or lifetime code to share with a customer.</small>
+      </div>
+    `;
+    return;
+  }
+  els.licenseCodeList.innerHTML = state.licenseCodes.slice(0, 160).map((item) => {
+    const type = licenseCodeTypes[item.type] || licenseCodeTypes.pro_month;
+    const redeemed = item.status === "redeemed";
+    return `
+      <article class="license-code-item ${redeemed ? "redeemed" : "active"}">
+        <div>
+          <code>${escapeHtml(item.code)}</code>
+          <small>${escapeHtml(type.label)} · ${licenseDateLabel(item.createdAt)}</small>
+        </div>
+        <div class="license-code-meta">
+          <span>${redeemed ? "Redeemed" : "Active"}</span>
+          ${redeemed ? `<small>${escapeHtml(item.redeemedByEmail || "used")} · ${licenseDateLabel(item.redeemedAt)}</small>` : "<small>Ready to share</small>"}
+        </div>
+      </article>
+    `;
+  }).join("");
+}
+
+function licenseDateLabel(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "no date";
+  return date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}
+
 function subscriptionStatusLabel() {
   if (isDeveloper()) return "Developer access";
   const ends = state.account.planEndsAt ? new Date(state.account.planEndsAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "";
+  if (state.account.subscriptionStatus === "lifetime") return "Lifetime access";
   if (state.account.subscriptionStatus === "active") return ends ? `Subscription active until ${ends}` : "Subscription active";
   if (state.account.subscriptionStatus === "cancel_at_period_end") return ends ? `Cancels on ${ends}` : "Cancelling";
+  if (state.account.subscriptionMode === "license_month") return ends ? `Code access until ${ends}` : "Code access";
   if (state.account.subscriptionStatus === "paid_once") return ends ? `One-month access until ${ends}` : "One-month access";
   return state.account.plan === "free" ? "Free access" : "Active";
 }
@@ -1930,6 +2090,7 @@ async function signInAccount() {
     localStorage.setItem(sessionStorageKey, payload.token);
     state.account = accountFromUser(payload.user);
     await loadDownloadFolder({ silent: true });
+    if (isDeveloper()) await loadLicenseCodes({ silent: true });
   } catch (error) {
     els.accountNote.textContent = error.message || "Could not sign in.";
     return;
@@ -1952,6 +2113,7 @@ async function signOutAccount() {
   localStorage.removeItem(sessionStorageKey);
   state.account = accountFromUser(null);
   state.downloads = [];
+  state.licenseCodes = [];
   persistActiveAccount();
   els.plansPanel.hidden = true;
   els.accountPanel.hidden = true;

@@ -119,6 +119,19 @@
                 <dd id="profileExports">Ready</dd>
               </div>
             </dl>
+            <section class="license-activate" aria-label="Activation code">
+              <div class="section-head compact-head">
+                <div>
+                  <p class="eyebrow">License</p>
+                  <h3>Activation code</h3>
+                </div>
+              </div>
+              <div class="license-redeem-row">
+                <input id="licenseCodeInput" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="14" placeholder="1234-5678-9012" />
+                <button id="redeemLicenseCode" type="button" class="accent">Activate</button>
+              </div>
+              <p id="licenseCodeNote" class="account-note"></p>
+            </section>
             <section class="download-folder" aria-label="Downloaded configurations">
               <div class="section-head compact-head">
                 <div>
@@ -262,6 +275,7 @@
             <a id="openHome" class="nav-link active" href="#top" data-i18n="tabHome">Start</a>
             <a id="openGallery" class="nav-link" href="#galleryPanel" data-i18n="tabGallery">Collections</a>
             <a id="openStudio" class="nav-link nav-admin" href="#studioPanel" data-i18n="tabStudio" hidden>Studio</a>
+            <a id="openLicenses" class="nav-link nav-admin" href="#licensePanel" hidden>Codes</a>
           </nav>
         </div>
         <div class="topbar-controls">
@@ -430,8 +444,31 @@
           <div id="componentFileList" class="component-file-list"></div>
         </section>
       </section>
+
+      <section id="licensePanel" class="license-panel" hidden>
+        <div class="studio-head">
+          <div>
+            <p class="eyebrow">Developer</p>
+            <h2>License codes</h2>
+          </div>
+        </div>
+        <section class="studio-card license-admin-card">
+          <div class="license-admin-grid">
+            <select id="licenseCodeType" class="component-select">
+              <option value="pro_month">Pro / 1 month</option>
+              <option value="plus_month">Plus / 1 month</option>
+              <option value="pro_lifetime">Pro / lifetime</option>
+              <option value="plus_lifetime">Plus / lifetime</option>
+            </select>
+            <input id="licenseCodeQuantity" type="number" min="1" max="50" value="1" />
+            <button id="generateLicenseCodes" type="button" class="accent">Generate codes</button>
+          </div>
+          <p id="licenseAdminNote" class="account-note"></p>
+          <div id="licenseCodeList" class="license-code-list"></div>
+        </section>
+      </section>
     </div>
 
-    <script type="module" src="./src/app.js?v=studio-polish-20260518-1"></script>
+    <script type="module" src="./src/app.js?v=license-codes-20260518-1"></script>
   </body>
 </html>

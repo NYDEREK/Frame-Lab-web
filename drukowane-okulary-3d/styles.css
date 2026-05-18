@@ -499,9 +499,22 @@ small,
   font-weight: 850;
 }
 
-.download-folder {
+.download-folder,
+.license-activate {
   display: grid;
   gap: 0.75rem;
+}
+
+.license-redeem-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.55rem;
+}
+
+.license-redeem-row input {
+  font-weight: 850;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .compact-head h3 {
@@ -1257,7 +1270,8 @@ input[type="password"] {
 }
 
 .gallery-panel,
-.studio-panel {
+.studio-panel,
+.license-panel {
   min-height: calc(100vh - 4.9rem);
   padding: clamp(1rem, 3vw, 3rem);
 }
@@ -1452,6 +1466,7 @@ input[type="password"] {
 }
 
 .studio-card,
+.license-admin-card,
 .component-import-panel {
   max-width: 86rem;
   margin: 0 auto 1rem;
@@ -1460,6 +1475,71 @@ input[type="password"] {
   border-radius: 8px;
   background: var(--surface);
   box-shadow: var(--shadow);
+}
+
+.license-admin-card {
+  display: grid;
+  gap: 1rem;
+}
+
+.license-admin-grid {
+  display: grid;
+  grid-template-columns: minmax(13rem, 1fr) 8rem auto;
+  gap: 0.65rem;
+  align-items: center;
+}
+
+.license-code-list {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.license-code-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 1rem;
+  align-items: center;
+  padding: 0.85rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--subtle-bg);
+}
+
+.license-code-item.redeemed {
+  opacity: 0.72;
+}
+
+.license-code-item code {
+  display: inline-block;
+  color: var(--ink);
+  font-size: 1rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+}
+
+.license-code-item small,
+.license-code-meta small {
+  display: block;
+  margin-top: 0.18rem;
+  color: var(--muted);
+}
+
+.license-code-meta {
+  text-align: right;
+}
+
+.license-code-meta span {
+  min-height: 1.6rem;
+  display: inline-grid;
+  place-items: center;
+  padding: 0.2rem 0.55rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--accent-2);
+  font-size: 0.7rem;
+  font-weight: 900;
+  text-transform: uppercase;
 }
 
 .studio-grid {
@@ -1714,9 +1794,16 @@ input[type="password"] {
   }
 
   .studio-grid,
+  .license-admin-grid,
+  .license-code-item,
+  .license-redeem-row,
   .component-import-grid,
   .component-file-row {
     grid-template-columns: 1fr;
+  }
+
+  .license-code-meta {
+    text-align: left;
   }
 
   .studio-grid #collectionDescription,
