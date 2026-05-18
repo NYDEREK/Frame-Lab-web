@@ -144,6 +144,23 @@ const accountProfilesStorageKey = "framelab.accounts.v1";
 const hiddenComponentsStorageKey = "framelab.hiddenComponents.v1";
 const planRank = { free: 0, pro: 1, studio: 2 };
 const planPrices = { free: "$0", pro: "$29.99", studio: "$49.99" };
+const lensOptions = [
+  {
+    id: "open",
+    label: "Open frame",
+    note: "No lens geometry"
+  },
+  {
+    id: "perforated",
+    label: "Printed perforated",
+    note: "Printable insert with ventilation holes"
+  },
+  {
+    id: "cut-template",
+    label: "Cut template",
+    note: "Thin insert for transparent sheet cutting"
+  }
+];
 
 const seedCollections = [
   {
@@ -355,6 +372,8 @@ const state = {
   pendingPlan: "pro",
   pendingPaymentMode: "one_time",
   authMode: "login",
+  lensMode: "cut-template",
+  downloads: [],
   editingModelId: null,
   cropImage: null,
   croppedCollectionImage: "",
@@ -411,6 +430,8 @@ const els = {
   profileRole: document.querySelector("#profileRole"),
   profilePlan: document.querySelector("#profilePlan"),
   profileStatus: document.querySelector("#profileStatus"),
+  profileExports: document.querySelector("#profileExports"),
+  downloadFolder: document.querySelector("#downloadFolder"),
   profileOpenPlans: document.querySelector("#profileOpenPlans"),
   profileSignOut: document.querySelector("#profileSignOut"),
   cancelSubscription: document.querySelector("#cancelSubscription"),
@@ -573,6 +594,17 @@ function bindUi() {
   });
 
   els.builderControls.addEventListener("change", (event) => {
+    const lensInput = event.target.closest("[data-lens-mode]");
+    if (lensInput) {
+      state.lensMode = validLensMode(lensInput.value);
+      buildBuilderControls();
+      updateGeneratedSource();
+      render();
+      syncActiveModel({ persist: false });
+      scheduleModelPersist();
+      return;
+    }
+
     const colorInput = event.target.closest("[data-component-color]");
     if (colorInput) {
       state.componentColors[colorInput.dataset.componentColor] = colorInput.value;
@@ -815,9 +847,34 @@ function buildBuilderControls() {
     { key: "leftTemple", label: t("leftTempleComponent"), items: componentLibrary.temples },
     { key: "rightTemple", label: t("rightTempleComponent"), items: componentLibrary.temples }
   ];
-  els.builderControls.innerHTML = parts.map((part) => componentCardTemplate(part)).join("");
+  els.builderControls.innerHTML = `${lensControlTemplate()}${parts.map((part) => componentCardTemplate(part)).join("")}`;
   renderComponentPreviews(parts);
   renderComponentFileList();
+}
+
+function lensControlTemplate() {
+  const active = lensOption();
+  return `
+    <article class="component-card lens-card">
+      <div class="component-head">
+        <div>
+          <strong>Lenses</strong>
+          <small>${escapeHtml(active.label)} · ${escapeHtml(active.note)}</small>
+        </div>
+      </div>
+      <div class="lens-options" role="radiogroup" aria-label="Lens type">
+        ${lensOptions.map((option) => `
+          <label class="lens-option${option.id === state.lensMode ? " active" : ""}">
+            <input type="radio" name="lensMode" value="${option.id}" data-lens-mode ${option.id === state.lensMode ? "checked" : ""} />
+            <span>
+              <strong>${escapeHtml(option.label)}</strong>
+              <small>${escapeHtml(option.note)}</small>
+            </span>
+          </label>
+        `).join("")}
+      </div>
+    </article>
+  `;
 }
 
 function componentCardTemplate(part) {
@@ -1182,6 +1239,7 @@ function renderUploadedAssembly() {
     });
     modelGroup.add(clone);
   });
+  addLensSet(state.params);
   normalizeObjectForScene(modelGroup);
   modelBasePosition.copy(modelGroup.position);
   applyViewerTransform();
@@ -1195,18 +1253,11 @@ function renderParametricPreview() {
     roughness: 0.38,
     metalness: 0.04
   });
-  const lensMaterial = new THREE.MeshPhysicalMaterial({
-    color: "#ffd7b0",
-    transparent: true,
-    opacity: 0.32,
-    roughness: 0.06,
-    transmission: 0.12,
-    thickness: 1.1
-  });
 
   const center = (p.bridge_width + p.lens_width) / 2;
-  addRim(-center, p, material, lensMaterial);
-  addRim(center, p, material, lensMaterial);
+  addRim(-center, p, material);
+  addRim(center, p, material);
+  addLensSet(p);
   addBrowBar(p, material);
   addBridge(p, material);
   addNosePads(p, material);
@@ -1218,7 +1269,7 @@ function renderParametricPreview() {
   modelGroup.scale.setScalar(1);
 }
 
-function addRim(x, p, material, lensMaterial) {
+function addRim(x, p, material) {
   const outer = roundedRectShape(p.lens_width + p.rim_thickness * 2.15, p.lens_height + p.rim_thickness * 2.05, p.corner_radius + p.rim_thickness * 0.9);
   const inner = roundedRectShape(p.lens_width, p.lens_height, p.corner_radius);
   outer.holes.push(inner);
@@ -1234,12 +1285,39 @@ function addRim(x, p, material, lensMaterial) {
   rim.position.x = x;
   modelGroup.add(rim);
   addTriangles(rimGeometry);
+}
 
-  const lensGeometry = roundedPrismGeometry(p.lens_width - 1, p.lens_height - 1, 0.7, Math.max(2, p.corner_radius - 1), 0.12);
-  const lens = new THREE.Mesh(lensGeometry, lensMaterial);
-  lens.position.set(x, 0, 0);
+function addLensSet(p) {
+  if (state.lensMode === "open") return;
+  const center = (p.bridge_width + p.lens_width) / 2;
+  addLensInsert(-center, p);
+  addLensInsert(center, p);
+}
+
+function addLensInsert(x, p) {
+  const isPerforated = state.lensMode === "perforated";
+  const width = Math.max(10, p.lens_width - 1.15);
+  const height = Math.max(8, p.lens_height - 1.15);
+  const radius = Math.max(2, p.corner_radius - 1);
+  const depth = isPerforated ? 1.05 : 0.62;
+  const geometry = isPerforated
+    ? perforatedLensGeometry(width, height, depth, radius)
+    : roundedPrismGeometry(width, height, depth, radius, 0.08);
+  const material = isPerforated
+    ? new THREE.MeshStandardMaterial({ color: "#d86f2e", roughness: 0.54, metalness: 0.02 })
+    : new THREE.MeshPhysicalMaterial({
+      color: "#ffd8b8",
+      transparent: true,
+      opacity: 0.42,
+      roughness: 0.08,
+      transmission: 0.18,
+      thickness: 0.9
+    });
+  const lens = new THREE.Mesh(geometry, material);
+  lens.name = `Frame Lab ${lensModeLabel()} lens`;
+  lens.position.set(x, 0, -0.02);
   modelGroup.add(lens);
-  addTriangles(lensGeometry);
+  addTriangles(geometry);
 }
 
 function addBrowBar(p, material) {
@@ -1331,6 +1409,32 @@ function roundedPrismGeometry(width, height, depth, radius, bevel) {
   return geometry;
 }
 
+function perforatedLensGeometry(width, height, depth, radius) {
+  const shape = roundedRectShape(width, height, radius);
+  const holeRadius = Math.max(0.85, Math.min(width, height) * 0.038);
+  const spacing = holeRadius * 4.1;
+  const safeInset = Math.max(radius * 0.45, holeRadius * 2.4);
+  for (let y = -height / 2 + safeInset; y <= height / 2 - safeInset; y += spacing) {
+    for (let x = -width / 2 + safeInset; x <= width / 2 - safeInset; x += spacing) {
+      const normalizedX = (Math.abs(x) + holeRadius) / (width / 2);
+      const normalizedY = (Math.abs(y) + holeRadius) / (height / 2);
+      if (normalizedX ** 3.2 + normalizedY ** 3.2 > 1.05) continue;
+      const hole = new THREE.Path();
+      hole.absellipse(x, y, holeRadius, holeRadius, 0, Math.PI * 2, true);
+      shape.holes.push(hole);
+    }
+  }
+  const geometry = new THREE.ExtrudeGeometry(shape, {
+    depth,
+    bevelEnabled: true,
+    bevelThickness: 0.05,
+    bevelSize: 0.05,
+    bevelSegments: 1
+  });
+  geometry.center();
+  return geometry;
+}
+
 function renderMeshObject(object) {
   const clone = object.clone(true);
   const material = new THREE.MeshStandardMaterial({
@@ -1374,6 +1478,7 @@ function createDefaultModel() {
     description: seed.description,
     scadSource: sampleScad,
     params: { ...structuredClone(defaultParams), ...seed.params },
+    lensMode: "cut-template",
     thumbnail: "",
     components: null,
     createdAt: Date.now(),
@@ -1431,6 +1536,7 @@ function mergeSeedCollections(stored) {
       description: seed.description,
       scadSource: sampleScad,
       params: { ...structuredClone(defaultParams), ...seed.params },
+      lensMode: "cut-template",
       thumbnail: "",
       createdAt: Date.now(),
       updatedAt: Date.now()
@@ -1463,6 +1569,7 @@ function normalizeStoredModel(model) {
     description,
     scadSource,
     params,
+    lensMode: validLensMode(model.lensMode),
     thumbnail: typeof model.thumbnail === "string" ? model.thumbnail : "",
     components: model.components && typeof model.components === "object" ? model.components : null,
     createdAt: Number(model.createdAt) || Date.now(),
@@ -1505,6 +1612,7 @@ function selectModel(id, options = {}) {
   state.modelName = model.name;
   state.scadSource = model.scadSource;
   state.params = { ...structuredClone(defaultParams), ...model.params };
+  state.lensMode = validLensMode(model.lensMode);
   state.meshObject = null;
   state.previewMode = "parametric";
   if (rebuildControls) buildControls();
@@ -1524,6 +1632,7 @@ function syncActiveModel(options = {}) {
   model.name = state.modelName;
   model.params = { ...state.params };
   model.scadSource = generateScadSource();
+  model.lensMode = validLensMode(state.lensMode);
   model.updatedAt = Date.now();
   if (thumbnail !== null) model.thumbnail = thumbnail;
   if (persist) {
@@ -1596,6 +1705,7 @@ async function hydrateSessionFromBackend() {
   try {
     const payload = await apiRequest("/api/session");
     state.account = accountFromUser(payload.user);
+    await loadDownloadFolder({ silent: true });
     persistActiveAccount({ skipProfile: true });
     return true;
   } catch {
@@ -1623,6 +1733,18 @@ function accessLabel(access) {
   if (access === "studio") return "Plus";
   if (access === "pro") return "Pro";
   return "Free";
+}
+
+function validLensMode(value) {
+  return lensOptions.some((option) => option.id === value) ? value : "cut-template";
+}
+
+function lensOption(mode = state.lensMode) {
+  return lensOptions.find((option) => option.id === validLensMode(mode)) || lensOptions.at(-1);
+}
+
+function lensModeLabel(mode = state.lensMode) {
+  return lensOption(mode).label;
 }
 
 function accountLabel() {
@@ -1677,6 +1799,7 @@ function updateAccountUi() {
     els.profileRole.textContent = isDeveloper() ? "Developer account" : "Customer account";
     els.profilePlan.textContent = accessLabel(state.account.plan);
     els.profileStatus.textContent = subscriptionStatusLabel();
+    if (els.profileExports) els.profileExports.textContent = state.downloads.length ? `${state.downloads.length} saved` : "Ready";
     els.cancelSubscription.hidden = isDeveloper() || state.account.subscriptionMode !== "subscription";
     els.cancelSubscription.disabled = state.account.subscriptionStatus !== "active";
   }
@@ -1694,7 +1817,75 @@ function updateAccountUi() {
     button.textContent = picked ? "Current plan" : `Choose ${accessLabel(button.dataset.planPick)}`;
     button.classList.toggle("accent", !picked && button.dataset.planPick === "pro");
   });
+  renderDownloadFolder();
   renderGallery();
+}
+
+function renderDownloadFolder() {
+  if (!els.downloadFolder) return;
+  if (els.profileExports) els.profileExports.textContent = state.downloads.length ? `${state.downloads.length} saved` : "Ready";
+  const signedIn = state.account.role !== "visitor" && Boolean(state.account.email);
+  if (!signedIn) {
+    els.downloadFolder.innerHTML = "";
+    return;
+  }
+  if (!state.downloads.length) {
+    els.downloadFolder.innerHTML = `
+      <div class="download-empty">
+        <strong>No downloaded configurations yet.</strong>
+        <small>Your exported 3MF setups will appear here.</small>
+      </div>
+    `;
+    return;
+  }
+  els.downloadFolder.innerHTML = state.downloads.slice(0, 12).map((item) => {
+    const parameters = item.configuration?.parameters || {};
+    const chips = [
+      ["Head", parameters.head_width, "mm"],
+      ["Bridge", parameters.bridge_width, "mm"],
+      ["Temples", parameters.temple_length, "mm"]
+    ].filter(([, value]) => Number.isFinite(Number(value))).map(([label, value, unit]) => `
+      <span>${label} ${formatNumber(value)}${unit}</span>
+    `).join("");
+    return `
+      <article class="download-item">
+        <div>
+          <strong>${escapeHtml(item.modelName)}</strong>
+          <small>${escapeHtml(item.fileName)} · ${downloadDateLabel(item.createdAt)}</small>
+        </div>
+        <div class="download-tags">
+          <span>${escapeHtml(accessLabel(item.plan))}</span>
+          <span>${escapeHtml(item.lensLabel || lensModeLabel(item.lensMode))}</span>
+          ${chips}
+        </div>
+      </article>
+    `;
+  }).join("");
+}
+
+function downloadDateLabel(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Saved";
+  return date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}
+
+async function loadDownloadFolder(options = {}) {
+  if (!sessionToken() || state.account.role === "visitor") {
+    state.downloads = [];
+    renderDownloadFolder();
+    return false;
+  }
+  try {
+    const payload = await apiRequest("/api/downloads");
+    state.downloads = Array.isArray(payload.downloads) ? payload.downloads : [];
+    renderDownloadFolder();
+    return true;
+  } catch (error) {
+    state.downloads = [];
+    renderDownloadFolder();
+    if (!options.silent) log(error.message || "Could not load download folder.");
+    return false;
+  }
 }
 
 function subscriptionStatusLabel() {
@@ -1738,6 +1929,7 @@ async function signInAccount() {
     });
     localStorage.setItem(sessionStorageKey, payload.token);
     state.account = accountFromUser(payload.user);
+    await loadDownloadFolder({ silent: true });
   } catch (error) {
     els.accountNote.textContent = error.message || "Could not sign in.";
     return;
@@ -1759,6 +1951,7 @@ async function signOutAccount() {
   }
   localStorage.removeItem(sessionStorageKey);
   state.account = accountFromUser(null);
+  state.downloads = [];
   persistActiveAccount();
   els.plansPanel.hidden = true;
   els.accountPanel.hidden = true;
@@ -2513,8 +2706,11 @@ async function generate3mf() {
     const mesh = collectCurrentMesh();
     if (!mesh.triangles.length) throw new Error("brak geometrii do eksportu");
     const blob = make3mfBlob(mesh);
-    downloadBlob(`${slugify(state.modelName)}.3mf`, blob);
-    log(`Generated 3MF locally: ${mesh.triangles.length.toLocaleString("en-US")} triangles.`);
+    const fileName = `${slugify(state.modelName)}.3mf`;
+    downloadBlob(fileName, blob);
+    const saved = await recordDownload(fileName, mesh);
+    const folderNote = saved ? " Saved to your production folder." : state.account.role === "visitor" ? " Login to keep it in your production folder." : "";
+    log(`Generated 3MF locally: ${mesh.triangles.length.toLocaleString("en-US")} triangles.${folderNote}`);
   } catch (error) {
     log(`Could not generate 3MF: ${error.message}`);
   } finally {
@@ -2592,6 +2788,8 @@ function buildAssemblyManifest(selectedFiles) {
       rightTemple: serializeAssemblyPart("rightTemple", selectedTemple("rightTemple"), state.assembly.rightTemple.size)
     },
     parameters: state.params,
+    lens: currentLensConfig(),
+    colors: { ...state.componentColors },
     selectedFiles
   };
 }
@@ -2609,6 +2807,64 @@ function serializeAssemblyPart(role, item, size) {
   };
 }
 
+function currentLensConfig() {
+  const option = lensOption();
+  return {
+    mode: option.id,
+    label: option.label,
+    note: option.note
+  };
+}
+
+function currentConfigurationSnapshot() {
+  const model = currentModelRecord();
+  const manifest = buildAssemblyManifest(getSelectedUploadedComponents());
+  return {
+    model: {
+      id: model?.id || state.activeModelId,
+      name: state.modelName,
+      access: model?.access || "free"
+    },
+    assembly: manifest.assembly,
+    parameters: { ...state.params },
+    lens: manifest.lens,
+    colors: manifest.colors,
+    selectedFiles: manifest.selectedFiles
+  };
+}
+
+async function recordDownload(fileName, mesh) {
+  if (state.account.role === "visitor" || !sessionToken()) return false;
+  const model = currentModelRecord();
+  const payload = {
+    fileName,
+    modelId: model?.id || state.activeModelId,
+    modelName: state.modelName,
+    plan: model?.access || "free",
+    lensMode: state.lensMode,
+    lensLabel: lensModeLabel(),
+    configuration: {
+      ...currentConfigurationSnapshot(),
+      mesh: {
+        triangles: mesh.triangles.length,
+        vertices: mesh.vertices.length
+      }
+    }
+  };
+  try {
+    const response = await apiRequest("/api/downloads", {
+      method: "POST",
+      body: JSON.stringify(payload)
+    });
+    state.downloads = [response.download, ...state.downloads.filter((item) => item.id !== response.download.id)].slice(0, 100);
+    renderDownloadFolder();
+    return true;
+  } catch (error) {
+    log(error.message || "Could not save download history.");
+    return false;
+  }
+}
+
 function saveCurrentModel() {
   syncActiveModel();
   queueThumbnailCapture();
@@ -2619,6 +2875,7 @@ function loadSample() {
   state.params = structuredClone(defaultParams);
   state.scadSource = sampleScad;
   state.modelName = "Frame 001";
+  state.lensMode = "cut-template";
   state.meshObject = null;
   buildControls();
   updateGeneratedSource();
@@ -2630,6 +2887,7 @@ function loadSample() {
 
 function resetParams() {
   state.params = structuredClone(defaultParams);
+  state.lensMode = "cut-template";
   state.meshObject = null;
   buildControls();
   updateGeneratedSource();
@@ -2821,6 +3079,7 @@ function make3mfBlob(mesh) {
 <model unit="millimeter" xml:lang="en-US" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">
   <metadata name="Title">${escapeXml(state.modelName)}</metadata>
   <metadata name="Designer">Frame Lab</metadata>
+  <metadata name="Lens">${escapeXml(lensModeLabel())}</metadata>
   <resources>
     <object id="1" type="model">
       <mesh>

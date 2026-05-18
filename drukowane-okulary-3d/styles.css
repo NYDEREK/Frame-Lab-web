@@ -499,6 +499,65 @@ small,
   font-weight: 850;
 }
 
+.download-folder {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.compact-head h3 {
+  font-size: 1rem;
+}
+
+.download-folder-list {
+  display: grid;
+  gap: 0.55rem;
+  max-height: 18rem;
+  overflow: auto;
+  padding-right: 0.1rem;
+}
+
+.download-empty,
+.download-item {
+  padding: 0.85rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--subtle-bg);
+}
+
+.download-empty strong,
+.download-empty small,
+.download-item strong,
+.download-item small {
+  display: block;
+}
+
+.download-empty small,
+.download-item small {
+  margin-top: 0.18rem;
+  color: var(--muted);
+}
+
+.download-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.65rem;
+}
+
+.download-tags span {
+  min-height: 1.55rem;
+  display: inline-grid;
+  place-items: center;
+  padding: 0.15rem 0.5rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  background: var(--surface);
+  font-size: 0.68rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
 .payment-card {
   width: min(72rem, calc(100vw - 2rem));
   min-height: auto;
@@ -927,6 +986,48 @@ input[type="password"] {
   margin-top: 0.08rem;
   font-size: 0.72rem;
   font-weight: 650;
+}
+
+.lens-options {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.lens-option {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.65rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  cursor: pointer;
+}
+
+.lens-option.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 24%, transparent);
+}
+
+.lens-option input {
+  accent-color: var(--accent);
+}
+
+.lens-option strong,
+.lens-option small {
+  display: block;
+}
+
+.lens-option strong {
+  font-size: 0.82rem;
+}
+
+.lens-option small {
+  margin-top: 0.08rem;
+  color: var(--muted);
+  font-size: 0.7rem;
 }
 
 .component-option-grid {

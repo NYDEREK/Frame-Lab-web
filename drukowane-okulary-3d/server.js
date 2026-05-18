@@ -32,7 +32,7 @@ const mimeTypes = {
 };
 
 function defaultDb() {
-  return { users: [], sessions: [], payments: [], collections: [] };
+  return { users: [], sessions: [], payments: [], collections: [], downloads: [] };
 }
 
 function readDb() {
@@ -152,10 +152,28 @@ function sanitizeCollection(model) {
     description: String(model.description || "").slice(0, 260),
     scadSource: String(model.scadSource || "").slice(0, 500_000),
     params: model.params && typeof model.params === "object" ? model.params : {},
+    lensMode: ["open", "perforated", "cut-template"].includes(model.lensMode) ? model.lensMode : "cut-template",
     thumbnail: typeof model.thumbnail === "string" ? model.thumbnail : "",
     components: model.components && typeof model.components === "object" ? model.components : null,
     createdAt: Number(model.createdAt) || Date.now(),
     updatedAt: Number(model.updatedAt) || Date.now()
+  };
+}
+
+function sanitizeDownload(item, userId) {
+  if (!item || typeof item !== "object") return null;
+  const createdAt = item.createdAt ? new Date(item.createdAt) : new Date();
+  return {
+    id: String(item.id || randomBytes(12).toString("hex")),
+    userId,
+    fileName: String(item.fileName || "frame-lab-export.3mf").slice(0, 180),
+    modelId: String(item.modelId || "").slice(0, 120),
+    modelName: String(item.modelName || "Frame Lab model").slice(0, 140),
+    plan: ["free", "pro", "studio"].includes(item.plan) ? item.plan : "free",
+    lensMode: ["open", "perforated", "cut-template"].includes(item.lensMode) ? item.lensMode : "cut-template",
+    lensLabel: String(item.lensLabel || "Cut template").slice(0, 80),
+    configuration: item.configuration && typeof item.configuration === "object" ? item.configuration : {},
+    createdAt: Number.isNaN(createdAt.getTime()) ? new Date().toISOString() : createdAt.toISOString()
   };
 }
 
@@ -219,6 +237,34 @@ async function handleApi(req, res, pathname) {
     db.collections = collections.map(sanitizeCollection).filter(Boolean).slice(0, 100);
     writeDb(db);
     return sendJson(res, 200, { collections: db.collections, savedAt: new Date().toISOString() });
+  }
+
+  if (req.method === "GET" && pathname === "/api/downloads") {
+    const user = currentUser(req, db);
+    if (!user) return sendJson(res, 401, { error: "Login is required." });
+    const downloads = (db.downloads || [])
+      .filter((item) => item.userId === user.id)
+      .map((item) => sanitizeDownload(item, user.id))
+      .filter(Boolean)
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+      .slice(0, 100);
+    return sendJson(res, 200, { downloads });
+  }
+
+  if (req.method === "POST" && pathname === "/api/downloads") {
+    const user = currentUser(req, db);
+    if (!user) return sendJson(res, 401, { error: "Login is required." });
+    const body = await readBody(req);
+    const download = sanitizeDownload({ ...body, createdAt: new Date().toISOString() }, user.id);
+    const existing = db.downloads || [];
+    const userDownloads = existing
+      .filter((item) => item.userId === user.id && item.id !== download.id)
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+      .slice(0, 199);
+    const otherDownloads = existing.filter((item) => item.userId !== user.id);
+    db.downloads = [download, ...userDownloads, ...otherDownloads].slice(0, 5000);
+    writeDb(db);
+    return sendJson(res, 200, { download });
   }
 
   if (req.method === "POST" && pathname === "/api/auth/sign-out") {
