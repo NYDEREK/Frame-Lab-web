@@ -43,7 +43,7 @@ const translations = {
     tabConfigurator: "Editor",
     tabGallery: "Collections",
     tabStudio: "Studio",
-    heroKicker: "Parametric eyewear system",
+    heroKicker: "",
     heroTitle: "Your next frame is 3D printed.",
     heroText: "Choose a collection, combine a front with temples, and prepare a clean production kit for additive manufacturing.",
     heroBrowse: "View collections",
@@ -72,9 +72,9 @@ const translations = {
     libraryKicker: "Collections",
     galleryHeading: "Choose a frame base",
     sunHeading: "Sunglasses",
-    sunMeta: "bolder frame sets",
+    sunMeta: "",
     opticalHeading: "Optical",
-    opticalMeta: "lighter everyday kits",
+    opticalMeta: "",
     studioKicker: "Studio",
     studioHeading: "Add a collection to the gallery",
     collectionTitlePlaceholder: "Collection title",
@@ -142,10 +142,12 @@ const defaultParams = {
 const defaultModelId = "frame001-sun-01";
 const ownerDeveloperEmail = "nyderek@framelab.dev";
 const adminEmails = new Set([ownerDeveloperEmail, "s.nyderek@proton.me"]);
+const defaultAccentColor = "#c96b34";
 const accountStorageKey = "framelab.account.v1";
 const sessionStorageKey = "framelab.sessionToken.v1";
 const accountProfilesStorageKey = "framelab.accounts.v1";
 const hiddenComponentsStorageKey = "framelab.hiddenComponents.v1";
+const brandSettingsStorageKey = "framelab.brandSettings.v1";
 const planRank = { free: 0, basic: 1, pro: 2, studio: 3 };
 const planPrices = { basic: "$20", pro: "$45", studio: "$60" };
 const licenseCodeTypes = {
@@ -383,6 +385,9 @@ const state = {
     rightTemple: "",
     lens: ""
   },
+  brandSettings: {
+    accentColor: defaultAccentColor
+  },
   assembly: {
     front: { modelId: "frame001-front", size: "M" },
     leftTemple: { modelId: "frame001-temple-left", size: "M" },
@@ -485,6 +490,11 @@ const els = {
   openGallery: document.querySelector("#openGallery"),
   openStudio: document.querySelector("#openStudio"),
   openLicenses: document.querySelector("#openLicenses"),
+  brandAccentColor: document.querySelector("#brandAccentColor"),
+  brandAccentText: document.querySelector("#brandAccentText"),
+  saveBrandSettings: document.querySelector("#saveBrandSettings"),
+  resetBrandSettings: document.querySelector("#resetBrandSettings"),
+  brandSettingsNote: document.querySelector("#brandSettingsNote"),
   licenseCodeType: document.querySelector("#licenseCodeType"),
   licenseCodeQuantity: document.querySelector("#licenseCodeQuantity"),
   generateLicenseCodes: document.querySelector("#generateLicenseCodes"),
@@ -535,6 +545,8 @@ init();
 
 async function init() {
   loadSettings();
+  applyBrandSettings();
+  await hydrateBrandSettings();
   await hydrateSessionFromBackend();
   state.uploadedComponents = [...await loadSeedComponentAssets(), ...await loadComponentRecords()]
     .filter((component) => !state.hiddenComponentIds.has(component.id));
@@ -749,6 +761,14 @@ function bindUi() {
     setActiveSection("licenses");
     await loadLicenseCodes();
   });
+  els.brandAccentColor?.addEventListener("input", () => {
+    setBrandAccent(els.brandAccentColor.value, { previewOnly: true });
+  });
+  els.brandAccentText?.addEventListener("input", () => {
+    setBrandAccent(els.brandAccentText.value, { previewOnly: true });
+  });
+  els.saveBrandSettings?.addEventListener("click", () => saveBrandSettings());
+  els.resetBrandSettings?.addEventListener("click", () => resetBrandSettings());
   els.generateLicenseCodes.addEventListener("click", () => generateLicenseCodes());
   els.heroBrowse.addEventListener("click", scrollGalleryIntoView);
   els.heroEditor.addEventListener("click", () => setActiveSection("configurator"));
@@ -822,6 +842,95 @@ function sceneBackgroundColor() {
 
 function previewBackgroundColor() {
   return "#111313";
+}
+
+function sanitizeAccentColor(value, fallback = defaultAccentColor) {
+  const match = String(value || "").trim().match(/^#?([0-9a-f]{6})$/i);
+  return match ? `#${match[1].toLowerCase()}` : fallback;
+}
+
+function hexToRgb(hex) {
+  const clean = sanitizeAccentColor(hex).slice(1);
+  return {
+    r: parseInt(clean.slice(0, 2), 16),
+    g: parseInt(clean.slice(2, 4), 16),
+    b: parseInt(clean.slice(4, 6), 16)
+  };
+}
+
+function mixHex(hex, target = "#ffffff", amount = 0.24) {
+  const base = hexToRgb(hex);
+  const other = hexToRgb(target);
+  const channel = (from, to) => Math.round(from + (to - from) * amount).toString(16).padStart(2, "0");
+  return `#${channel(base.r, other.r)}${channel(base.g, other.g)}${channel(base.b, other.b)}`;
+}
+
+function applyBrandSettings() {
+  const accent = sanitizeAccentColor(state.brandSettings.accentColor);
+  const accent2 = mixHex(accent, "#ffffff", 0.22);
+  const rgb = hexToRgb(accent);
+  state.brandSettings.accentColor = accent;
+  document.documentElement.style.setProperty("--accent", accent);
+  document.documentElement.style.setProperty("--accent-2", accent2);
+  document.documentElement.style.setProperty("--accent-soft", `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.15)`);
+  localStorage.setItem(brandSettingsStorageKey, JSON.stringify(state.brandSettings));
+  syncBrandSettingsUi();
+}
+
+function syncBrandSettingsUi() {
+  if (els.brandAccentColor) els.brandAccentColor.value = state.brandSettings.accentColor;
+  if (els.brandAccentText) els.brandAccentText.value = state.brandSettings.accentColor;
+}
+
+async function hydrateBrandSettings() {
+  try {
+    const payload = await apiRequest("/api/settings");
+    if (payload.settings?.accentColor) {
+      state.brandSettings.accentColor = sanitizeAccentColor(payload.settings.accentColor);
+      applyBrandSettings();
+      return true;
+    }
+  } catch {
+    applyBrandSettings();
+  }
+  return false;
+}
+
+function setBrandAccent(value, options = {}) {
+  const accent = sanitizeAccentColor(value, "");
+  if (!accent) {
+    if (els.brandSettingsNote) els.brandSettingsNote.textContent = "Use a six digit hex color, for example #c96b34.";
+    return false;
+  }
+  state.brandSettings.accentColor = accent;
+  applyBrandSettings();
+  if (els.brandSettingsNote && options.previewOnly) els.brandSettingsNote.textContent = "Previewing brand color. Save to publish it.";
+  return true;
+}
+
+async function saveBrandSettings() {
+  if (!isDeveloper() || !sessionToken()) {
+    if (els.brandSettingsNote) els.brandSettingsNote.textContent = "Developer login is required to save brand settings.";
+    return;
+  }
+  if (!setBrandAccent(els.brandAccentText?.value || els.brandAccentColor?.value || state.brandSettings.accentColor)) return;
+  try {
+    const payload = await apiRequest("/api/settings", {
+      method: "PUT",
+      body: JSON.stringify({ settings: state.brandSettings })
+    });
+    state.brandSettings.accentColor = sanitizeAccentColor(payload.settings?.accentColor);
+    applyBrandSettings();
+    if (els.brandSettingsNote) els.brandSettingsNote.textContent = "Brand settings saved.";
+  } catch (error) {
+    if (els.brandSettingsNote) els.brandSettingsNote.textContent = error.message || "Could not save brand settings.";
+  }
+}
+
+async function resetBrandSettings() {
+  state.brandSettings.accentColor = defaultAccentColor;
+  applyBrandSettings();
+  await saveBrandSettings();
 }
 
 function applyTranslations() {
@@ -2302,13 +2411,14 @@ function renderGallery() {
     const thumb = model.thumbnail
       ? `<img src="${model.thumbnail}" alt="Miniatura modelu ${escapeHtml(model.name)}" />`
       : `<span class="gallery-placeholder gallery-placeholder-${(index % 5) + 1}" aria-hidden="true"></span>`;
+    const meta = model.description.trim();
     card.innerHTML = `
       <div class="gallery-thumb">${thumb}</div>
       <div class="gallery-body">
         <div class="gallery-title-row">
           <div>
             <h3>${escapeHtml(model.name)}</h3>
-            <div class="gallery-meta">${escapeHtml(model.description || (model.category === "sun" ? t("sunMeta") : t("opticalMeta")))}</div>
+            ${meta ? `<div class="gallery-meta">${escapeHtml(meta)}</div>` : ""}
           </div>
           <span class="access-badge access-${modelAccessPlan(model.access)}">${accessLabel(model.access)}</span>
         </div>
@@ -2538,7 +2648,7 @@ function startModelEdit(model) {
 }
 
 function makeAutoCollectionThumbnail(title, params, category) {
-  const accent = category === "optical" ? "#df8955" : "#c96b34";
+  const accent = category === "optical" ? mixHex(state.brandSettings.accentColor, "#ffffff", 0.22) : state.brandSettings.accentColor;
   const frame = category === "optical" ? "#2c2925" : "#171512";
   const lensW = THREE.MathUtils.clamp(params.lens_width * 1.65, 74, 104);
   const lensH = THREE.MathUtils.clamp(params.lens_height * 1.55, 48, 70);
@@ -3142,6 +3252,12 @@ function saveEndpoint() {
 function loadSettings() {
   els.renderEndpoint.value = localStorage.getItem("framelab.openscadEndpoint") || "";
   state.lang = "en";
+  try {
+    const storedBrand = JSON.parse(localStorage.getItem(brandSettingsStorageKey) || "null");
+    if (storedBrand?.accentColor) state.brandSettings.accentColor = sanitizeAccentColor(storedBrand.accentColor);
+  } catch {
+    state.brandSettings.accentColor = defaultAccentColor;
+  }
   try {
     const hidden = JSON.parse(localStorage.getItem(hiddenComponentsStorageKey) || "[]");
     state.hiddenComponentIds = new Set(Array.isArray(hidden) ? hidden.map(String) : []);

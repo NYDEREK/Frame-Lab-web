@@ -70,9 +70,9 @@ button:hover,
 
 button.accent {
   border-color: var(--accent);
-  background: var(--accent);
+  background: linear-gradient(180deg, var(--accent-2), var(--accent));
   color: white;
-  box-shadow: none;
+  box-shadow: 0 0.7rem 1.4rem color-mix(in srgb, var(--accent) 20%, transparent);
 }
 
 button.ghost {
@@ -135,14 +135,16 @@ small,
 }
 
 .topbar {
-  min-height: 4.9rem;
+  min-height: 4.45rem;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
   padding: 0.9rem clamp(1rem, 2vw, 1.65rem);
   border-bottom: 1px solid var(--line);
-  background: var(--topbar-bg);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--topbar-bg) 88%, black), var(--topbar-bg)),
+    var(--topbar-bg);
   backdrop-filter: blur(10px);
   position: sticky;
   top: 0;
@@ -164,6 +166,12 @@ small,
 
 .brand {
   gap: 0.85rem;
+}
+
+.brand h1 {
+  font-size: 1rem;
+  font-weight: 850;
+  letter-spacing: 0;
 }
 
 .topbar-left {
@@ -197,6 +205,7 @@ small,
   color: var(--ink);
   border-radius: 999px;
   padding-inline: 0.95rem;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
 .account-button.developer {
@@ -212,7 +221,7 @@ small,
   place-items: center;
   padding: clamp(1rem, 3vw, 3rem);
   background:
-    radial-gradient(circle at 80% 12%, rgba(201, 107, 52, 0.16), transparent 34rem),
+    radial-gradient(circle at 80% 12%, color-mix(in srgb, var(--accent) 18%, transparent), transparent 34rem),
     rgba(5, 6, 6, 0.94);
   backdrop-filter: blur(18px);
 }
@@ -772,24 +781,15 @@ small,
   animation: heroRise 700ms ease both;
 }
 
-.hero-kicker {
-  margin-bottom: 1.1rem;
-  color: color-mix(in srgb, var(--accent-2) 80%, white);
-  font-size: 0.82rem;
-  font-weight: 900;
-  letter-spacing: 0;
-  text-transform: uppercase;
-}
-
 .hero-copy h2 {
   max-width: 12ch;
-  font-size: clamp(3.6rem, 9vw, 8.8rem);
+  font-size: clamp(3.45rem, 8.4vw, 8.4rem);
   line-height: 0.96;
   font-weight: 900;
   text-wrap: balance;
 }
 
-.hero-copy p:not(.hero-kicker) {
+.hero-copy p {
   max-width: 35rem;
   margin-top: 1.35rem;
   color: rgba(241, 238, 233, 0.74);
@@ -1249,6 +1249,8 @@ input[type="password"] {
 .license-panel {
   min-height: calc(100vh - 4.9rem);
   padding: clamp(1rem, 3vw, 3rem);
+  background:
+    linear-gradient(180deg, var(--bg), color-mix(in srgb, var(--surface) 38%, var(--bg)) 58%, var(--bg));
 }
 
 .gallery-head,
@@ -1273,21 +1275,12 @@ input[type="password"] {
 }
 
 .collection-head {
-  display: flex;
-  align-items: end;
-  justify-content: space-between;
-  gap: 1rem;
+  display: block;
   margin-bottom: 1rem;
 }
 
 .collection-head h3 {
   font-size: clamp(1.3rem, 2vw, 2rem);
-}
-
-.collection-head span {
-  color: var(--muted);
-  font-size: 0.95rem;
-  font-weight: 740;
 }
 
 .gallery-grid {
@@ -1302,8 +1295,10 @@ input[type="password"] {
   grid-template-rows: 12rem auto;
   overflow: hidden;
   border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--surface);
+  border-radius: 8px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--surface) 92%, white), var(--surface-2)),
+    var(--surface);
   box-shadow: none;
   transition: transform 180ms ease, border-color 180ms ease, background 180ms ease;
   animation: cardIn 520ms ease both;
@@ -1311,7 +1306,10 @@ input[type="password"] {
 
 .gallery-card:hover {
   transform: translateY(-3px);
-  border-color: var(--line-strong);
+  border-color: color-mix(in srgb, var(--accent) 36%, var(--line-strong));
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--surface) 88%, var(--accent-soft)), var(--surface-2)),
+    var(--surface);
 }
 
 .gallery-card.active {
@@ -1426,9 +1424,9 @@ input[type="password"] {
 }
 
 .access-pro {
-  border-color: #c96b34;
-  background: rgba(201, 107, 52, 0.12);
-  color: #df8955;
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent-2);
 }
 
 .access-studio {
@@ -1451,6 +1449,40 @@ input[type="password"] {
   border-radius: 8px;
   background: var(--surface);
   box-shadow: var(--shadow);
+}
+
+.brand-settings-card {
+  margin-bottom: 1rem;
+}
+
+.brand-settings-grid {
+  display: grid;
+  grid-template-columns: minmax(13rem, 1fr) minmax(9rem, 0.45fr) auto auto;
+  gap: 0.65rem;
+  align-items: end;
+}
+
+.accent-picker {
+  min-height: 2.55rem;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.85rem;
+  padding: 0 0.8rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: var(--subtle-bg);
+  color: var(--ink);
+  font-weight: 780;
+}
+
+.accent-picker input {
+  width: 2rem;
+  height: 2rem;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
 }
 
 .license-admin-card {
@@ -1770,6 +1802,7 @@ input[type="password"] {
   }
 
   .studio-grid,
+  .brand-settings-grid,
   .license-admin-grid,
   .license-code-item,
   .license-redeem-row,

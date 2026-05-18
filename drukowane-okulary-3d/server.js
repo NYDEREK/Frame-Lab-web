@@ -1,11 +1,12 @@
 import { createHash, randomBytes, randomInt, scryptSync, timingSafeEqual } from "node:crypto";
-import { createReadStream, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { createReadStream, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL(".", import.meta.url));
-const dataDir = join(root, "data");
+const persistentDataRoot = process.env.FRAME_LAB_DATA_DIR || process.env.RAILWAY_VOLUME_MOUNT_PATH || (existsSync("/data") ? "/data" : "");
+const dataDir = persistentDataRoot ? persistentDataRoot : join(root, "data");
 const dbPath = join(dataDir, "frame-lab-db.json");
 const port = Number(process.env.PORT || 4173);
 const adminEmails = new Set(
@@ -31,10 +32,7 @@ const mimeTypes = {
   ".stp": "model/step"
 };
 
-function defaultDb() {
-  return { users: [], sessions: [], payments: [], collections: [], downloads: [], licenseCodes: [] };
-}
-
+const defaultBrandSettings = { accentColor: "#c96b34" };
 const planRank = { free: 0, basic: 1, pro: 2, studio: 3 };
 const monthlyDownloadLimits = { free: 0, basic: 15, pro: 50, studio: null };
 const licenseCodeTypes = {
@@ -46,11 +44,27 @@ const licenseCodeTypes = {
   plus_lifetime: { label: "Plus / lifetime", plan: "studio", duration: "lifetime" }
 };
 
+function defaultDb() {
+  return { users: [], sessions: [], payments: [], collections: [], downloads: [], licenseCodes: [], settings: { ...defaultBrandSettings } };
+}
+
+function sanitizeAccentColor(value, fallback = defaultBrandSettings.accentColor) {
+  const match = String(value || "").trim().match(/^#?([0-9a-f]{6})$/i);
+  return match ? `#${match[1].toLowerCase()}` : fallback;
+}
+
+function sanitizeSettings(settings = {}) {
+  return {
+    accentColor: sanitizeAccentColor(settings.accentColor)
+  };
+}
+
 function readDb() {
   if (!existsSync(dataDir)) mkdirSync(dataDir, { recursive: true });
   if (!existsSync(dbPath)) writeFileSync(dbPath, JSON.stringify(defaultDb(), null, 2));
   try {
-    return { ...defaultDb(), ...JSON.parse(readFileSync(dbPath, "utf8")) };
+    const parsed = JSON.parse(readFileSync(dbPath, "utf8"));
+    return { ...defaultDb(), ...parsed, settings: sanitizeSettings(parsed.settings) };
   } catch {
     return defaultDb();
   }
@@ -58,7 +72,10 @@ function readDb() {
 
 function writeDb(db) {
   if (!existsSync(dataDir)) mkdirSync(dataDir, { recursive: true });
-  writeFileSync(dbPath, JSON.stringify(db, null, 2));
+  const safeDb = { ...defaultDb(), ...db, settings: sanitizeSettings(db.settings) };
+  const tmpPath = `${dbPath}.${process.pid}.tmp`;
+  writeFileSync(tmpPath, JSON.stringify(safeDb, null, 2));
+  renameSync(tmpPath, dbPath);
 }
 
 function sendJson(res, status, payload) {
@@ -355,6 +372,19 @@ async function handleApi(req, res, pathname) {
     return sendJson(res, 200, { user: publicUser(user) });
   }
 
+  if (req.method === "GET" && pathname === "/api/settings") {
+    return sendJson(res, 200, { settings: sanitizeSettings(db.settings) });
+  }
+
+  if (req.method === "PUT" && pathname === "/api/settings") {
+    const user = currentUser(req, db);
+    if (!user || user.role !== "developer") return sendJson(res, 403, { error: "Developer access is required." });
+    const body = await readBody(req);
+    db.settings = sanitizeSettings(body.settings || body);
+    writeDb(db);
+    return sendJson(res, 200, { settings: db.settings, savedAt: new Date().toISOString() });
+  }
+
   if (req.method === "GET" && pathname === "/api/collections") {
     return sendJson(res, 200, { collections: (db.collections || []).map(sanitizeCollection).filter(Boolean) });
   }
@@ -548,4 +578,5 @@ createServer(async (req, res) => {
   }
 }).listen(port, "0.0.0.0", () => {
   console.log(`Frame Lab running at http://localhost:${port}/`);
+  console.log(`Frame Lab data directory: ${dataDir}`);
 });

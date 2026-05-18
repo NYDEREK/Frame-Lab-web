@@ -292,7 +292,6 @@
             <img src="./assets/frame-lab-hero.png" alt="" />
           </figure>
           <div class="hero-copy">
-            <p class="hero-kicker" data-i18n="heroKicker">Parametric eyewear system</p>
             <h2 data-i18n="heroTitle">Your next frame is 3D printed.</h2>
             <p data-i18n="heroText">Choose a collection, combine a front with temples, and prepare a clean production kit for additive manufacturing.</p>
             <div class="hero-actions">
@@ -312,14 +311,12 @@
           <section class="collection-section">
             <div class="collection-head">
               <h3 data-i18n="sunHeading">Sunglasses</h3>
-              <span data-i18n="sunMeta">bolder frame sets</span>
             </div>
             <div id="sunGalleryGrid" class="gallery-grid"></div>
           </section>
           <section class="collection-section">
             <div class="collection-head">
               <h3 data-i18n="opticalHeading">Optical</h3>
-              <span data-i18n="opticalMeta">lighter everyday kits</span>
             </div>
             <div id="opticalGalleryGrid" class="gallery-grid"></div>
           </section>
@@ -383,6 +380,24 @@
             <h2 data-i18n="studioHeading">Add a collection to the gallery</h2>
           </div>
         </div>
+        <section class="studio-card brand-settings-card">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Brand</p>
+              <h3>Visual settings</h3>
+            </div>
+          </div>
+          <div class="brand-settings-grid">
+            <label class="accent-picker">
+              <span>Accent color</span>
+              <input id="brandAccentColor" type="color" value="#c96b34" />
+            </label>
+            <input id="brandAccentText" type="text" value="#c96b34" aria-label="Accent color hex" />
+            <button id="saveBrandSettings" type="button" class="accent">Save brand</button>
+            <button id="resetBrandSettings" type="button">Reset</button>
+          </div>
+          <p id="brandSettingsNote" class="account-note"></p>
+        </section>
         <section class="studio-card">
           <div class="studio-grid">
             <input id="collectionTitle" type="text" data-i18n-attr="placeholder:collectionTitlePlaceholder" placeholder="Collection title" />
@@ -472,6 +487,6 @@
       </section>
     </div>
 
-    <script type="module" src="./src/app.js?v=tiers-downloads-20260518-1"></script>
+    <script type="module" src="./src/app.js?v=brand-settings-20260518-1"></script>
   </body>
 </html>
