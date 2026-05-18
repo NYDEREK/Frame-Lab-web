@@ -32,7 +32,7 @@ const mimeTypes = {
 };
 
 function defaultDb() {
-  return { users: [], sessions: [], payments: [] };
+  return { users: [], sessions: [], payments: [], collections: [] };
 }
 
 function readDb() {
@@ -65,7 +65,7 @@ function readBody(req) {
     let body = "";
     req.on("data", (chunk) => {
       body += chunk;
-      if (body.length > 1_000_000) {
+      if (body.length > 20_000_000) {
         req.destroy();
         reject(new Error("Request body too large"));
       }
@@ -98,6 +98,8 @@ function publicUser(user) {
   return {
     id: user.id,
     email: user.email,
+    firstName: user.firstName || "",
+    lastName: user.lastName || "",
     role: user.role,
     plan: user.plan,
     subscriptionStatus: user.subscriptionStatus || "none",
@@ -140,6 +142,23 @@ function addOneMonth(date = new Date()) {
   return next.toISOString();
 }
 
+function sanitizeCollection(model) {
+  if (!model || typeof model !== "object") return null;
+  return {
+    id: String(model.id || randomBytes(8).toString("hex")),
+    name: String(model.name || "Frame collection").slice(0, 120),
+    category: model.category === "optical" ? "optical" : "sun",
+    access: ["free", "pro", "studio"].includes(model.access) ? model.access : "free",
+    description: String(model.description || "").slice(0, 260),
+    scadSource: String(model.scadSource || "").slice(0, 500_000),
+    params: model.params && typeof model.params === "object" ? model.params : {},
+    thumbnail: typeof model.thumbnail === "string" ? model.thumbnail : "",
+    components: model.components && typeof model.components === "object" ? model.components : null,
+    createdAt: Number(model.createdAt) || Date.now(),
+    updatedAt: Number(model.updatedAt) || Date.now()
+  };
+}
+
 async function handleApi(req, res, pathname) {
   const db = readDb();
 
@@ -147,17 +166,25 @@ async function handleApi(req, res, pathname) {
     const body = await readBody(req);
     const email = String(body.email || "").trim().toLowerCase();
     const password = String(body.password || "");
+    const mode = body.mode === "register" ? "register" : "login";
+    const firstName = String(body.firstName || "").trim().slice(0, 80);
+    const lastName = String(body.lastName || "").trim().slice(0, 80);
     if (!email || password.length < 6) return sendJson(res, 400, { error: "Email and a password with at least 6 characters are required." });
     let user = db.users.find((item) => item.email === email);
     if (user) {
+      if (mode === "register") return sendJson(res, 409, { error: "This email already has an account. Use login instead." });
       if (!verifyPassword(password, user.passwordHash)) return sendJson(res, 401, { error: "Incorrect password." });
       user.role = userRole(email);
       user.plan = planForUser(email, user.plan);
       user.updatedAt = new Date().toISOString();
     } else {
+      if (mode !== "register") return sendJson(res, 404, { error: "Account not found. Create an account first." });
+      if (!firstName || !lastName) return sendJson(res, 400, { error: "First and last name are required." });
       user = {
         id: randomBytes(12).toString("hex"),
         email,
+        firstName,
+        lastName,
         passwordHash: passwordHash(password),
         role: userRole(email),
         plan: planForUser(email, "free"),
@@ -178,6 +205,20 @@ async function handleApi(req, res, pathname) {
     const user = currentUser(req, db);
     if (!user) return sendJson(res, 401, { error: "No active session." });
     return sendJson(res, 200, { user: publicUser(user) });
+  }
+
+  if (req.method === "GET" && pathname === "/api/collections") {
+    return sendJson(res, 200, { collections: (db.collections || []).map(sanitizeCollection).filter(Boolean) });
+  }
+
+  if (req.method === "PUT" && pathname === "/api/collections") {
+    const user = currentUser(req, db);
+    if (!user || user.role !== "developer") return sendJson(res, 403, { error: "Developer access is required." });
+    const body = await readBody(req);
+    const collections = Array.isArray(body.collections) ? body.collections : [];
+    db.collections = collections.map(sanitizeCollection).filter(Boolean).slice(0, 100);
+    writeDb(db);
+    return sendJson(res, 200, { collections: db.collections, savedAt: new Date().toISOString() });
   }
 
   if (req.method === "POST" && pathname === "/api/auth/sign-out") {

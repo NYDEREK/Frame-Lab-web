@@ -292,6 +292,51 @@ small,
   text-transform: uppercase;
 }
 
+.auth-mode {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.35rem;
+  padding: 0.25rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--subtle-bg);
+}
+
+.auth-mode button {
+  min-height: 2.45rem;
+  border-radius: 999px;
+}
+
+.auth-mode button.active {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #160b03;
+}
+
+.name-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+}
+
+.password-field {
+  position: relative;
+}
+
+.password-field input {
+  padding-right: 4.6rem;
+}
+
+.password-field button {
+  position: absolute;
+  right: 0.42rem;
+  bottom: 0.42rem;
+  min-height: 2.2rem;
+  padding-inline: 0.75rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+}
+
 .plans-card {
   width: min(82rem, calc(100vw - 2rem));
   min-height: auto;

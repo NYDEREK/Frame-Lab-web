@@ -15,7 +15,7 @@
         document.documentElement.dataset.appError = event.reason?.message || String(event.reason || "promise");
       });
     </script>
-    <link rel="stylesheet" href="./styles.css?v=backend-plans-20260518-1" />
+    <link rel="stylesheet" href="./styles.css?v=studio-polish-20260518-1" />
     <script type="importmap">
       {
         "imports": {
@@ -42,26 +42,45 @@
           <div class="auth-copy">
             <p class="eyebrow" data-i18n="accountKicker">Account</p>
             <h2 data-i18n="accountHeading">Frame Lab access</h2>
-            <p>Save collections, unlock production exports, and manage future orders from one account.</p>
           </div>
           <div class="auth-form" role="form" aria-label="Login or sign up">
             <div class="section-head">
               <div>
                 <p class="eyebrow">Secure access</p>
-                <h3>Login / Sign up</h3>
+                <h3 id="authTitle">Login</h3>
               </div>
               <button id="closeAccountPanel" type="button" class="compact ghost" data-i18n="closeAccount">Close</button>
+            </div>
+            <div class="auth-mode" role="tablist" aria-label="Account mode">
+              <button type="button" class="active" data-auth-mode="login">Login</button>
+              <button type="button" data-auth-mode="register">Create account</button>
+            </div>
+            <div id="nameFields" class="name-grid" hidden>
+              <label class="auth-field">
+                <span>First name</span>
+                <input id="accountFirstName" type="text" autocomplete="given-name" placeholder="First name" />
+              </label>
+              <label class="auth-field">
+                <span>Last name</span>
+                <input id="accountLastName" type="text" autocomplete="family-name" placeholder="Last name" />
+              </label>
             </div>
             <label class="auth-field">
               <span>Email</span>
               <input id="accountEmail" type="email" autocomplete="email" data-i18n-attr="placeholder:accountEmailPlaceholder" placeholder="you@example.com" />
             </label>
-            <label class="auth-field">
+            <label class="auth-field password-field">
               <span>Password</span>
               <input id="accountPassword" type="password" autocomplete="current-password" placeholder="Password" />
+              <button type="button" data-password-toggle="accountPassword">Show</button>
+            </label>
+            <label id="confirmPasswordField" class="auth-field password-field" hidden>
+              <span>Confirm password</span>
+              <input id="accountPasswordConfirm" type="password" autocomplete="new-password" placeholder="Repeat password" />
+              <button type="button" data-password-toggle="accountPasswordConfirm">Show</button>
             </label>
             <div class="account-actions">
-              <button id="signInAccount" type="button" class="accent" data-i18n="signInAccount">Login / Sign up</button>
+              <button id="signInAccount" type="button" class="accent" data-i18n="signInAccount">Login</button>
               <button id="signOutAccount" type="button" data-i18n="signOutAccount">Sign out</button>
             </div>
             <div class="oauth-actions" aria-label="Social login">
@@ -82,6 +101,7 @@
               <span class="profile-avatar" aria-hidden="true">FL</span>
               <div>
                 <strong id="profileEmail">account</strong>
+                <small id="profileName">Customer</small>
                 <small id="profileRole">Customer account</small>
               </div>
             </div>
@@ -223,7 +243,6 @@
       <header class="topbar">
         <div class="topbar-left">
           <div class="brand">
-            <div class="mark" aria-hidden="true">FL</div>
             <div>
               <p class="eyebrow" data-i18n="brandKicker"></p>
               <h1>Frame Lab</h1>
@@ -237,7 +256,7 @@
         </div>
         <div class="topbar-controls">
           <button id="plansButton" type="button" class="nav-action">Plans</button>
-          <button id="accountButton" type="button" class="account-button">Login / Sign up</button>
+          <button id="accountButton" type="button" class="account-button">Login</button>
           <button id="openConfigurator" type="button" class="hidden-utility" hidden>Editor</button>
         </div>
       </header>
@@ -317,12 +336,12 @@
             </div>
             <div class="action-grid">
               <button id="generate3mf" type="button" class="accent" data-i18n="generate3mf">3MF</button>
-              <button id="generateStl" type="button" data-i18n="generateStl">STL</button>
-              <button id="downloadAssembly" type="button" data-i18n="downloadAssembly">Download kit</button>
-              <button id="saveCurrentModel" type="button" data-i18n="saveModel">Save model</button>
-              <button id="exportScad" type="button" data-i18n="exportScad">.scad</button>
-              <button id="exportJson" type="button" data-i18n="exportJson">JSON</button>
-              <button id="copyScad" type="button" data-i18n="copyScad">Copy</button>
+              <button id="generateStl" class="hidden-utility" hidden type="button" data-i18n="generateStl">STL</button>
+              <button id="downloadAssembly" class="hidden-utility" hidden type="button" data-i18n="downloadAssembly">Download kit</button>
+              <button id="saveCurrentModel" class="hidden-utility" hidden type="button" data-i18n="saveModel">Save model</button>
+              <button id="exportScad" class="hidden-utility" hidden type="button" data-i18n="exportScad">.scad</button>
+              <button id="exportJson" class="hidden-utility" hidden type="button" data-i18n="exportJson">JSON</button>
+              <button id="copyScad" class="hidden-utility" hidden type="button" data-i18n="copyScad">Copy</button>
             </div>
             <pre id="importLog" class="import-log" data-i18n="readyLog">Ready.</pre>
           </section>
@@ -357,7 +376,7 @@
               <input id="collectionImageInput" type="file" accept="image/*" />
               <span data-i18n="chooseImage">Photo</span>
             </label>
-            <label class="file-button" for="galleryScadInput">
+            <label class="file-button hidden-utility" hidden for="galleryScadInput">
               <input id="galleryScadInput" type="file" accept=".scad,.txt" />
               <span data-i18n="addScad">Plik .scad</span>
             </label>
@@ -403,6 +422,6 @@
       </section>
     </div>
 
-    <script type="module" src="./src/app.js?v=backend-plans-20260518-1"></script>
+    <script type="module" src="./src/app.js?v=studio-polish-20260518-1"></script>
   </body>
 </html>

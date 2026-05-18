@@ -29,7 +29,7 @@ const translations = {
     accountKicker: "Account",
     accountHeading: "Frame Lab access",
     accountEmailPlaceholder: "you@example.com",
-    signInAccount: "Login / Sign up",
+    signInAccount: "Login",
     signOutAccount: "Sign out",
     closeAccount: "Close",
     accountFreeNote: "Free: access to selected starter models.",
@@ -97,7 +97,7 @@ const translations = {
     scadFile: ".scad file",
     open: "Configure",
     variants: "Options",
-    export: "Export .scad",
+    export: "Export",
     delete: "Delete",
     parametersDetected: "params",
     param_head_width_label: "Head width",
@@ -344,6 +344,8 @@ const state = {
   lang: "en",
   account: {
     email: "",
+    firstName: "",
+    lastName: "",
     plan: "free",
     role: "visitor",
     subscriptionMode: "free",
@@ -352,6 +354,7 @@ const state = {
   },
   pendingPlan: "pro",
   pendingPaymentMode: "one_time",
+  authMode: "login",
   editingModelId: null,
   cropImage: null,
   croppedCollectionImage: "",
@@ -389,12 +392,21 @@ const els = {
   paymentPanel: document.querySelector("#paymentPanel"),
   accountButton: document.querySelector("#accountButton"),
   plansButton: document.querySelector("#plansButton"),
+  authTitle: document.querySelector("#authTitle"),
+  authModeButtons: document.querySelectorAll("[data-auth-mode]"),
+  nameFields: document.querySelector("#nameFields"),
+  accountFirstName: document.querySelector("#accountFirstName"),
+  accountLastName: document.querySelector("#accountLastName"),
   accountEmail: document.querySelector("#accountEmail"),
   accountPassword: document.querySelector("#accountPassword"),
+  accountPasswordConfirm: document.querySelector("#accountPasswordConfirm"),
+  confirmPasswordField: document.querySelector("#confirmPasswordField"),
+  passwordToggleButtons: document.querySelectorAll("[data-password-toggle]"),
   accountNote: document.querySelector("#accountNote"),
   authForm: document.querySelector(".auth-form"),
   accountProfile: document.querySelector("#accountProfile"),
   profileEmail: document.querySelector("#profileEmail"),
+  profileName: document.querySelector("#profileName"),
   profileRole: document.querySelector("#profileRole"),
   profilePlan: document.querySelector("#profilePlan"),
   profileStatus: document.querySelector("#profileStatus"),
@@ -482,6 +494,7 @@ let modelBasePosition = new THREE.Vector3(0, 8, 0);
 let dragState = null;
 let triangleCount = 0;
 let persistTimer = null;
+let backendPersistTimer = null;
 let cameraZoomScale = 1;
 let componentPreviewRenderers = [];
 let sharedComponentPreviewRenderer = null;
@@ -500,7 +513,7 @@ async function init() {
   }
   await hydrateUploadedComponentMeshes();
   rebuildComponentLibrary();
-  state.models = loadStoredModels();
+  state.models = await loadStoredModels();
   selectModel(state.models[0]?.id || defaultModelId, { rebuildControls: false, renderScene: false, logSelection: false });
   applyAssemblyToParams();
   buildBuilderControls();
@@ -629,6 +642,12 @@ function bindUi() {
   });
   els.closePaymentPanel.addEventListener("click", () => {
     els.paymentPanel.hidden = true;
+  });
+  els.authModeButtons.forEach((button) => {
+    button.addEventListener("click", () => setAuthMode(button.dataset.authMode === "register" ? "register" : "login"));
+  });
+  els.passwordToggleButtons.forEach((button) => {
+    button.addEventListener("click", () => togglePasswordVisibility(button));
   });
   els.signInAccount.addEventListener("click", () => signInAccount());
   els.accountPanel.addEventListener("keydown", (event) => {
@@ -1361,18 +1380,42 @@ function createDefaultModel() {
   };
 }
 
-function loadStoredModels() {
+async function loadStoredModels() {
   try {
     const parsed = JSON.parse(localStorage.getItem(modelStorageKey) || "[]");
     const stored = Array.isArray(parsed)
       ? parsed.map(normalizeStoredModel).filter((model) => model && !legacyModelIds.has(model.id))
       : [];
-    const merged = mergeSeedCollections(stored);
+    const remote = await fetchBackendCollections();
+    const merged = mergeSeedCollections(mergeModelCollections(stored, remote));
     localStorage.setItem(modelStorageKey, JSON.stringify(merged));
     return merged;
   } catch {
-    return mergeSeedCollections([]);
+    const remote = await fetchBackendCollections();
+    return mergeSeedCollections(remote);
   }
+}
+
+async function fetchBackendCollections() {
+  try {
+    const payload = await apiRequest("/api/collections");
+    return Array.isArray(payload.collections)
+      ? payload.collections.map(normalizeStoredModel).filter(Boolean)
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function mergeModelCollections(localModels, remoteModels) {
+  const byId = new Map();
+  [...localModels, ...remoteModels].forEach((model) => {
+    const existing = byId.get(model.id);
+    if (!existing || Number(model.updatedAt || 0) >= Number(existing.updatedAt || 0)) {
+      byId.set(model.id, model);
+    }
+  });
+  return [...byId.values()];
 }
 
 function mergeSeedCollections(stored) {
@@ -1426,8 +1469,27 @@ function normalizeStoredModel(model) {
   };
 }
 
-function persistModels() {
+function persistModels(options = {}) {
   localStorage.setItem(modelStorageKey, JSON.stringify(state.models));
+  if (options.syncBackend !== false) scheduleCollectionsBackendSync();
+}
+
+function scheduleCollectionsBackendSync() {
+  if (!isDeveloper() || !sessionToken()) return;
+  clearTimeout(backendPersistTimer);
+  backendPersistTimer = setTimeout(() => {
+    syncCollectionsToBackend().catch((error) => log(error.message || "Could not save collections to backend."));
+  }, 800);
+}
+
+async function syncCollectionsToBackend(options = {}) {
+  if (!isDeveloper() || !sessionToken()) return false;
+  await apiRequest("/api/collections", {
+    method: "PUT",
+    body: JSON.stringify({ collections: state.models })
+  });
+  if (options.announce) log("Studio changes saved to backend.");
+  return true;
 }
 
 function currentModelRecord() {
@@ -1515,9 +1577,11 @@ async function apiRequest(path, options = {}) {
 }
 
 function accountFromUser(user) {
-  if (!user) return { email: "", plan: "free", role: "visitor", subscriptionMode: "free", subscriptionStatus: "none", planEndsAt: null };
+  if (!user) return { email: "", firstName: "", lastName: "", plan: "free", role: "visitor", subscriptionMode: "free", subscriptionStatus: "none", planEndsAt: null };
   return {
     email: String(user.email || "").toLowerCase(),
+    firstName: String(user.firstName || ""),
+    lastName: String(user.lastName || ""),
     plan: ["free", "pro", "studio"].includes(user.plan) ? user.plan : "free",
     role: user.role === "developer" ? "developer" : "customer",
     subscriptionMode: user.subscriptionMode || "free",
@@ -1562,8 +1626,28 @@ function accessLabel(access) {
 
 function accountLabel() {
   if (isDeveloper()) return "Developer";
-  if (state.account.role === "visitor" || !state.account.email) return "Login / Sign up";
+  if (state.account.role === "visitor" || !state.account.email) return "Login";
   return "Account";
+}
+
+function setAuthMode(mode) {
+  state.authMode = mode === "register" ? "register" : "login";
+  const isRegister = state.authMode === "register";
+  els.authModeButtons.forEach((button) => button.classList.toggle("active", button.dataset.authMode === state.authMode));
+  els.nameFields.hidden = !isRegister;
+  els.confirmPasswordField.hidden = !isRegister;
+  els.authTitle.textContent = isRegister ? "Create account" : "Login";
+  els.signInAccount.textContent = isRegister ? "Create account" : "Login";
+  els.accountPassword.autocomplete = isRegister ? "new-password" : "current-password";
+  els.accountNote.textContent = "";
+}
+
+function togglePasswordVisibility(button) {
+  const input = document.querySelector(`#${button.dataset.passwordToggle}`);
+  if (!input) return;
+  const visible = input.type === "text";
+  input.type = visible ? "password" : "text";
+  button.textContent = visible ? "Show" : "Hide";
 }
 
 function updateAccountUi() {
@@ -1577,8 +1661,10 @@ function updateAccountUi() {
   els.authForm.hidden = signedIn;
   els.accountProfile.hidden = !signedIn;
   els.cancelSubscription.hidden = true;
+  if (!signedIn) setAuthMode(state.authMode);
   if (signedIn) {
     els.profileEmail.textContent = state.account.email;
+    els.profileName.textContent = [state.account.firstName, state.account.lastName].filter(Boolean).join(" ") || "Customer";
     els.profileRole.textContent = isDeveloper() ? "Developer account" : "Customer account";
     els.profilePlan.textContent = accessLabel(state.account.plan);
     els.profileStatus.textContent = subscriptionStatusLabel();
@@ -1614,15 +1700,32 @@ function subscriptionStatusLabel() {
 async function signInAccount() {
   const email = els.accountEmail.value.trim().toLowerCase();
   const password = els.accountPassword.value;
+  const passwordConfirm = els.accountPasswordConfirm.value;
+  const firstName = els.accountFirstName.value.trim();
+  const lastName = els.accountLastName.value.trim();
   if (!email || !password) {
     els.accountNote.textContent = "Enter email and password to continue.";
     return;
+  }
+  if (state.authMode === "register") {
+    if (!firstName || !lastName) {
+      els.accountNote.textContent = "Enter first and last name.";
+      return;
+    }
+    if (password.length < 6) {
+      els.accountNote.textContent = "Password must have at least 6 characters.";
+      return;
+    }
+    if (password !== passwordConfirm) {
+      els.accountNote.textContent = "Passwords do not match.";
+      return;
+    }
   }
   try {
     els.accountNote.textContent = "Connecting to Frame Lab backend...";
     const payload = await apiRequest("/api/auth/email", {
       method: "POST",
-      body: JSON.stringify({ email, password })
+      body: JSON.stringify({ email, password, mode: state.authMode, firstName, lastName })
     });
     localStorage.setItem(sessionStorageKey, payload.token);
     state.account = accountFromUser(payload.user);
@@ -1633,6 +1736,7 @@ async function signInAccount() {
   persistActiveAccount();
   updateAccountUi();
   els.accountPassword.value = "";
+  els.accountPasswordConfirm.value = "";
   els.accountPanel.hidden = true;
   if (!isDeveloper()) els.plansPanel.hidden = false;
   log(`${email || "account"}: ${accountLabel()}.`);
@@ -1651,6 +1755,9 @@ async function signOutAccount() {
   els.accountPanel.hidden = true;
   els.paymentPanel.hidden = true;
   els.accountPassword.value = "";
+  els.accountPasswordConfirm.value = "";
+  els.accountFirstName.value = "";
+  els.accountLastName.value = "";
   setActiveSection("home");
   updateAccountUi();
   log("Signed out.");
@@ -1769,6 +1876,8 @@ function upsertAccountProfile(account) {
   const existing = profiles[email] || {};
   const profile = {
     email,
+    firstName: String(account.firstName || existing.firstName || ""),
+    lastName: String(account.lastName || existing.lastName || ""),
     role: isAdminEmail(email) ? "developer" : (account.role === "developer" ? "developer" : "customer"),
     plan: isAdminEmail(email) ? "studio" : (["free", "pro", "studio"].includes(account.plan) ? account.plan : "free"),
     subscriptionMode: account.subscriptionMode || existing.subscriptionMode || "free",
@@ -1781,6 +1890,8 @@ function upsertAccountProfile(account) {
   localStorage.setItem(accountProfilesStorageKey, JSON.stringify(profiles));
   return {
     email: profile.email,
+    firstName: profile.firstName,
+    lastName: profile.lastName,
     role: profile.role,
     plan: profile.plan,
     subscriptionMode: profile.subscriptionMode,
@@ -1818,7 +1929,6 @@ function renderGallery() {
         </div>
         <div class="gallery-actions">
           <button type="button" class="accent" data-action="${locked ? "upgrade" : "open"}">${locked ? t("upgrade") : t("open")}</button>
-          <button type="button" data-action="export">${t("export")}</button>
           ${isDeveloper() ? `<button type="button" data-action="edit">Edit</button>` : ""}
           ${isDeveloper() && model.id !== defaultModelId ? `<button type="button" class="delete-button" data-action="delete">${t("delete")}</button>` : ""}
         </div>
@@ -1944,7 +2054,8 @@ async function addCollectionFromStudio() {
   } else {
     state.models.unshift(model);
   }
-  persistModels();
+  persistModels({ syncBackend: false });
+  await syncCollectionsToBackend({ announce: true }).catch((error) => log(error.message || "Could not save collection to backend."));
   selectModel(model.id, { logSelection: false, captureThumbnail: !thumbnail });
   renderGallery();
   clearCollectionForm();
@@ -2554,6 +2665,8 @@ function loadSettings() {
       const email = String(storedAccount.email || "").toLowerCase();
       const profile = accountProfile(email);
       state.account.email = email;
+      state.account.firstName = profile?.firstName || storedAccount.firstName || "";
+      state.account.lastName = profile?.lastName || storedAccount.lastName || "";
       state.account.role = isAdminEmail(email) ? "developer" : (profile?.role || storedAccount.role) === "customer" ? "customer" : "visitor";
       state.account.plan = state.account.role === "developer" ? "studio" : (["free", "pro", "studio"].includes(profile?.plan || storedAccount.plan) ? (profile?.plan || storedAccount.plan) : "free");
       state.account.subscriptionMode = profile?.subscriptionMode || storedAccount.subscriptionMode || "free";
