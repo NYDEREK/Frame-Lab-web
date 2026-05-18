@@ -243,7 +243,7 @@ function sanitizeCollection(model) {
     description: String(model.description || "").slice(0, 260),
     scadSource: String(model.scadSource || "").slice(0, 500_000),
     params: model.params && typeof model.params === "object" ? model.params : {},
-    lensMode: ["open", "perforated", "cut-template"].includes(model.lensMode) ? model.lensMode : "cut-template",
+    lensMode: ["none", "component"].includes(model.lensMode) ? model.lensMode : "none",
     thumbnail: typeof model.thumbnail === "string" ? model.thumbnail : "",
     components: model.components && typeof model.components === "object" ? model.components : null,
     createdAt: Number(model.createdAt) || Date.now(),
@@ -261,8 +261,8 @@ function sanitizeDownload(item, userId) {
     modelId: String(item.modelId || "").slice(0, 120),
     modelName: String(item.modelName || "Frame Lab model").slice(0, 140),
     plan: normalizeAccess(item.plan),
-    lensMode: ["open", "perforated", "cut-template"].includes(item.lensMode) ? item.lensMode : "cut-template",
-    lensLabel: String(item.lensLabel || "Cut template").slice(0, 80),
+    lensMode: ["none", "component"].includes(item.lensMode) ? item.lensMode : "none",
+    lensLabel: String(item.lensLabel || "No lenses").slice(0, 80),
     configuration: item.configuration && typeof item.configuration === "object" ? item.configuration : {},
     createdAt: Number.isNaN(createdAt.getTime()) ? new Date().toISOString() : createdAt.toISOString()
   };

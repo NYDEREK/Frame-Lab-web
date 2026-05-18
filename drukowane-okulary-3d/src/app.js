@@ -91,6 +91,8 @@ const translations = {
     componentNamePlaceholder: "Component name",
     connectorPlaceholder: "Connector",
     templeComponent: "Temple",
+    lensComponent: "Lens",
+    noLensComponent: "No lens model selected",
     chooseCadFile: "Choose 3MF / STEP",
     addComponentFile: "Add component",
     noComponents: "No STEP/3MF files added yet.",
@@ -154,24 +156,6 @@ const licenseCodeTypes = {
   pro_lifetime: { label: "Pro / lifetime", plan: "pro", duration: "lifetime" },
   plus_lifetime: { label: "Plus / lifetime", plan: "studio", duration: "lifetime" }
 };
-const lensOptions = [
-  {
-    id: "open",
-    label: "Open frame",
-    note: "No lens geometry"
-  },
-  {
-    id: "perforated",
-    label: "Printed perforated",
-    note: "Printable insert with ventilation holes"
-  },
-  {
-    id: "cut-template",
-    label: "Cut template",
-    note: "Thin insert for transparent sheet cutting"
-  }
-];
-
 const seedCollections = [
   {
     id: defaultModelId,
@@ -185,7 +169,8 @@ const seedCollections = [
 
 const baseComponentLibrary = {
   fronts: [],
-  temples: []
+  temples: [],
+  lenses: []
 };
 
 const legacyModelIds = new Set([
@@ -203,7 +188,8 @@ const legacyModelIds = new Set([
 
 const componentLibrary = {
   fronts: [],
-  temples: []
+  temples: [],
+  lenses: []
 };
 
 const sampleScad = `// Frame Lab OpenSCAD eyewear template
@@ -382,7 +368,7 @@ const state = {
   pendingPlan: "basic",
   pendingPaymentMode: "one_time",
   authMode: "login",
-  lensMode: "cut-template",
+  lensMode: "none",
   downloads: [],
   downloadQuota: null,
   licenseCodes: [],
@@ -394,12 +380,14 @@ const state = {
   componentColors: {
     front: "",
     leftTemple: "",
-    rightTemple: ""
+    rightTemple: "",
+    lens: ""
   },
   assembly: {
     front: { modelId: "frame001-front", size: "M" },
     leftTemple: { modelId: "frame001-temple-left", size: "M" },
-    rightTemple: { modelId: "frame001-temple-right", size: "M" }
+    rightTemple: { modelId: "frame001-temple-right", size: "M" },
+    lens: { modelId: "", size: "M" }
   }
 };
 
@@ -616,17 +604,6 @@ function bindUi() {
   });
 
   els.builderControls.addEventListener("change", (event) => {
-    const lensInput = event.target.closest("[data-lens-mode]");
-    if (lensInput) {
-      state.lensMode = validLensMode(lensInput.value);
-      buildBuilderControls();
-      updateGeneratedSource();
-      render();
-      syncActiveModel({ persist: false });
-      scheduleModelPersist();
-      return;
-    }
-
     const colorInput = event.target.closest("[data-component-color]");
     if (colorInput) {
       state.componentColors[colorInput.dataset.componentColor] = colorInput.value;
@@ -883,43 +860,52 @@ function buildBuilderControls() {
   const parts = [
     { key: "front", label: t("frontComponent"), items: componentLibrary.fronts },
     { key: "leftTemple", label: t("leftTempleComponent"), items: componentLibrary.temples },
-    { key: "rightTemple", label: t("rightTempleComponent"), items: componentLibrary.temples }
+    { key: "rightTemple", label: t("rightTempleComponent"), items: componentLibrary.temples },
+    { key: "lens", label: t("lensComponent"), items: componentLibrary.lenses, optional: true }
   ];
-  els.builderControls.innerHTML = `${lensControlTemplate()}${parts.map((part) => componentCardTemplate(part)).join("")}`;
+  els.builderControls.innerHTML = parts.map((part) => componentCardTemplate(part)).join("");
   renderComponentPreviews(parts);
   renderComponentFileList();
 }
 
-function lensControlTemplate() {
-  const active = lensOption();
-  return `
-    <article class="component-card lens-card">
-      <div class="component-head">
-        <div>
-          <strong>Lenses</strong>
-          <small>${escapeHtml(active.label)} · ${escapeHtml(active.note)}</small>
-        </div>
-      </div>
-      <div class="lens-options" role="radiogroup" aria-label="Lens type">
-        ${lensOptions.map((option) => `
-          <label class="lens-option${option.id === state.lensMode ? " active" : ""}">
-            <input type="radio" name="lensMode" value="${option.id}" data-lens-mode ${option.id === state.lensMode ? "checked" : ""} />
-            <span>
-              <strong>${escapeHtml(option.label)}</strong>
-              <small>${escapeHtml(option.note)}</small>
-            </span>
-          </label>
-        `).join("")}
-      </div>
-    </article>
-  `;
-}
-
 function componentCardTemplate(part) {
   const selection = state.assembly[part.key];
-  const selectedModel = part.items.find((item) => item.id === selection.modelId) || part.items[0];
+  const selectedModel = part.items.find((item) => item.id === selection.modelId) || (part.optional ? null : part.items[0]);
+  if (!selectedModel && part.items.length === 0) {
+    return `
+      <article class="component-card">
+        <div class="component-head">
+          <div>
+            <strong>${escapeHtml(part.label)}</strong>
+            <small>${t("noLensComponent")}</small>
+          </div>
+        </div>
+        <div class="compatibility-note">Add a ${escapeHtml(part.label)} component to make it available in this selector.</div>
+      </article>
+    `;
+  }
+  if (!selectedModel && part.optional) {
+    const options = [noLensOptionTemplate(part), ...part.items.map((item) => optionCardTemplate(part, item, false))].join("");
+    return `
+      <article class="component-card">
+        <div class="component-head">
+          <div>
+            <strong>${escapeHtml(part.label)}</strong>
+            <small>${t("noLensComponent")}</small>
+          </div>
+        </div>
+        <details class="component-options">
+          <summary>${t("variants")} (${part.items.length})</summary>
+          <div class="component-option-grid">${options}</div>
+        </details>
+      </article>
+    `;
+  }
   const availableSizes = Object.keys(selectedModel.sizes);
-  const options = part.items.map((item) => optionCardTemplate(part, item, item.id === selectedModel.id)).join("");
+  const options = [
+    ...(part.optional ? [noLensOptionTemplate(part)] : []),
+    ...part.items.map((item) => optionCardTemplate(part, item, item.id === selectedModel.id))
+  ].join("");
   const color = state.componentColors[part.key] || selectedModel.materialColor || state.frameColor;
   const sizes = ["S", "M", "L"].map((size) => `
     <button type="button" class="size-chip${selection.size === size ? " active" : ""}" data-component-size="${part.key}" data-size="${size}" ${availableSizes.includes(size) ? "" : "disabled"}>
@@ -953,10 +939,28 @@ function optionCardTemplate(part, item, active) {
       <canvas class="component-option-canvas" data-option-preview="${part.key}:${item.id}" aria-label="${escapeHtml(item.name)} 3D"></canvas>
       <span class="component-option-main">
         <strong>${escapeHtml(item.name)}</strong>
-        <small>${part.key === "front" ? t("frontComponent") : t("templeComponent")} · ${firstAvailableSize}</small>
+        <small>${escapeHtml(componentTypeLabel(part.key))} · ${firstAvailableSize}</small>
       </span>
     </button>
   `;
+}
+
+function noLensOptionTemplate(part) {
+  return `
+    <button type="button" class="component-option${state.assembly[part.key].modelId ? "" : " active"} component-option-empty" data-component-option="${part.key}" data-model-id="">
+      <span class="component-option-placeholder"></span>
+      <span class="component-option-main">
+        <strong>${t("noLensComponent")}</strong>
+        <small>${t("lensComponent")}</small>
+      </span>
+    </button>
+  `;
+}
+
+function componentTypeLabel(keyOrKind) {
+  if (keyOrKind === "front") return t("frontComponent");
+  if (keyOrKind === "lens") return t("lensComponent");
+  return t("templeComponent");
 }
 
 function disposeComponentPreviews() {
@@ -998,9 +1002,19 @@ function renderComponentPreviewCanvas(canvas, key, item) {
 
   const group = item.meshObject
     ? makeUploadedPreviewMesh(item)
-    : key === "front" ? makeFrontPreviewMesh(item) : makeTemplePreviewMesh(item, key === "leftTemple" ? -1 : 1);
+    : key === "front" ? makeFrontPreviewMesh(item) : key === "lens" ? new THREE.Group() : makeTemplePreviewMesh(item, key === "leftTemple" ? -1 : 1);
   previewScene.add(group);
   const box = new THREE.Box3().setFromObject(group);
+  if (box.isEmpty()) {
+    previewRenderer.render(previewScene, previewCamera);
+    const ctx = canvas.getContext("2d");
+    if (ctx) {
+      canvas.width = Math.round(width * Math.min(window.devicePixelRatio, 2));
+      canvas.height = Math.round(height * Math.min(window.devicePixelRatio, 2));
+      ctx.drawImage(previewRenderer.domElement, 0, 0, canvas.width, canvas.height);
+    }
+    return;
+  }
   const sphere = box.getBoundingSphere(new THREE.Sphere());
   const distance = Math.max(55, sphere.radius * 2.35);
   previewCamera.position.set(sphere.center.x + sphere.radius * 0.4, sphere.center.y + sphere.radius * 0.35, sphere.center.z + distance);
@@ -1086,9 +1100,12 @@ function applyAssemblyToParams() {
   const front = selectedFront();
   const leftTemple = selectedTemple("leftTemple");
   const rightTemple = selectedTemple("rightTemple");
+  const lens = selectedLens();
+  if (!front || !leftTemple || !rightTemple) return;
   normalizeAssemblySize("front", front);
   normalizeAssemblySize("leftTemple", leftTemple);
   normalizeAssemblySize("rightTemple", rightTemple);
+  if (lens) normalizeAssemblySize("lens", lens);
   const frontSize = front.sizes[state.assembly.front.size] || firstSize(front);
   const leftSize = leftTemple.sizes[state.assembly.leftTemple.size] || firstSize(leftTemple);
   const rightSize = rightTemple.sizes[state.assembly.rightTemple.size] || firstSize(rightTemple);
@@ -1122,11 +1139,16 @@ function selectedTemple(key) {
   return componentLibrary.temples.find((item) => item.id === state.assembly[key].modelId) || componentLibrary.temples[0];
 }
 
+function selectedLens() {
+  return componentLibrary.lenses.find((item) => item.id === state.assembly.lens.modelId) || null;
+}
+
 function rebuildComponentLibrary() {
   componentLibrary.fronts = structuredClone(baseComponentLibrary.fronts);
   componentLibrary.temples = structuredClone(baseComponentLibrary.temples);
+  componentLibrary.lenses = structuredClone(baseComponentLibrary.lenses);
   state.uploadedComponents.filter((component) => !state.hiddenComponentIds.has(component.id)).forEach((component) => {
-    const target = component.kind === "front" ? componentLibrary.fronts : componentLibrary.temples;
+    const target = component.kind === "front" ? componentLibrary.fronts : component.kind === "lens" ? componentLibrary.lenses : componentLibrary.temples;
     target.push(componentToLibraryItem(component));
   });
 }
@@ -1139,6 +1161,8 @@ function componentToLibraryItem(component) {
         lens_width: component.size === "S" ? 49 : component.size === "L" ? 55 : 52,
         lens_height: component.size === "S" ? 35 : component.size === "L" ? 39 : 37
       }
+    : component.kind === "lens"
+      ? {}
     : {
         temple_length: component.size === "S" ? 135 : component.size === "L" ? 155 : 145,
         temple_drop: component.size === "S" ? 22 : component.size === "L" ? 36 : 30,
@@ -1147,6 +1171,7 @@ function componentToLibraryItem(component) {
   return {
     id: component.id,
     name: component.name,
+    kind: component.kind,
     connector: component.connector,
     source: component.source || "uploaded",
     fileName: component.fileName,
@@ -1174,7 +1199,7 @@ function renderComponentFileList() {
         <small>${escapeHtml(component.analysis?.summary || "")}</small>
       </div>
       ${component.materialColor || component.analysis?.materialColor ? `<span class="material-swatch" style="--swatch:${escapeHtml(component.materialColor || component.analysis.materialColor)}">${escapeHtml(component.materialColor || component.analysis.materialColor)}</span>` : ""}
-      <span class="status">${component.kind === "front" ? t("frontComponent") : t("templeComponent")}</span>
+      <span class="status">${escapeHtml(componentTypeLabel(component.kind))}</span>
       <span class="status">${component.size} · ${component.connector}</span>
       <small>${component.format.toUpperCase()} · ${component.source === "asset" ? "Test asset" : t("storedLocally")}</small>
       ${isDeveloper() ? `<button type="button" class="compact delete-button" data-component-delete="${component.id}">Delete</button>` : ""}
@@ -1196,8 +1221,8 @@ async function deleteComponent(id) {
   const component = state.uploadedComponents.find((item) => item.id === id);
   if (!component) return;
   const sameKindCount = state.uploadedComponents.filter((item) => item.kind === component.kind && !state.hiddenComponentIds.has(item.id)).length;
-  if (sameKindCount <= 1) {
-    log(`Cannot delete the last ${component.kind === "front" ? "front" : "temple"} component.`);
+  if (component.kind !== "lens" && sameKindCount <= 1) {
+    log(`Cannot delete the last ${componentTypeLabel(component.kind).toLowerCase()} component.`);
     return;
   }
   if (component.source === "asset") {
@@ -1226,6 +1251,9 @@ function repairAssemblyAfterComponentDelete(component) {
       state.assembly[key] = { modelId: componentLibrary.temples[0]?.id || "", size: Object.keys(componentLibrary.temples[0]?.sizes || {})[0] || "M" };
     }
   });
+  if (component.kind === "lens" && state.assembly.lens.modelId === component.id) {
+    state.assembly.lens = { modelId: componentLibrary.lenses[0]?.id || "", size: Object.keys(componentLibrary.lenses[0]?.sizes || {})[0] || "M" };
+  }
 }
 
 function persistHiddenComponents() {
@@ -1253,14 +1281,15 @@ function render() {
 }
 
 function selectedAssemblyHasMeshes() {
-  return [selectedFront(), selectedTemple("leftTemple"), selectedTemple("rightTemple")].some((item) => item?.meshObject);
+  return [selectedFront(), selectedTemple("leftTemple"), selectedTemple("rightTemple"), selectedLens()].some((item) => item?.meshObject);
 }
 
 function renderUploadedAssembly() {
   [
     { key: "front", item: selectedFront() },
     { key: "leftTemple", item: selectedTemple("leftTemple") },
-    { key: "rightTemple", item: selectedTemple("rightTemple") }
+    { key: "rightTemple", item: selectedTemple("rightTemple") },
+    { key: "lens", item: selectedLens() }
   ].forEach(({ key, item }) => {
     if (!item?.meshObject) return;
     const clone = item.meshObject.clone(true);
@@ -1277,7 +1306,6 @@ function renderUploadedAssembly() {
     });
     modelGroup.add(clone);
   });
-  addLensSet(state.params);
   normalizeObjectForScene(modelGroup);
   modelBasePosition.copy(modelGroup.position);
   applyViewerTransform();
@@ -1295,7 +1323,6 @@ function renderParametricPreview() {
   const center = (p.bridge_width + p.lens_width) / 2;
   addRim(-center, p, material);
   addRim(center, p, material);
-  addLensSet(p);
   addBrowBar(p, material);
   addBridge(p, material);
   addNosePads(p, material);
@@ -1323,39 +1350,6 @@ function addRim(x, p, material) {
   rim.position.x = x;
   modelGroup.add(rim);
   addTriangles(rimGeometry);
-}
-
-function addLensSet(p) {
-  if (state.lensMode === "open") return;
-  const center = (p.bridge_width + p.lens_width) / 2;
-  addLensInsert(-center, p);
-  addLensInsert(center, p);
-}
-
-function addLensInsert(x, p) {
-  const isPerforated = state.lensMode === "perforated";
-  const width = Math.max(10, p.lens_width - 1.15);
-  const height = Math.max(8, p.lens_height - 1.15);
-  const radius = Math.max(2, p.corner_radius - 1);
-  const depth = isPerforated ? 1.05 : 0.62;
-  const geometry = isPerforated
-    ? perforatedLensGeometry(width, height, depth, radius)
-    : roundedPrismGeometry(width, height, depth, radius, 0.08);
-  const material = isPerforated
-    ? new THREE.MeshStandardMaterial({ color: "#d86f2e", roughness: 0.54, metalness: 0.02 })
-    : new THREE.MeshPhysicalMaterial({
-      color: "#ffd8b8",
-      transparent: true,
-      opacity: 0.42,
-      roughness: 0.08,
-      transmission: 0.18,
-      thickness: 0.9
-    });
-  const lens = new THREE.Mesh(geometry, material);
-  lens.name = `Frame Lab ${lensModeLabel()} lens`;
-  lens.position.set(x, 0, -0.02);
-  modelGroup.add(lens);
-  addTriangles(geometry);
 }
 
 function addBrowBar(p, material) {
@@ -1447,32 +1441,6 @@ function roundedPrismGeometry(width, height, depth, radius, bevel) {
   return geometry;
 }
 
-function perforatedLensGeometry(width, height, depth, radius) {
-  const shape = roundedRectShape(width, height, radius);
-  const holeRadius = Math.max(0.85, Math.min(width, height) * 0.038);
-  const spacing = holeRadius * 4.1;
-  const safeInset = Math.max(radius * 0.45, holeRadius * 2.4);
-  for (let y = -height / 2 + safeInset; y <= height / 2 - safeInset; y += spacing) {
-    for (let x = -width / 2 + safeInset; x <= width / 2 - safeInset; x += spacing) {
-      const normalizedX = (Math.abs(x) + holeRadius) / (width / 2);
-      const normalizedY = (Math.abs(y) + holeRadius) / (height / 2);
-      if (normalizedX ** 3.2 + normalizedY ** 3.2 > 1.05) continue;
-      const hole = new THREE.Path();
-      hole.absellipse(x, y, holeRadius, holeRadius, 0, Math.PI * 2, true);
-      shape.holes.push(hole);
-    }
-  }
-  const geometry = new THREE.ExtrudeGeometry(shape, {
-    depth,
-    bevelEnabled: true,
-    bevelThickness: 0.05,
-    bevelSize: 0.05,
-    bevelSegments: 1
-  });
-  geometry.center();
-  return geometry;
-}
-
 function renderMeshObject(object) {
   const clone = object.clone(true);
   const material = new THREE.MeshStandardMaterial({
@@ -1516,7 +1484,7 @@ function createDefaultModel() {
     description: seed.description,
     scadSource: sampleScad,
     params: { ...structuredClone(defaultParams), ...seed.params },
-    lensMode: "cut-template",
+    lensMode: "none",
     thumbnail: "",
     components: null,
     createdAt: Date.now(),
@@ -1574,7 +1542,7 @@ function mergeSeedCollections(stored) {
       description: seed.description,
       scadSource: sampleScad,
       params: { ...structuredClone(defaultParams), ...seed.params },
-      lensMode: "cut-template",
+      lensMode: "none",
       thumbnail: "",
       createdAt: Date.now(),
       updatedAt: Date.now()
@@ -1650,7 +1618,7 @@ function selectModel(id, options = {}) {
   state.modelName = model.name;
   state.scadSource = model.scadSource;
   state.params = { ...structuredClone(defaultParams), ...model.params };
-  state.lensMode = validLensMode(model.lensMode);
+  state.lensMode = selectedLens() ? "component" : "none";
   state.meshObject = null;
   state.previewMode = "parametric";
   if (rebuildControls) buildControls();
@@ -1670,7 +1638,7 @@ function syncActiveModel(options = {}) {
   model.name = state.modelName;
   model.params = { ...state.params };
   model.scadSource = generateScadSource();
-  model.lensMode = validLensMode(state.lensMode);
+  model.lensMode = selectedLens() ? "component" : "none";
   model.updatedAt = Date.now();
   if (thumbnail !== null) model.thumbnail = thumbnail;
   if (persist) {
@@ -1796,15 +1764,15 @@ function planLabel(plan) {
 }
 
 function validLensMode(value) {
-  return lensOptions.some((option) => option.id === value) ? value : "cut-template";
+  return value === "component" ? "component" : "none";
 }
 
-function lensOption(mode = state.lensMode) {
-  return lensOptions.find((option) => option.id === validLensMode(mode)) || lensOptions.at(-1);
+function selectedLensLabel() {
+  return selectedLens()?.name || "No lenses";
 }
 
-function lensModeLabel(mode = state.lensMode) {
-  return lensOption(mode).label;
+function lensModeLabel() {
+  return selectedLensLabel();
 }
 
 function accountLabel() {
@@ -1922,12 +1890,19 @@ function renderDownloadFolder() {
         </div>
         <div class="download-tags">
           <span>${escapeHtml(accessLabel(item.plan))}</span>
-          <span>${escapeHtml(item.lensLabel || lensModeLabel(item.lensMode))}</span>
+          <span>${escapeHtml(downloadLensLabel(item))}</span>
           ${chips}
         </div>
       </article>
     `;
   }).join("");
+}
+
+function downloadLensLabel(item) {
+  const configurationLens = item.configuration?.lens;
+  if (configurationLens?.mode === "component" && configurationLens.label) return configurationLens.label;
+  if (item.lensMode === "component" && item.lensLabel) return item.lensLabel;
+  return "No lenses";
 }
 
 function downloadQuotaLabel() {
@@ -2538,7 +2513,9 @@ function handleComponentFileSelect() {
   if (!file) return;
   const cleanName = file.name.replace(/\.[^.]+$/, "");
   if (!els.componentName.value.trim()) els.componentName.value = cleanName.replace(/\bearing\b/gi, "temple");
-  if (/temple|tample|earing|zausz/i.test(file.name)) {
+  if (/lens|lense|szk[lł]o|szk[lł]a|soczew/i.test(file.name)) {
+    els.componentKind.value = "lens";
+  } else if (/temple|tample|earing|zausz/i.test(file.name)) {
     els.componentKind.value = "temple";
   } else if (/front|frame|ramka/i.test(file.name)) {
     els.componentKind.value = "front";
@@ -2612,7 +2589,7 @@ function clearCollectionForm() {
   state.croppedCollectionImage = "";
   els.collectionTitle.value = "";
   els.collectionDescription.value = "";
-  els.collectionAccess.value = "free";
+  els.collectionAccess.value = "basic";
   els.galleryScadInput.value = "";
   els.collectionImageInput.value = "";
   els.collectionFrontInput.value = "";
@@ -2634,7 +2611,7 @@ async function addComponentFile() {
   const component = {
     id: crypto.randomUUID(),
     name: (els.componentName.value.trim() || file.name.replace(/\.[^.]+$/, "")),
-    kind: els.componentKind.value,
+    kind: ["front", "temple", "lens"].includes(els.componentKind.value) ? els.componentKind.value : "front",
     size: els.componentSize.value,
     connector: els.componentConnector.value.trim() || "FL-H8",
     format: format === "stp" ? "step" : format,
@@ -2651,6 +2628,8 @@ async function addComponentFile() {
   rebuildComponentLibrary();
   if (component.kind === "front") {
     state.assembly.front = { modelId: component.id, size: component.size };
+  } else if (component.kind === "lens") {
+    state.assembly.lens = { modelId: component.id, size: component.size };
   } else {
     state.assembly.leftTemple = { modelId: component.id, size: component.size };
     state.assembly.rightTemple = { modelId: component.id, size: component.size };
@@ -2989,10 +2968,11 @@ function getSelectedUploadedComponents() {
   const selected = [
     { role: "front", item: selectedFront(), size: state.assembly.front.size },
     { role: "leftTemple", item: selectedTemple("leftTemple"), size: state.assembly.leftTemple.size },
-    { role: "rightTemple", item: selectedTemple("rightTemple"), size: state.assembly.rightTemple.size }
+    { role: "rightTemple", item: selectedTemple("rightTemple"), size: state.assembly.rightTemple.size },
+    { role: "lens", item: selectedLens(), size: state.assembly.lens.size }
   ];
   return selected
-    .filter(({ item }) => item.source === "uploaded")
+    .filter(({ item }) => item?.source === "uploaded")
     .map(({ role, item, size }) => ({
       role,
       id: item.id,
@@ -3012,7 +2992,8 @@ function buildAssemblyManifest(selectedFiles) {
     assembly: {
       front: serializeAssemblyPart("front", selectedFront(), state.assembly.front.size),
       leftTemple: serializeAssemblyPart("leftTemple", selectedTemple("leftTemple"), state.assembly.leftTemple.size),
-      rightTemple: serializeAssemblyPart("rightTemple", selectedTemple("rightTemple"), state.assembly.rightTemple.size)
+      rightTemple: serializeAssemblyPart("rightTemple", selectedTemple("rightTemple"), state.assembly.rightTemple.size),
+      lens: serializeAssemblyPart("lens", selectedLens(), state.assembly.lens.size)
     },
     parameters: state.params,
     lens: currentLensConfig(),
@@ -3022,6 +3003,18 @@ function buildAssemblyManifest(selectedFiles) {
 }
 
 function serializeAssemblyPart(role, item, size) {
+  if (!item) {
+    return {
+      role,
+      id: null,
+      name: null,
+      size: null,
+      connector: null,
+      source: "none",
+      format: null,
+      fileName: null
+    };
+  }
   return {
     role,
     id: item.id,
@@ -3035,11 +3028,11 @@ function serializeAssemblyPart(role, item, size) {
 }
 
 function currentLensConfig() {
-  const option = lensOption();
+  const lens = selectedLens();
   return {
-    mode: option.id,
-    label: option.label,
-    note: option.note
+    mode: lens ? "component" : "none",
+    label: lens?.name || "No lenses",
+    note: lens?.fileName || "No lens model selected"
   };
 }
 
@@ -3068,8 +3061,8 @@ async function recordDownload(fileName, mesh) {
     modelId: model?.id || state.activeModelId,
     modelName: state.modelName,
     plan: modelAccessPlan(model?.access),
-    lensMode: state.lensMode,
-    lensLabel: lensModeLabel(),
+    lensMode: currentLensConfig().mode,
+    lensLabel: selectedLensLabel(),
     configuration: {
       ...currentConfigurationSnapshot(),
       mesh: {
@@ -3104,7 +3097,7 @@ function loadSample() {
   state.params = structuredClone(defaultParams);
   state.scadSource = sampleScad;
   state.modelName = "Frame 001";
-  state.lensMode = "cut-template";
+  state.lensMode = selectedLens() ? "component" : "none";
   state.meshObject = null;
   buildControls();
   updateGeneratedSource();
@@ -3116,7 +3109,7 @@ function loadSample() {
 
 function resetParams() {
   state.params = structuredClone(defaultParams);
-  state.lensMode = "cut-template";
+  state.lensMode = selectedLens() ? "component" : "none";
   state.meshObject = null;
   buildControls();
   updateGeneratedSource();
