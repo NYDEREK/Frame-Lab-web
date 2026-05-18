@@ -390,6 +390,7 @@ const els = {
   accountPanel: document.querySelector("#accountPanel"),
   plansPanel: document.querySelector("#plansPanel"),
   paymentPanel: document.querySelector("#paymentPanel"),
+  plansContext: document.querySelector("#plansContext"),
   accountButton: document.querySelector("#accountButton"),
   plansButton: document.querySelector("#plansButton"),
   authTitle: document.querySelector("#authTitle"),
@@ -629,7 +630,7 @@ function bindUi() {
     if (state.account.role === "visitor") els.accountEmail.focus();
   });
   els.plansButton.addEventListener("click", () => {
-    els.plansPanel.hidden = false;
+    openPlansPanel();
   });
   els.closeAccountPanel.addEventListener("click", () => {
     els.accountPanel.hidden = true;
@@ -662,7 +663,7 @@ function bindUi() {
   els.appleLogin.addEventListener("click", () => startOauth("apple"));
   els.profileOpenPlans.addEventListener("click", () => {
     els.accountPanel.hidden = true;
-    els.plansPanel.hidden = false;
+    openPlansPanel();
   });
   els.planButtons.forEach((button) => {
     button.addEventListener("click", () => {
@@ -1630,6 +1631,14 @@ function accountLabel() {
   return "Account";
 }
 
+function openPlansPanel(message = "") {
+  if (els.plansContext) {
+    els.plansContext.textContent = message;
+    els.plansContext.hidden = !message;
+  }
+  els.plansPanel.hidden = false;
+}
+
 function setAuthMode(mode) {
   state.authMode = mode === "register" ? "register" : "login";
   const isRegister = state.authMode === "register";
@@ -1738,7 +1747,7 @@ async function signInAccount() {
   els.accountPassword.value = "";
   els.accountPasswordConfirm.value = "";
   els.accountPanel.hidden = true;
-  if (!isDeveloper()) els.plansPanel.hidden = false;
+  if (!isDeveloper()) openPlansPanel();
   log(`${email || "account"}: ${accountLabel()}.`);
 }
 
@@ -2494,7 +2503,7 @@ async function renderWithOpenScadEndpoint() {
 async function generate3mf() {
   const model = currentModelRecord();
   if (model && !canAccessModel(model)) {
-    els.plansPanel.hidden = false;
+    openPlansPanel(`${model.name} requires ${accessLabel(model.access)} to download 3MF.`);
     log(`${model.name}: ${t("lockedModel")} ${accessLabel(model.access)}.`);
     return;
   }
