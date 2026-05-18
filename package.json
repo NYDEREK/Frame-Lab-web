@@ -1,0 +1,11 @@
+{
+  "name": "frame-lab-deploy",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "start": "node drukowane-okulary-3d/server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

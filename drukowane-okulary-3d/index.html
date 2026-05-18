@@ -1,0 +1,408 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Frame Lab | 3D Printed Eyewear</title>
+    <script>
+      if (window.location.protocol === "file:") {
+        window.location.replace("http://127.0.0.1:4173/");
+      }
+      window.addEventListener("error", (event) => {
+        document.documentElement.dataset.appError = event.message || "error";
+      });
+      window.addEventListener("unhandledrejection", (event) => {
+        document.documentElement.dataset.appError = event.reason?.message || String(event.reason || "promise");
+      });
+    </script>
+    <link rel="stylesheet" href="./styles.css?v=backend-plans-20260518-1" />
+    <script type="importmap">
+      {
+        "imports": {
+          "fflate": "https://unpkg.com/fflate@0.8.2/esm/browser.js",
+          "three": "https://unpkg.com/three@0.164.1/build/three.module.js",
+          "three/addons/": "https://unpkg.com/three@0.164.1/examples/jsm/"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <div class="app-shell">
+      <div id="loaderOverlay" class="loader-overlay" hidden>
+        <div class="loader-card">
+          <div class="loader-ring" aria-hidden="true"></div>
+          <strong id="loaderTitle">Preparing file</strong>
+          <small id="loaderText">Preparing production geometry...</small>
+          <div class="loader-bar"><span></span></div>
+        </div>
+      </div>
+
+      <section id="accountPanel" class="account-panel auth-screen" hidden aria-label="Account">
+        <div class="account-card auth-card">
+          <div class="auth-copy">
+            <p class="eyebrow" data-i18n="accountKicker">Account</p>
+            <h2 data-i18n="accountHeading">Frame Lab access</h2>
+            <p>Save collections, unlock production exports, and manage future orders from one account.</p>
+          </div>
+          <div class="auth-form" role="form" aria-label="Login or sign up">
+            <div class="section-head">
+              <div>
+                <p class="eyebrow">Secure access</p>
+                <h3>Login / Sign up</h3>
+              </div>
+              <button id="closeAccountPanel" type="button" class="compact ghost" data-i18n="closeAccount">Close</button>
+            </div>
+            <label class="auth-field">
+              <span>Email</span>
+              <input id="accountEmail" type="email" autocomplete="email" data-i18n-attr="placeholder:accountEmailPlaceholder" placeholder="you@example.com" />
+            </label>
+            <label class="auth-field">
+              <span>Password</span>
+              <input id="accountPassword" type="password" autocomplete="current-password" placeholder="Password" />
+            </label>
+            <div class="account-actions">
+              <button id="signInAccount" type="button" class="accent" data-i18n="signInAccount">Login / Sign up</button>
+              <button id="signOutAccount" type="button" data-i18n="signOutAccount">Sign out</button>
+            </div>
+            <div class="oauth-actions" aria-label="Social login">
+              <button id="googleLogin" type="button">Continue with Google</button>
+              <button id="appleLogin" type="button">Continue with Apple</button>
+            </div>
+            <p id="accountNote" class="account-note"></p>
+          </div>
+          <div id="accountProfile" class="account-profile" hidden>
+            <div class="section-head">
+              <div>
+                <p class="eyebrow">Account</p>
+                <h3>Profile</h3>
+              </div>
+              <button id="closeProfilePanel" type="button" class="compact ghost">Close</button>
+            </div>
+            <div class="profile-card">
+              <span class="profile-avatar" aria-hidden="true">FL</span>
+              <div>
+                <strong id="profileEmail">account</strong>
+                <small id="profileRole">Customer account</small>
+              </div>
+            </div>
+            <dl class="profile-details">
+              <div>
+                <dt>Plan</dt>
+                <dd id="profilePlan">Free</dd>
+              </div>
+              <div>
+                <dt>Status</dt>
+                <dd id="profileStatus">Active</dd>
+              </div>
+              <div>
+                <dt>Exports</dt>
+                <dd>Ready</dd>
+              </div>
+            </dl>
+            <div class="account-actions">
+              <button id="profileOpenPlans" type="button" class="accent">Manage plan</button>
+              <button id="cancelSubscription" type="button">Cancel subscription</button>
+              <button id="profileSignOut" type="button">Sign out</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="plansPanel" class="account-panel plans-screen" hidden aria-label="Plans">
+        <div class="account-card plans-card">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Plans</p>
+              <h2>Choose your access</h2>
+            </div>
+            <button id="closePlansPanel" type="button" class="compact ghost">Close</button>
+          </div>
+          <div class="pricing-grid">
+            <article class="pricing-card">
+              <span>Free</span>
+              <div class="price-line"><strong>$0</strong><small>/ month</small></div>
+              <small>Starter frames and preview access.</small>
+              <button type="button" data-plan-pick="free">Current</button>
+            </article>
+            <article class="pricing-card featured">
+              <span>Pro</span>
+              <div class="price-line"><strong>$29.99</strong><small>/ month</small></div>
+              <small>Premium collections and export access.</small>
+              <button type="button" class="accent" data-plan-pick="pro">Choose Pro</button>
+            </article>
+            <article class="pricing-card">
+              <span>Plus</span>
+              <div class="price-line"><strong>$49.99</strong><small>/ month</small></div>
+              <small>All collections, Studio-ready kits and early drops.</small>
+              <button type="button" data-plan-pick="studio">Choose Plus</button>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section id="paymentPanel" class="account-panel payment-screen" hidden aria-label="Payment">
+        <div class="account-card payment-card">
+          <div class="payment-copy">
+            <p class="eyebrow">Checkout</p>
+            <h2 id="paymentTitle">Complete plan</h2>
+            <p id="paymentSubtitle">Frontend payment screen for the selected Frame Lab plan.</p>
+          </div>
+          <div class="payment-form" role="form" aria-label="Payment details">
+            <div class="section-head">
+              <div>
+                <p class="eyebrow">Payment</p>
+                <h3 id="paymentPlanName">Pro</h3>
+              </div>
+              <button id="closePaymentPanel" type="button" class="compact ghost">Close</button>
+            </div>
+            <div class="payment-total">
+              <span id="paymentAmount">$29.99</span>
+              <small>/ month</small>
+            </div>
+            <div class="billing-switch" role="radiogroup" aria-label="Billing mode">
+              <button id="paymentModeOnce" type="button" class="active" data-payment-mode="one_time">One month</button>
+              <button id="paymentModeSubscription" type="button" data-payment-mode="subscription">Subscribe</button>
+            </div>
+            <label class="auth-field">
+              <span>Email</span>
+              <input id="paymentEmail" type="email" autocomplete="email" placeholder="you@example.com" />
+            </label>
+            <label class="auth-field">
+              <span>Card number</span>
+              <input id="paymentCard" type="text" inputmode="numeric" autocomplete="cc-number" placeholder="4242 4242 4242 4242" />
+            </label>
+            <div class="payment-row">
+              <label class="auth-field">
+                <span>Expiry</span>
+                <input id="paymentExpiry" type="text" inputmode="numeric" autocomplete="cc-exp" placeholder="MM / YY" />
+              </label>
+              <label class="auth-field">
+                <span>CVC</span>
+                <input id="paymentCvc" type="text" inputmode="numeric" autocomplete="cc-csc" placeholder="123" />
+              </label>
+            </div>
+            <button id="completePayment" type="button" class="accent">Activate plan</button>
+            <p id="paymentNote" class="account-note">Frontend only. No card is charged in this prototype.</p>
+          </div>
+        </div>
+      </section>
+
+      <section id="cropPanel" class="account-panel crop-screen" hidden aria-label="Crop image">
+        <div class="account-card crop-card">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Image</p>
+              <h2>Crop thumbnail</h2>
+            </div>
+            <button id="cancelCrop" type="button" class="compact ghost">Cancel</button>
+          </div>
+          <div class="crop-layout">
+            <div class="crop-stage">
+              <canvas id="cropCanvas" width="640" height="420"></canvas>
+            </div>
+            <div class="crop-controls">
+              <label class="auth-field">
+                <span>Zoom</span>
+                <input id="cropZoom" type="range" min="1" max="3" step="0.01" value="1" />
+              </label>
+              <label class="auth-field">
+                <span>Horizontal</span>
+                <input id="cropX" type="range" min="-100" max="100" step="1" value="0" />
+              </label>
+              <label class="auth-field">
+                <span>Vertical</span>
+                <input id="cropY" type="range" min="-100" max="100" step="1" value="0" />
+              </label>
+              <button id="applyCrop" type="button" class="accent">Use cropped image</button>
+              <p id="cropNote" class="account-note">The crop is used as the gallery card image.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <header class="topbar">
+        <div class="topbar-left">
+          <div class="brand">
+            <div class="mark" aria-hidden="true">FL</div>
+            <div>
+              <p class="eyebrow" data-i18n="brandKicker"></p>
+              <h1>Frame Lab</h1>
+            </div>
+          </div>
+          <nav class="topbar-tabs" aria-label="Navigation" data-i18n-attr="aria-label:navLabel">
+            <a id="openHome" class="nav-link active" href="#top" data-i18n="tabHome">Start</a>
+            <a id="openGallery" class="nav-link" href="#galleryPanel" data-i18n="tabGallery">Collections</a>
+            <a id="openStudio" class="nav-link nav-admin" href="#studioPanel" data-i18n="tabStudio" hidden>Studio</a>
+          </nav>
+        </div>
+        <div class="topbar-controls">
+          <button id="plansButton" type="button" class="nav-action">Plans</button>
+          <button id="accountButton" type="button" class="account-button">Login / Sign up</button>
+          <button id="openConfigurator" type="button" class="hidden-utility" hidden>Editor</button>
+        </div>
+      </header>
+
+      <main id="homePage" class="home-page">
+        <span id="top" class="anchor-target"></span>
+        <section class="hero-page">
+          <figure class="hero-product" aria-hidden="true">
+            <img src="./assets/frame-lab-hero.png" alt="" />
+          </figure>
+          <div class="hero-copy">
+            <p class="hero-kicker" data-i18n="heroKicker">Parametric eyewear system</p>
+            <h2 data-i18n="heroTitle">Your next frame is 3D printed.</h2>
+            <p data-i18n="heroText">Choose a collection, combine a front with temples, and prepare a clean production kit for additive manufacturing.</p>
+            <div class="hero-actions">
+              <button id="heroBrowse" type="button" class="accent" data-i18n="heroBrowse">View collections</button>
+              <button id="heroEditor" type="button" class="ghost" data-i18n="heroEditor">Open editor</button>
+            </div>
+          </div>
+        </section>
+
+        <section id="galleryPanel" class="gallery-panel" aria-label="Model gallery">
+          <div class="gallery-head">
+            <div>
+              <p class="eyebrow" data-i18n="libraryKicker">Collections</p>
+              <h2 data-i18n="galleryHeading">Choose a frame base</h2>
+            </div>
+          </div>
+          <section class="collection-section">
+            <div class="collection-head">
+              <h3 data-i18n="sunHeading">Sunglasses</h3>
+              <span data-i18n="sunMeta">bolder frame sets</span>
+            </div>
+            <div id="sunGalleryGrid" class="gallery-grid"></div>
+          </section>
+          <section class="collection-section">
+            <div class="collection-head">
+              <h3 data-i18n="opticalHeading">Optical</h3>
+              <span data-i18n="opticalMeta">lighter everyday kits</span>
+            </div>
+            <div id="opticalGalleryGrid" class="gallery-grid"></div>
+          </section>
+        </section>
+      </main>
+
+      <main id="workspace" class="workspace" hidden>
+        <section class="viewer-panel" aria-label="Podglad modelu 3D">
+            <h2 id="modelName" class="hidden-utility" hidden>Frame 001</h2>
+          <canvas id="scene"></canvas>
+          <span id="metricWidth" class="hidden-utility" hidden>150</span>
+          <span id="metricBridge" class="hidden-utility" hidden>18</span>
+          <span id="metricTemple" class="hidden-utility" hidden>145</span>
+          <span id="meshStatus" class="hidden-utility" hidden>Preview</span>
+        </section>
+
+        <aside class="config-panel" aria-label="Parametry OpenSCAD">
+          <section class="panel-section">
+            <div class="section-head">
+              <div>
+                <p class="eyebrow" data-i18n="builderKicker">Kreator</p>
+                <h3 data-i18n="builderHeading">Components</h3>
+              </div>
+            </div>
+            <div id="builderControls" class="builder-controls"></div>
+          </section>
+
+          <div id="controls" class="hidden-utility" hidden></div>
+          <button id="resetParams" class="hidden-utility" type="button" hidden>Reset</button>
+
+          <section class="panel-section">
+            <div class="section-head">
+              <div>
+                <p class="eyebrow" data-i18n="productionKicker">Produkcja</p>
+                <h3 data-i18n="productionHeading">Export</h3>
+              </div>
+              <span id="polyCount" class="status hidden-utility" hidden>0 tris</span>
+            </div>
+            <div class="action-grid">
+              <button id="generate3mf" type="button" class="accent" data-i18n="generate3mf">3MF</button>
+              <button id="generateStl" type="button" data-i18n="generateStl">STL</button>
+              <button id="downloadAssembly" type="button" data-i18n="downloadAssembly">Download kit</button>
+              <button id="saveCurrentModel" type="button" data-i18n="saveModel">Save model</button>
+              <button id="exportScad" type="button" data-i18n="exportScad">.scad</button>
+              <button id="exportJson" type="button" data-i18n="exportJson">JSON</button>
+              <button id="copyScad" type="button" data-i18n="copyScad">Copy</button>
+            </div>
+            <pre id="importLog" class="import-log" data-i18n="readyLog">Ready.</pre>
+          </section>
+
+          <pre id="scadPreview" class="scad-preview hidden-utility" hidden></pre>
+          <input id="renderEndpoint" class="hidden-utility" type="hidden" />
+          <button id="saveEndpoint" class="hidden-utility" type="button" hidden>Zapisz</button>
+        </aside>
+      </main>
+
+      <section id="studioPanel" class="studio-panel" hidden>
+        <div class="studio-head">
+          <div>
+            <p class="eyebrow" data-i18n="studioKicker">Studio</p>
+            <h2 data-i18n="studioHeading">Add a collection to the gallery</h2>
+          </div>
+        </div>
+        <section class="studio-card">
+          <div class="studio-grid">
+            <input id="collectionTitle" type="text" data-i18n-attr="placeholder:collectionTitlePlaceholder" placeholder="Collection title" />
+            <select id="collectionCategory" class="component-select">
+              <option value="sun" data-i18n="sunCategory">Sunglasses</option>
+              <option value="optical" data-i18n="opticalCategory">Optical</option>
+            </select>
+            <select id="collectionAccess" class="component-select">
+              <option value="free">Free</option>
+              <option value="pro">Pro</option>
+              <option value="studio">Plus</option>
+            </select>
+            <input id="collectionDescription" type="text" data-i18n-attr="placeholder:collectionDescriptionPlaceholder" placeholder="Short description" />
+            <label class="file-button" for="collectionImageInput">
+              <input id="collectionImageInput" type="file" accept="image/*" />
+              <span data-i18n="chooseImage">Photo</span>
+            </label>
+            <label class="file-button" for="galleryScadInput">
+              <input id="galleryScadInput" type="file" accept=".scad,.txt" />
+              <span data-i18n="addScad">Plik .scad</span>
+            </label>
+            <label class="file-button" for="collectionFrontInput">
+              <input id="collectionFrontInput" type="file" accept=".3mf,.step,.stp" />
+              <span data-i18n="frontModelFile">Front model</span>
+            </label>
+            <label class="file-button" for="collectionTempleInput">
+              <input id="collectionTempleInput" type="file" accept=".3mf,.step,.stp" multiple />
+              <span data-i18n="templeModelFile">Temple models</span>
+            </label>
+            <button id="addCollection" type="button" class="accent" data-i18n="addCollection">Add to gallery</button>
+          </div>
+        </section>
+
+        <section class="component-import-panel">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow" data-i18n="componentImportKicker">Komponenty</p>
+              <h3 data-i18n="componentImportHeading">Add a single component</h3>
+            </div>
+          </div>
+          <div class="component-import-grid">
+            <input id="componentName" type="text" data-i18n-attr="placeholder:componentNamePlaceholder" placeholder="Component name" />
+            <select id="componentKind" class="component-select">
+              <option value="front" data-i18n="frontComponent">Front</option>
+              <option value="temple" data-i18n="templeComponent">Temple</option>
+            </select>
+            <select id="componentSize" class="component-select">
+              <option value="S">S</option>
+              <option value="M">M</option>
+              <option value="L">L</option>
+            </select>
+            <input id="componentConnector" type="text" value="FL-H8" data-i18n-attr="placeholder:connectorPlaceholder" placeholder="Connector" />
+            <label class="file-button" for="componentFileInput">
+              <input id="componentFileInput" type="file" accept=".3mf,.step,.stp" />
+              <span data-i18n="chooseCadFile">Choose 3MF / STEP</span>
+            </label>
+            <button id="addComponentFile" type="button" class="accent" data-i18n="addComponentFile">Add component</button>
+          </div>
+          <div id="componentFileList" class="component-file-list"></div>
+        </section>
+      </section>
+    </div>
+
+    <script type="module" src="./src/app.js?v=backend-plans-20260518-1"></script>
+  </body>
+</html>

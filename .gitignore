@@ -1,0 +1,5 @@
+.DS_Store
+.env
+node_modules/
+drukowane-okulary-3d/.env
+drukowane-okulary-3d/data/

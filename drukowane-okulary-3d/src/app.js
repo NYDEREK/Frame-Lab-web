@@ -1,0 +1,2868 @@
+import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
+import * as THREE from "three";
+import { STLLoader } from "three/addons/loaders/STLLoader.js";
+import { ThreeMFLoader } from "three/addons/loaders/3MFLoader.js";
+
+const parameterSchema = [
+  ["head_width", "Head width", "Overall fit width", 118, 172, 1, "mm"],
+  ["bridge_width", "Nose bridge", "Nose clearance", 12, 30, 0.5, "mm"],
+  ["lens_width", "Lens width", "Single lens opening", 40, 64, 0.5, "mm"],
+  ["lens_height", "Lens height", "Lens opening height", 28, 50, 0.5, "mm"],
+  ["rim_thickness", "Rim thickness", "Material around lens", 2.5, 9, 0.1, "mm"],
+  ["frame_depth", "Front depth", "Extrusion depth", 3, 12, 0.1, "mm"],
+  ["temple_length", "Temple length", "Arm length", 115, 175, 1, "mm"],
+  ["temple_drop", "Temple drop", "Behind-ear hook", 0, 42, 1, "mm"],
+  ["temple_spread", "Temple spread", "Temple opening angle", 0, 28, 0.5, "°"],
+  ["nose_pad_width", "Nose pad width", "Support surface", 3, 14, 0.5, "mm"],
+  ["nose_pad_drop", "Nose pad position", "Support offset", 0, 18, 0.5, "mm"],
+  ["hinge_width", "Hinge width", "Side block", 3, 16, 0.5, "mm"],
+  ["corner_radius", "Corner radius", "Lens corner radius", 2, 14, 0.5, "mm"],
+  ["bevel", "Bevel", "Soft printable edge", 0, 2.4, 0.1, "mm"]
+];
+
+const visibleParameterKeys = new Set(["bridge_width", "head_width", "temple_length"]);
+
+const translations = {
+  en: {
+    brandKicker: "",
+    navLabel: "Navigation",
+    accountKicker: "Account",
+    accountHeading: "Frame Lab access",
+    accountEmailPlaceholder: "you@example.com",
+    signInAccount: "Login / Sign up",
+    signOutAccount: "Sign out",
+    closeAccount: "Close",
+    accountFreeNote: "Free: access to selected starter models.",
+    accountProNote: "Pro: unlocks premium collections.",
+    accountDeveloperNote: "Developer: full access, Studio and collection deletion.",
+    lockedModel: "Plan required",
+    upgrade: "Plan",
+    tabHome: "Start",
+    tabConfigurator: "Editor",
+    tabGallery: "Collections",
+    tabStudio: "Studio",
+    heroKicker: "Parametric eyewear system",
+    heroTitle: "Your next frame is 3D printed.",
+    heroText: "Choose a collection, combine a front with temples, and prepare a clean production kit for additive manufacturing.",
+    heroBrowse: "View collections",
+    heroEditor: "Open editor",
+    builderKicker: "",
+    builderHeading: "Components",
+    frontComponent: "Front",
+    leftTempleComponent: "Left temple",
+    rightTempleComponent: "Right temple",
+    componentSize: "Size",
+    componentCompatible: "Compatible connector",
+    componentWarning: "Check hinge compatibility",
+    paramsKicker: "Parameters",
+    fitHeading: "Fit",
+    reset: "Reset",
+    productionKicker: "",
+    productionHeading: "Export",
+    generate3mf: "3MF",
+    generateStl: "STL",
+    downloadAssembly: "Download kit",
+    saveModel: "Save model",
+    exportScad: ".scad",
+    exportJson: "JSON",
+    copyScad: "Copy",
+    readyLog: "Ready.",
+    libraryKicker: "Collections",
+    galleryHeading: "Choose a frame base",
+    sunHeading: "Sunglasses",
+    sunMeta: "bolder frame sets",
+    opticalHeading: "Optical",
+    opticalMeta: "lighter everyday kits",
+    studioKicker: "Studio",
+    studioHeading: "Add a collection to the gallery",
+    collectionTitlePlaceholder: "Collection title",
+    collectionDescriptionPlaceholder: "Short description",
+    sunCategory: "Sunglasses",
+    opticalCategory: "Optical",
+    chooseImage: "Photo",
+    addScad: ".scad file",
+    frontModelFile: "Front model",
+    templeModelFile: "Temple models",
+    addCollection: "Add to gallery",
+    componentImportKicker: "Components",
+    componentImportHeading: "Add Fusion file",
+    componentNamePlaceholder: "Component name",
+    connectorPlaceholder: "Connector",
+    templeComponent: "Temple",
+    chooseCadFile: "Choose 3MF / STEP",
+    addComponentFile: "Add component",
+    noComponents: "No STEP/3MF files added yet.",
+    storedLocally: "Stored locally",
+    activeModel: "Active model",
+    scadFile: ".scad file",
+    open: "Configure",
+    variants: "Options",
+    export: "Export .scad",
+    delete: "Delete",
+    parametersDetected: "params",
+    param_head_width_label: "Head width",
+    param_head_width_hint: "Overall fit width",
+    param_bridge_width_label: "Nose bridge",
+    param_bridge_width_hint: "Clearance at the nose",
+    param_temple_length_label: "Temple length",
+    param_temple_length_hint: "Arm length",
+    loader3mfTitle: "Generating 3MF",
+    loader3mfText: "Packing the current geometry for production...",
+    loaderStlTitle: "Generating STL",
+    loaderStlText: "Writing the current geometry...",
+    savedModel: "Saved model to gallery",
+    resetLog: "Parameters restored to the production baseline.",
+    exportedScad: "Exported OpenSCAD file.",
+    exportedJson: "Exported parameter JSON.",
+    copiedScad: "Copied OpenSCAD source to clipboard."
+  }
+};
+
+const defaultParams = {
+  head_width: 150,
+  bridge_width: 18,
+  lens_width: 52,
+  lens_height: 37,
+  rim_thickness: 5.2,
+  frame_depth: 5.8,
+  temple_length: 145,
+  temple_drop: 30,
+  temple_spread: 8,
+  nose_pad_width: 8,
+  nose_pad_drop: 7,
+  hinge_width: 8.5,
+  corner_radius: 8,
+  bevel: 0.55
+};
+
+const defaultModelId = "frame001-sun-01";
+const ownerDeveloperEmail = "nyderek@framelab.dev";
+const adminEmails = new Set([ownerDeveloperEmail, "s.nyderek@proton.me"]);
+const accountStorageKey = "framelab.account.v1";
+const sessionStorageKey = "framelab.sessionToken.v1";
+const accountProfilesStorageKey = "framelab.accounts.v1";
+const hiddenComponentsStorageKey = "framelab.hiddenComponents.v1";
+const planRank = { free: 0, pro: 1, studio: 2 };
+const planPrices = { free: "$0", pro: "$29.99", studio: "$49.99" };
+
+const seedCollections = [
+  {
+    id: defaultModelId,
+    name: "Frame 001",
+    category: "sun",
+    access: "free",
+    description: "First production-ready modular frame kit.",
+    params: { head_width: 150, bridge_width: 18, lens_width: 52, lens_height: 37, temple_length: 145 }
+  }
+];
+
+const baseComponentLibrary = {
+  fronts: [],
+  temples: []
+};
+
+const legacyModelIds = new Set([
+  "openframe-rx-01",
+  "sun-arc-02",
+  "sun-block-03",
+  "sun-coast-04",
+  "sun-field-05",
+  "optical-line-01",
+  "optical-soft-02",
+  "optical-narrow-03",
+  "optical-wide-04",
+  "optical-studio-05"
+]);
+
+const componentLibrary = {
+  fronts: [],
+  temples: []
+};
+
+const sampleScad = `// Frame Lab OpenSCAD eyewear template
+// Edit these values in the browser or directly in OpenSCAD.
+
+head_width = 150;      // [118:1:172]
+bridge_width = 18;    // [12:0.5:30]
+lens_width = 52;      // [40:0.5:64]
+lens_height = 37;     // [28:0.5:50]
+rim_thickness = 5.2;  // [2.5:0.1:9]
+frame_depth = 5.8;    // [3:0.1:12]
+temple_length = 145;  // [115:1:175]
+temple_drop = 30;     // [0:1:42]
+temple_spread = 8;    // [0:0.5:28]
+nose_pad_width = 8;   // [3:0.5:14]
+nose_pad_drop = 7;    // [0:0.5:18]
+hinge_width = 8.5;    // [3:0.5:16]
+corner_radius = 8;    // [2:0.5:14]
+bevel = 0.55;         // [0:0.1:2.4]
+
+module rounded_square_2d(size=[10,10], r=2) {
+  offset(r=r) square([size[0]-2*r, size[1]-2*r], center=true);
+}
+
+module lens_rim(cx=0) {
+  translate([cx, 0, 0])
+  linear_extrude(height=frame_depth, center=true, convexity=8)
+  difference() {
+    rounded_square_2d([lens_width + rim_thickness*2.15, lens_height + rim_thickness*2.05], corner_radius + rim_thickness*0.9);
+    rounded_square_2d([lens_width, lens_height], corner_radius);
+  }
+}
+
+module soft_bar(size=[10,4,4], r=1) {
+  linear_extrude(height=size[2], center=true, convexity=4)
+  rounded_square_2d([size[0], size[1]], r);
+}
+
+module brow_bar() {
+  total_width = bridge_width + lens_width*2 + rim_thickness*5.3;
+  translate([0, lens_height/2 + rim_thickness*0.72, 0.05])
+  soft_bar([total_width, rim_thickness*1.05, frame_depth*0.95], rim_thickness*0.45);
+}
+
+module bridge() {
+  translate([0, lens_height*0.08, 0])
+  soft_bar([bridge_width + rim_thickness*2.35, rim_thickness*1.15, frame_depth], rim_thickness*0.35);
+}
+
+module nose_pads() {
+  for (side=[-1,1])
+  translate([side*(bridge_width/2 + nose_pad_width/2), -lens_height/4 - nose_pad_drop/4, -frame_depth/2])
+  rotate([0, 0, side*10])
+  soft_bar([nose_pad_width, rim_thickness*1.45, frame_depth*0.72], rim_thickness*0.35);
+}
+
+module temple(side=1) {
+  lens_center = (bridge_width + lens_width) / 2;
+  hinge_x = side * (lens_center + lens_width/2 + rim_thickness + hinge_width/2);
+  spread = side * temple_spread;
+  translate([hinge_x, lens_height*0.28, -frame_depth*0.08])
+  rotate([0, spread, 0])
+  union() {
+    soft_bar([hinge_width, rim_thickness*1.7, frame_depth*1.2], rim_thickness*0.32);
+    for (slot=[-1,1])
+    translate([side*hinge_width*0.52, slot*rim_thickness*0.42, -frame_depth*0.78])
+    rotate([0, 90, 0])
+    cylinder(h=hinge_width*0.95, r=rim_thickness*0.34, center=true, $fn=20);
+    translate([side*hinge_width*0.34, 0.2, -temple_length/2 - frame_depth*0.5])
+    soft_bar([rim_thickness*1.25, rim_thickness*1.05, temple_length], rim_thickness*0.32);
+    translate([side*hinge_width*0.34, -temple_drop*0.28, -temple_length - frame_depth*0.5 - temple_drop*0.28])
+    rotate([-28, 0, 0])
+    soft_bar([rim_thickness*1.3, rim_thickness*1.05, temple_drop], rim_thickness*0.32);
+  }
+}
+
+module glasses() {
+  lens_center = (bridge_width + lens_width) / 2;
+  union() {
+    lens_rim(-lens_center);
+    lens_rim(lens_center);
+    brow_bar();
+    bridge();
+    nose_pads();
+    temple(-1);
+    temple(1);
+  }
+}
+
+glasses();
+`;
+
+const modelStorageKey = "framelab.openscadModels.v1";
+const componentDbName = "framelab-component-files";
+const componentStoreName = "components";
+const seedComponentAssets = [
+  {
+    id: "frame001-front",
+    name: "Frame 001 Front",
+    kind: "front",
+    size: "M",
+    connector: "FL-H8",
+    format: "3mf",
+    fileName: "frame-001-front.3mf",
+    assetUrl: "./assets/test-models/frame-001-front.3mf",
+    source: "asset"
+  },
+  {
+    id: "frame001-temple-left",
+    name: "Frame 001 Temple Left",
+    kind: "temple",
+    size: "M",
+    connector: "FL-H8",
+    format: "3mf",
+    fileName: "frame-001-temple-left.3mf",
+    assetUrl: "./assets/test-models/frame-001-temple-left.3mf",
+    source: "asset"
+  },
+  {
+    id: "frame001-temple-right",
+    name: "Frame 001 Temple Right",
+    kind: "temple",
+    size: "M",
+    connector: "FL-H8",
+    format: "3mf",
+    fileName: "frame-001-temple-right.3mf",
+    assetUrl: "./assets/test-models/frame-001-temple-right.3mf",
+    source: "asset"
+  },
+  {
+    id: "frame001-no-logo-temple-left",
+    name: "Frame 001 No Logo Temple Left",
+    kind: "temple",
+    size: "M",
+    connector: "FL-H8",
+    format: "3mf",
+    fileName: "frame-001-no-logo-temple-left.3mf",
+    assetUrl: "./assets/test-models/frame-001-no-logo-temple-left.3mf",
+    source: "asset"
+  },
+  {
+    id: "frame001-no-logo-temple-right",
+    name: "Frame 001 No Logo Temple Right",
+    kind: "temple",
+    size: "M",
+    connector: "FL-H8",
+    format: "3mf",
+    fileName: "frame-001-no-logo-temple-right.3mf",
+    assetUrl: "./assets/test-models/frame-001-no-logo-temple-right.3mf",
+    source: "asset"
+  }
+];
+
+const state = {
+  params: structuredClone(defaultParams),
+  scadSource: sampleScad,
+  modelName: "Frame 001",
+  meshObject: null,
+  previewMode: "parametric",
+  frameColor: "#2d2b27",
+  models: [],
+  uploadedComponents: [],
+  hiddenComponentIds: new Set(),
+  activeModelId: defaultModelId,
+  lang: "en",
+  account: {
+    email: "",
+    plan: "free",
+    role: "visitor",
+    subscriptionMode: "free",
+    subscriptionStatus: "none",
+    planEndsAt: null
+  },
+  pendingPlan: "pro",
+  pendingPaymentMode: "one_time",
+  editingModelId: null,
+  cropImage: null,
+  croppedCollectionImage: "",
+  viewerRotation: { x: -0.48, y: 0.62, z: 0.03 },
+  viewerPan: { x: 0, y: 0 },
+  componentColors: {
+    front: "",
+    leftTemple: "",
+    rightTemple: ""
+  },
+  assembly: {
+    front: { modelId: "frame001-front", size: "M" },
+    leftTemple: { modelId: "frame001-temple-left", size: "M" },
+    rightTemple: { modelId: "frame001-temple-right", size: "M" }
+  }
+};
+
+const els = {
+  homePage: document.querySelector("#homePage"),
+  workspace: document.querySelector("#workspace"),
+  studioPanel: document.querySelector("#studioPanel"),
+  galleryPanel: document.querySelector("#galleryPanel"),
+  canvas: document.querySelector("#scene"),
+  controls: document.querySelector("#controls"),
+  builderControls: document.querySelector("#builderControls"),
+  componentName: document.querySelector("#componentName"),
+  componentKind: document.querySelector("#componentKind"),
+  componentSize: document.querySelector("#componentSize"),
+  componentConnector: document.querySelector("#componentConnector"),
+  componentFileInput: document.querySelector("#componentFileInput"),
+  addComponentFile: document.querySelector("#addComponentFile"),
+  componentFileList: document.querySelector("#componentFileList"),
+  accountPanel: document.querySelector("#accountPanel"),
+  plansPanel: document.querySelector("#plansPanel"),
+  paymentPanel: document.querySelector("#paymentPanel"),
+  accountButton: document.querySelector("#accountButton"),
+  plansButton: document.querySelector("#plansButton"),
+  accountEmail: document.querySelector("#accountEmail"),
+  accountPassword: document.querySelector("#accountPassword"),
+  accountNote: document.querySelector("#accountNote"),
+  authForm: document.querySelector(".auth-form"),
+  accountProfile: document.querySelector("#accountProfile"),
+  profileEmail: document.querySelector("#profileEmail"),
+  profileRole: document.querySelector("#profileRole"),
+  profilePlan: document.querySelector("#profilePlan"),
+  profileStatus: document.querySelector("#profileStatus"),
+  profileOpenPlans: document.querySelector("#profileOpenPlans"),
+  profileSignOut: document.querySelector("#profileSignOut"),
+  cancelSubscription: document.querySelector("#cancelSubscription"),
+  closeProfilePanel: document.querySelector("#closeProfilePanel"),
+  paymentTitle: document.querySelector("#paymentTitle"),
+  paymentSubtitle: document.querySelector("#paymentSubtitle"),
+  paymentPlanName: document.querySelector("#paymentPlanName"),
+  paymentAmount: document.querySelector("#paymentAmount"),
+  paymentEmail: document.querySelector("#paymentEmail"),
+  paymentCard: document.querySelector("#paymentCard"),
+  paymentExpiry: document.querySelector("#paymentExpiry"),
+  paymentCvc: document.querySelector("#paymentCvc"),
+  paymentNote: document.querySelector("#paymentNote"),
+  completePayment: document.querySelector("#completePayment"),
+  paymentModeButtons: document.querySelectorAll("[data-payment-mode]"),
+  closePaymentPanel: document.querySelector("#closePaymentPanel"),
+  cropPanel: document.querySelector("#cropPanel"),
+  cropCanvas: document.querySelector("#cropCanvas"),
+  cropZoom: document.querySelector("#cropZoom"),
+  cropX: document.querySelector("#cropX"),
+  cropY: document.querySelector("#cropY"),
+  cropNote: document.querySelector("#cropNote"),
+  applyCrop: document.querySelector("#applyCrop"),
+  cancelCrop: document.querySelector("#cancelCrop"),
+  signInAccount: document.querySelector("#signInAccount"),
+  signOutAccount: document.querySelector("#signOutAccount"),
+  googleLogin: document.querySelector("#googleLogin"),
+  appleLogin: document.querySelector("#appleLogin"),
+  closeAccountPanel: document.querySelector("#closeAccountPanel"),
+  closePlansPanel: document.querySelector("#closePlansPanel"),
+  planButtons: document.querySelectorAll("button[data-plan]"),
+  planPickButtons: document.querySelectorAll("button[data-plan-pick]"),
+  galleryGrid: document.querySelector("#galleryGrid"),
+  sunGalleryGrid: document.querySelector("#sunGalleryGrid"),
+  opticalGalleryGrid: document.querySelector("#opticalGalleryGrid"),
+  galleryScadInput: document.querySelector("#galleryScadInput"),
+  collectionTitle: document.querySelector("#collectionTitle"),
+  collectionCategory: document.querySelector("#collectionCategory"),
+  collectionAccess: document.querySelector("#collectionAccess"),
+  collectionDescription: document.querySelector("#collectionDescription"),
+  collectionImageInput: document.querySelector("#collectionImageInput"),
+  collectionFrontInput: document.querySelector("#collectionFrontInput"),
+  collectionTempleInput: document.querySelector("#collectionTempleInput"),
+  addCollection: document.querySelector("#addCollection"),
+  openHome: document.querySelector("#openHome"),
+  openConfigurator: document.querySelector("#openConfigurator"),
+  openGallery: document.querySelector("#openGallery"),
+  openStudio: document.querySelector("#openStudio"),
+  heroBrowse: document.querySelector("#heroBrowse"),
+  heroEditor: document.querySelector("#heroEditor"),
+  saveCurrentModel: document.querySelector("#saveCurrentModel"),
+  exportScad: document.querySelector("#exportScad"),
+  exportJson: document.querySelector("#exportJson"),
+  copyScad: document.querySelector("#copyScad"),
+  generate3mf: document.querySelector("#generate3mf"),
+  generateStl: document.querySelector("#generateStl"),
+  downloadAssembly: document.querySelector("#downloadAssembly"),
+  resetParams: document.querySelector("#resetParams"),
+  renderEndpoint: document.querySelector("#renderEndpoint"),
+  saveEndpoint: document.querySelector("#saveEndpoint"),
+  modelName: document.querySelector("#modelName"),
+  metricWidth: document.querySelector("#metricWidth"),
+  metricBridge: document.querySelector("#metricBridge"),
+  metricTemple: document.querySelector("#metricTemple"),
+  meshStatus: document.querySelector("#meshStatus"),
+  polyCount: document.querySelector("#polyCount"),
+  importLog: document.querySelector("#importLog"),
+  scadPreview: document.querySelector("#scadPreview"),
+  loaderOverlay: document.querySelector("#loaderOverlay"),
+  loaderTitle: document.querySelector("#loaderTitle"),
+  loaderText: document.querySelector("#loaderText"),
+  viewFront: document.querySelector("#viewFront"),
+  viewIso: document.querySelector("#viewIso"),
+  viewSide: document.querySelector("#viewSide")
+};
+
+let scene;
+let camera;
+let renderer;
+let modelGroup;
+let modelBasePosition = new THREE.Vector3(0, 8, 0);
+let dragState = null;
+let triangleCount = 0;
+let persistTimer = null;
+let cameraZoomScale = 1;
+let componentPreviewRenderers = [];
+let sharedComponentPreviewRenderer = null;
+
+init();
+
+async function init() {
+  loadSettings();
+  await hydrateSessionFromBackend();
+  state.uploadedComponents = [...await loadSeedComponentAssets(), ...await loadComponentRecords()]
+    .filter((component) => !state.hiddenComponentIds.has(component.id));
+  if (!state.uploadedComponents.some((component) => component.kind === "front") || !state.uploadedComponents.some((component) => component.kind === "temple")) {
+    state.hiddenComponentIds = new Set();
+    persistHiddenComponents();
+    state.uploadedComponents = [...await loadSeedComponentAssets(), ...await loadComponentRecords()];
+  }
+  await hydrateUploadedComponentMeshes();
+  rebuildComponentLibrary();
+  state.models = loadStoredModels();
+  selectModel(state.models[0]?.id || defaultModelId, { rebuildControls: false, renderScene: false, logSelection: false });
+  applyAssemblyToParams();
+  buildBuilderControls();
+  buildControls();
+  setupScene();
+  bindUi();
+  applyTranslations();
+  updateAccountUi();
+  updateGeneratedSource();
+  render();
+  renderGallery();
+  animate();
+}
+
+function setupScene() {
+  scene = new THREE.Scene();
+  scene.background = new THREE.Color(sceneBackgroundColor());
+
+  camera = new THREE.PerspectiveCamera(40, 1, 0.1, 4000);
+  camera.position.set(0, 70, 250);
+  camera.lookAt(0, 0, 0);
+
+  renderer = new THREE.WebGLRenderer({ canvas: els.canvas, antialias: true, preserveDrawingBuffer: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+
+  scene.add(new THREE.HemisphereLight("#fff8ef", "#0b1112", 2.15));
+
+  const key = new THREE.DirectionalLight("#ffffff", 2.8);
+  key.position.set(120, 160, 120);
+  scene.add(key);
+
+  const warm = new THREE.DirectionalLight("#ff9c4a", 0.75);
+  warm.position.set(-120, 50, -80);
+  scene.add(warm);
+
+  modelGroup = new THREE.Group();
+  modelGroup.position.y = 8;
+  scene.add(modelGroup);
+
+  window.addEventListener("resize", resize);
+  resize();
+}
+
+function bindUi() {
+  els.controls.addEventListener("input", (event) => {
+    const input = event.target;
+    if (!input.dataset.param) return;
+    state.params[input.dataset.param] = Number(input.value);
+    document.querySelector(`#${input.dataset.param}Output`).value = formatValue(input.value, findParam(input.dataset.param)?.[6] || "");
+    state.previewMode = "parametric";
+    updateGeneratedSource();
+    render();
+    syncActiveModel({ persist: false });
+    scheduleModelPersist();
+  });
+
+  els.builderControls.addEventListener("change", (event) => {
+    const colorInput = event.target.closest("[data-component-color]");
+    if (colorInput) {
+      state.componentColors[colorInput.dataset.componentColor] = colorInput.value;
+      render();
+      return;
+    }
+
+    const select = event.target.closest("[data-component-model]");
+    if (!select) return;
+    state.assembly[select.dataset.componentModel].modelId = select.value;
+    applyAssemblyToParams();
+    buildBuilderControls();
+    buildControls();
+    updateGeneratedSource();
+    render();
+    syncActiveModel({ persist: false });
+    scheduleModelPersist();
+  });
+
+  els.builderControls.addEventListener("click", (event) => {
+    const option = event.target.closest("[data-component-option]");
+    if (option) {
+      state.assembly[option.dataset.componentOption].modelId = option.dataset.modelId;
+      applyAssemblyToParams();
+      buildBuilderControls();
+      buildControls();
+      updateGeneratedSource();
+      render();
+      syncActiveModel({ persist: false });
+      scheduleModelPersist();
+      return;
+    }
+
+    const button = event.target.closest("[data-component-size]");
+    if (!button) return;
+    state.assembly[button.dataset.componentSize].size = button.dataset.size;
+    applyAssemblyToParams();
+    buildBuilderControls();
+    buildControls();
+    updateGeneratedSource();
+    render();
+    syncActiveModel({ persist: false });
+    scheduleModelPersist();
+  });
+
+  els.sunGalleryGrid.addEventListener("click", handleGalleryClick);
+  els.opticalGalleryGrid.addEventListener("click", handleGalleryClick);
+  els.componentFileList.addEventListener("click", handleComponentFileListClick);
+  els.addCollection.addEventListener("click", addCollectionFromStudio);
+  els.collectionImageInput.addEventListener("change", handleCollectionImageSelect);
+  els.componentFileInput.addEventListener("change", handleComponentFileSelect);
+  els.accountButton.addEventListener("click", () => {
+    els.accountPanel.hidden = false;
+    updateAccountUi();
+    if (state.account.role === "visitor") els.accountEmail.focus();
+  });
+  els.plansButton.addEventListener("click", () => {
+    els.plansPanel.hidden = false;
+  });
+  els.closeAccountPanel.addEventListener("click", () => {
+    els.accountPanel.hidden = true;
+  });
+  els.closeProfilePanel.addEventListener("click", () => {
+    els.accountPanel.hidden = true;
+  });
+  els.closePlansPanel.addEventListener("click", () => {
+    els.plansPanel.hidden = true;
+  });
+  els.closePaymentPanel.addEventListener("click", () => {
+    els.paymentPanel.hidden = true;
+  });
+  els.signInAccount.addEventListener("click", () => signInAccount());
+  els.accountPanel.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    signInAccount();
+  });
+  els.signOutAccount.addEventListener("click", () => signOutAccount());
+  els.profileSignOut.addEventListener("click", () => signOutAccount());
+  els.cancelSubscription.addEventListener("click", () => cancelSubscription());
+  els.googleLogin.addEventListener("click", () => startOauth("google"));
+  els.appleLogin.addEventListener("click", () => startOauth("apple"));
+  els.profileOpenPlans.addEventListener("click", () => {
+    els.accountPanel.hidden = true;
+    els.plansPanel.hidden = false;
+  });
+  els.planButtons.forEach((button) => {
+    button.addEventListener("click", () => {
+      state.account.plan = button.dataset.plan;
+      updateAccountUi();
+    });
+  });
+  els.planPickButtons.forEach((button) => {
+    button.addEventListener("click", () => {
+      openPayment(button.dataset.planPick);
+    });
+  });
+  els.paymentModeButtons.forEach((button) => {
+    button.addEventListener("click", () => {
+      state.pendingPaymentMode = button.dataset.paymentMode === "subscription" ? "subscription" : "one_time";
+      updatePaymentModeUi();
+    });
+  });
+  els.completePayment.addEventListener("click", () => completePayment());
+  [els.cropZoom, els.cropX, els.cropY].forEach((input) => input.addEventListener("input", drawImageCrop));
+  els.applyCrop.addEventListener("click", applyImageCrop);
+  els.cancelCrop.addEventListener("click", cancelImageCrop);
+  els.openHome.addEventListener("click", (event) => {
+    event.preventDefault();
+    setActiveSection("home");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  });
+  els.openConfigurator.addEventListener("click", () => setActiveSection("configurator"));
+  els.openGallery.addEventListener("click", (event) => {
+    event.preventDefault();
+    syncActiveModel();
+    renderGallery();
+    setActiveSection("home");
+    scrollGalleryIntoView();
+  });
+  els.openStudio.addEventListener("click", (event) => {
+    event.preventDefault();
+    setActiveSection("studio");
+  });
+  els.heroBrowse.addEventListener("click", scrollGalleryIntoView);
+  els.heroEditor.addEventListener("click", () => setActiveSection("configurator"));
+  els.saveCurrentModel.addEventListener("click", saveCurrentModel);
+  els.resetParams.addEventListener("click", resetParams);
+  els.exportScad.addEventListener("click", exportScad);
+  els.exportJson.addEventListener("click", exportJson);
+  els.copyScad.addEventListener("click", copyScad);
+  els.generate3mf.addEventListener("click", generate3mf);
+  els.generateStl.addEventListener("click", generateStl);
+  els.downloadAssembly.addEventListener("click", downloadAssemblyPackage);
+  els.addComponentFile.addEventListener("click", addComponentFile);
+  els.saveEndpoint.addEventListener("click", saveEndpoint);
+  els.viewFront?.addEventListener("click", () => setView("front"));
+  els.viewIso?.addEventListener("click", () => setView("iso"));
+  els.viewSide?.addEventListener("click", () => setView("side"));
+
+  els.canvas.addEventListener("pointerdown", (event) => {
+    dragState = {
+      mode: event.shiftKey || event.button === 1 || event.button === 2 ? "pan" : "rotate",
+      x: event.clientX,
+      y: event.clientY,
+      rx: state.viewerRotation.x,
+      ry: state.viewerRotation.y,
+      px: state.viewerPan.x,
+      py: state.viewerPan.y
+    };
+    els.canvas.setPointerCapture(event.pointerId);
+  });
+  els.canvas.addEventListener("pointermove", (event) => {
+    if (!dragState) return;
+    const dx = event.clientX - dragState.x;
+    const dy = event.clientY - dragState.y;
+    if (dragState.mode === "pan") {
+      state.viewerPan.x = dragState.px + dx * 0.12;
+      state.viewerPan.y = dragState.py - dy * 0.12;
+    } else {
+      state.viewerRotation.y = dragState.ry + dx * 0.0065;
+      state.viewerRotation.x = THREE.MathUtils.clamp(dragState.rx + dy * 0.005, -1.35, 1.35);
+    }
+    applyViewerTransform();
+  });
+  els.canvas.addEventListener("pointerup", () => {
+    dragState = null;
+  });
+  els.canvas.addEventListener("pointercancel", () => {
+    dragState = null;
+  });
+  els.canvas.addEventListener("dblclick", resetViewerPose);
+  els.canvas.addEventListener("contextmenu", (event) => event.preventDefault());
+  els.canvas.addEventListener("wheel", handleCanvasWheel, { passive: false });
+}
+
+function t(key) {
+  if (Object.prototype.hasOwnProperty.call(translations[state.lang] || {}, key)) {
+    return translations[state.lang][key];
+  }
+  return key;
+}
+
+function getParameterText(key, fallbackLabel, fallbackHint) {
+  return {
+    label: t(`param_${key}_label`) || fallbackLabel,
+    hint: t(`param_${key}_hint`) || fallbackHint
+  };
+}
+
+function sceneBackgroundColor() {
+  return "#070909";
+}
+
+function previewBackgroundColor() {
+  return "#111313";
+}
+
+function applyTranslations() {
+  document.querySelectorAll("[data-i18n]").forEach((element) => {
+    element.textContent = t(element.dataset.i18n);
+  });
+  document.querySelectorAll("[data-i18n-attr]").forEach((element) => {
+    element.dataset.i18nAttr.split(";").forEach((item) => {
+      const [attr, key] = item.split(":");
+      if (attr && key) element.setAttribute(attr, t(key));
+    });
+  });
+  updateAccountUi();
+}
+
+function buildControls() {
+  els.controls.innerHTML = "";
+  parameterSchema.filter(([key]) => visibleParameterKeys.has(key)).forEach(([key, label, hint, min, max, step, unit]) => {
+    const translated = getParameterText(key, label, hint);
+    const row = document.createElement("div");
+    row.className = "control";
+    row.innerHTML = `
+      <label for="${key}">
+        <span>${translated.label}</span>
+        <small>${translated.hint}</small>
+      </label>
+      <input id="${key}" data-param="${key}" type="range" min="${min}" max="${max}" step="${step}" value="${state.params[key]}" />
+      <output id="${key}Output">${formatValue(state.params[key], unit)}</output>
+    `;
+    els.controls.append(row);
+  });
+}
+
+function buildBuilderControls() {
+  disposeComponentPreviews();
+  const parts = [
+    { key: "front", label: t("frontComponent"), items: componentLibrary.fronts },
+    { key: "leftTemple", label: t("leftTempleComponent"), items: componentLibrary.temples },
+    { key: "rightTemple", label: t("rightTempleComponent"), items: componentLibrary.temples }
+  ];
+  els.builderControls.innerHTML = parts.map((part) => componentCardTemplate(part)).join("");
+  renderComponentPreviews(parts);
+  renderComponentFileList();
+}
+
+function componentCardTemplate(part) {
+  const selection = state.assembly[part.key];
+  const selectedModel = part.items.find((item) => item.id === selection.modelId) || part.items[0];
+  const availableSizes = Object.keys(selectedModel.sizes);
+  const options = part.items.map((item) => optionCardTemplate(part, item, item.id === selectedModel.id)).join("");
+  const color = state.componentColors[part.key] || selectedModel.materialColor || state.frameColor;
+  const sizes = ["S", "M", "L"].map((size) => `
+    <button type="button" class="size-chip${selection.size === size ? " active" : ""}" data-component-size="${part.key}" data-size="${size}" ${availableSizes.includes(size) ? "" : "disabled"}>
+      ${size}
+    </button>
+  `).join("");
+  return `
+    <article class="component-card">
+      <div class="component-head">
+        <div>
+          <strong>${escapeHtml(part.label)}</strong>
+          <small>${escapeHtml(selectedModel.name)} · ${selection.size}</small>
+        </div>
+        <label class="component-color" title="Element color">
+          <input type="color" value="${escapeHtml(color)}" data-component-color="${part.key}" />
+        </label>
+      </div>
+      <details class="component-options" ${part.key === "front" ? "open" : ""}>
+        <summary>${t("variants")} (${part.items.length})</summary>
+        <div class="component-option-grid">${options}</div>
+      </details>
+      <div class="size-row">${sizes}</div>
+    </article>
+  `;
+}
+
+function optionCardTemplate(part, item, active) {
+  const firstAvailableSize = Object.keys(item.sizes)[0] || "M";
+  return `
+    <button type="button" class="component-option${active ? " active" : ""}" data-component-option="${part.key}" data-model-id="${item.id}">
+      <canvas class="component-option-canvas" data-option-preview="${part.key}:${item.id}" aria-label="${escapeHtml(item.name)} 3D"></canvas>
+      <span class="component-option-main">
+        <strong>${escapeHtml(item.name)}</strong>
+        <small>${part.key === "front" ? t("frontComponent") : t("templeComponent")} · ${firstAvailableSize}</small>
+      </span>
+    </button>
+  `;
+}
+
+function disposeComponentPreviews() {
+  componentPreviewRenderers = [];
+}
+
+function renderComponentPreviews(parts) {
+  requestAnimationFrame(() => {
+    parts.forEach((part) => {
+      part.items.forEach((optionItem) => {
+        const optionCanvas = els.builderControls.querySelector(`[data-option-preview="${part.key}:${optionItem.id}"]`);
+        if (optionCanvas) renderComponentPreviewCanvas(optionCanvas, part.key, optionItem);
+      });
+    });
+  });
+}
+
+function renderComponentPreviewCanvas(canvas, key, item) {
+  const width = Math.max(120, canvas.clientWidth || 160);
+  const height = Math.max(86, canvas.clientHeight || 104);
+  const previewScene = new THREE.Scene();
+  previewScene.background = new THREE.Color(previewBackgroundColor());
+  const previewCamera = new THREE.PerspectiveCamera(34, width / height, 0.1, 1000);
+  previewCamera.position.set(42, 34, 112);
+  previewCamera.lookAt(0, 0, 0);
+
+  if (!sharedComponentPreviewRenderer) {
+    sharedComponentPreviewRenderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, preserveDrawingBuffer: true });
+    sharedComponentPreviewRenderer.outputColorSpace = THREE.SRGBColorSpace;
+  }
+  const previewRenderer = sharedComponentPreviewRenderer;
+  previewRenderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  previewRenderer.setSize(width, height, false);
+
+  previewScene.add(new THREE.HemisphereLight("#fff6e8", "#050708", 2.4));
+  const light = new THREE.DirectionalLight("#ffffff", 2.2);
+  light.position.set(80, 90, 120);
+  previewScene.add(light);
+
+  const group = item.meshObject
+    ? makeUploadedPreviewMesh(item)
+    : key === "front" ? makeFrontPreviewMesh(item) : makeTemplePreviewMesh(item, key === "leftTemple" ? -1 : 1);
+  previewScene.add(group);
+  const box = new THREE.Box3().setFromObject(group);
+  const sphere = box.getBoundingSphere(new THREE.Sphere());
+  const distance = Math.max(55, sphere.radius * 2.35);
+  previewCamera.position.set(sphere.center.x + sphere.radius * 0.4, sphere.center.y + sphere.radius * 0.35, sphere.center.z + distance);
+  previewCamera.lookAt(sphere.center);
+  previewRenderer.render(previewScene, previewCamera);
+  const ctx = canvas.getContext("2d");
+  if (ctx) {
+    canvas.width = Math.round(width * Math.min(window.devicePixelRatio, 2));
+    canvas.height = Math.round(height * Math.min(window.devicePixelRatio, 2));
+    ctx.drawImage(previewRenderer.domElement, 0, 0, canvas.width, canvas.height);
+  }
+}
+
+function makeFrontPreviewMesh(item) {
+  const material = previewMaterial(item);
+  const group = new THREE.Group();
+  const size = firstSize(item);
+  const p = { ...defaultParams, ...size };
+  const center = (p.bridge_width + p.lens_width) / 2;
+  [-center, center].forEach((x) => {
+    const outer = roundedRectShape(p.lens_width + p.rim_thickness * 2.15, p.lens_height + p.rim_thickness * 2.05, p.corner_radius + p.rim_thickness * 0.9);
+    outer.holes.push(roundedRectShape(p.lens_width, p.lens_height, p.corner_radius));
+    const rim = new THREE.Mesh(new THREE.ExtrudeGeometry(outer, {
+      depth: p.frame_depth,
+      bevelEnabled: true,
+      bevelThickness: 0.45,
+      bevelSize: 0.45,
+      bevelSegments: 2
+    }).center(), material);
+    rim.position.x = x;
+    group.add(rim);
+  });
+  const brow = new THREE.Mesh(roundedPrismGeometry(p.bridge_width + p.lens_width * 2 + p.rim_thickness * 5.3, p.rim_thickness, p.frame_depth, 2, 0.35), material);
+  brow.position.y = p.lens_height / 2 + p.rim_thickness * 0.72;
+  group.add(brow);
+  const bridge = new THREE.Mesh(roundedPrismGeometry(p.bridge_width + p.rim_thickness * 2.35, p.rim_thickness * 1.1, p.frame_depth, 1.8, 0.3), material);
+  bridge.position.y = p.lens_height * 0.08;
+  group.add(bridge);
+  group.rotation.set(-0.34, 0.52, 0.03);
+  return group;
+}
+
+function makeTemplePreviewMesh(item, side) {
+  const material = previewMaterial(item);
+  const group = new THREE.Group();
+  const size = firstSize(item);
+  const p = { ...defaultParams, ...size };
+  const arm = new THREE.Mesh(roundedPrismGeometry(p.rim_thickness * 1.25, p.rim_thickness * 1.05, p.temple_length, p.rim_thickness * 0.32, 0.35), material);
+  arm.position.z = -p.temple_length / 2;
+  group.add(arm);
+  const hook = new THREE.Mesh(roundedPrismGeometry(p.rim_thickness * 1.3, p.rim_thickness * 1.05, p.temple_drop, p.rim_thickness * 0.32, 0.35), material);
+  hook.position.set(0, -p.temple_drop * 0.28, -p.temple_length - p.temple_drop * 0.28);
+  hook.rotation.x = THREE.MathUtils.degToRad(-28);
+  group.add(hook);
+  const hinge = new THREE.Mesh(roundedPrismGeometry(p.hinge_width, p.rim_thickness * 1.7, p.frame_depth * 1.2, 1.5, 0.35), material);
+  hinge.position.z = p.frame_depth * 0.5;
+  group.add(hinge);
+  group.rotation.set(-0.38, side * 0.42, side * 0.04);
+  return group;
+}
+
+function makeUploadedPreviewMesh(item) {
+  const clone = item.meshObject.clone(true);
+  clone.traverse((child) => {
+    if (!child.isMesh || !child.geometry) return;
+    child.geometry.computeVertexNormals();
+    if (!child.material) child.material = previewMaterial(item);
+  });
+  normalizeObjectForScene(clone);
+  clone.rotation.set(-0.28, 0.42, 0.02);
+  return clone;
+}
+
+function previewMaterial(item, colorOverride = "") {
+  return new THREE.MeshStandardMaterial({
+    color: colorOverride || item.materialColor || (item.source === "uploaded" ? "#ff8a2a" : "#5f665f"),
+    roughness: 0.42,
+    metalness: 0.05
+  });
+}
+
+function applyAssemblyToParams() {
+  const front = selectedFront();
+  const leftTemple = selectedTemple("leftTemple");
+  const rightTemple = selectedTemple("rightTemple");
+  normalizeAssemblySize("front", front);
+  normalizeAssemblySize("leftTemple", leftTemple);
+  normalizeAssemblySize("rightTemple", rightTemple);
+  const frontSize = front.sizes[state.assembly.front.size] || firstSize(front);
+  const leftSize = leftTemple.sizes[state.assembly.leftTemple.size] || firstSize(leftTemple);
+  const rightSize = rightTemple.sizes[state.assembly.rightTemple.size] || firstSize(rightTemple);
+  const templeLength = (leftSize.temple_length + rightSize.temple_length) / 2;
+  const templeDrop = Math.max(leftSize.temple_drop, rightSize.temple_drop);
+  const templeSpread = (leftSize.temple_spread + rightSize.temple_spread) / 2;
+  state.params = {
+    ...state.params,
+    ...frontSize,
+    temple_length: templeLength,
+    temple_drop: templeDrop,
+    temple_spread: templeSpread
+  };
+}
+
+function normalizeAssemblySize(key, item) {
+  if (!item.sizes[state.assembly[key].size]) {
+    state.assembly[key].size = Object.keys(item.sizes)[0] || "M";
+  }
+}
+
+function firstSize(item) {
+  return item.sizes[Object.keys(item.sizes)[0]] || {};
+}
+
+function selectedFront() {
+  return componentLibrary.fronts.find((item) => item.id === state.assembly.front.modelId) || componentLibrary.fronts[0];
+}
+
+function selectedTemple(key) {
+  return componentLibrary.temples.find((item) => item.id === state.assembly[key].modelId) || componentLibrary.temples[0];
+}
+
+function rebuildComponentLibrary() {
+  componentLibrary.fronts = structuredClone(baseComponentLibrary.fronts);
+  componentLibrary.temples = structuredClone(baseComponentLibrary.temples);
+  state.uploadedComponents.filter((component) => !state.hiddenComponentIds.has(component.id)).forEach((component) => {
+    const target = component.kind === "front" ? componentLibrary.fronts : componentLibrary.temples;
+    target.push(componentToLibraryItem(component));
+  });
+}
+
+function componentToLibraryItem(component) {
+  const sizeParams = component.kind === "front"
+    ? {
+        head_width: component.size === "S" ? 136 : component.size === "L" ? 164 : 150,
+        bridge_width: component.size === "S" ? 17 : component.size === "L" ? 20 : 18,
+        lens_width: component.size === "S" ? 49 : component.size === "L" ? 55 : 52,
+        lens_height: component.size === "S" ? 35 : component.size === "L" ? 39 : 37
+      }
+    : {
+        temple_length: component.size === "S" ? 135 : component.size === "L" ? 155 : 145,
+        temple_drop: component.size === "S" ? 22 : component.size === "L" ? 36 : 30,
+        temple_spread: component.size === "S" ? 7 : component.size === "L" ? 9 : 8
+      };
+  return {
+    id: component.id,
+    name: component.name,
+    connector: component.connector,
+    source: component.source || "uploaded",
+    fileName: component.fileName,
+    format: component.format,
+    analysis: component.analysis || null,
+    materialColor: component.materialColor || component.analysis?.materialColor || null,
+    meshObject: component.meshObject || null,
+    sizes: {
+      [component.size]: sizeParams
+    }
+  };
+}
+
+function renderComponentFileList() {
+  if (!els.componentFileList) return;
+  if (!state.uploadedComponents.length) {
+    els.componentFileList.innerHTML = `<div class="compatibility-note">${t("noComponents")}</div>`;
+    return;
+  }
+  els.componentFileList.innerHTML = state.uploadedComponents.map((component) => `
+    <div class="component-file-row">
+      <div>
+        <strong>${escapeHtml(component.name)}</strong>
+        <small>${escapeHtml(component.fileName)}</small>
+        <small>${escapeHtml(component.analysis?.summary || "")}</small>
+      </div>
+      ${component.materialColor || component.analysis?.materialColor ? `<span class="material-swatch" style="--swatch:${escapeHtml(component.materialColor || component.analysis.materialColor)}">${escapeHtml(component.materialColor || component.analysis.materialColor)}</span>` : ""}
+      <span class="status">${component.kind === "front" ? t("frontComponent") : t("templeComponent")}</span>
+      <span class="status">${component.size} · ${component.connector}</span>
+      <small>${component.format.toUpperCase()} · ${component.source === "asset" ? "Test asset" : t("storedLocally")}</small>
+      ${isDeveloper() ? `<button type="button" class="compact delete-button" data-component-delete="${component.id}">Delete</button>` : ""}
+    </div>
+  `).join("");
+}
+
+async function handleComponentFileListClick(event) {
+  const button = event.target.closest("[data-component-delete]");
+  if (!button) return;
+  if (!isDeveloper()) {
+    log("Component deletion is available only in developer mode.");
+    return;
+  }
+  await deleteComponent(button.dataset.componentDelete);
+}
+
+async function deleteComponent(id) {
+  const component = state.uploadedComponents.find((item) => item.id === id);
+  if (!component) return;
+  const sameKindCount = state.uploadedComponents.filter((item) => item.kind === component.kind && !state.hiddenComponentIds.has(item.id)).length;
+  if (sameKindCount <= 1) {
+    log(`Cannot delete the last ${component.kind === "front" ? "front" : "temple"} component.`);
+    return;
+  }
+  if (component.source === "asset") {
+    state.hiddenComponentIds.add(component.id);
+    persistHiddenComponents();
+  } else {
+    await deleteComponentRecord(component.id);
+  }
+  state.uploadedComponents = state.uploadedComponents.filter((item) => item.id !== component.id);
+  rebuildComponentLibrary();
+  repairAssemblyAfterComponentDelete(component);
+  applyAssemblyToParams();
+  buildBuilderControls();
+  buildControls();
+  updateGeneratedSource();
+  render();
+  log(`Deleted component: ${component.name}.`);
+}
+
+function repairAssemblyAfterComponentDelete(component) {
+  if (component.kind === "front" && state.assembly.front.modelId === component.id) {
+    state.assembly.front = { modelId: componentLibrary.fronts[0]?.id || "", size: Object.keys(componentLibrary.fronts[0]?.sizes || {})[0] || "M" };
+  }
+  ["leftTemple", "rightTemple"].forEach((key) => {
+    if (component.kind === "temple" && state.assembly[key].modelId === component.id) {
+      state.assembly[key] = { modelId: componentLibrary.temples[0]?.id || "", size: Object.keys(componentLibrary.temples[0]?.sizes || {})[0] || "M" };
+    }
+  });
+}
+
+function persistHiddenComponents() {
+  localStorage.setItem(hiddenComponentsStorageKey, JSON.stringify([...state.hiddenComponentIds]));
+}
+
+function render() {
+  modelGroup.clear();
+  modelGroup.position.set(0, 8, 0);
+  modelBasePosition.copy(modelGroup.position);
+  modelGroup.rotation.set(0, 0, 0);
+  modelGroup.scale.setScalar(1);
+  triangleCount = 0;
+  if (state.meshObject) {
+    renderMeshObject(state.meshObject);
+  } else if (selectedAssemblyHasMeshes()) {
+    renderUploadedAssembly();
+  } else {
+    renderParametricPreview();
+  }
+  updateMetrics();
+  fitCameraToObject(modelGroup);
+  els.polyCount.textContent = `${triangleCount.toLocaleString("en-US")} tris`;
+  els.meshStatus.textContent = state.meshObject ? "STL" : selectedAssemblyHasMeshes() ? "3MF" : "Preview";
+}
+
+function selectedAssemblyHasMeshes() {
+  return [selectedFront(), selectedTemple("leftTemple"), selectedTemple("rightTemple")].some((item) => item?.meshObject);
+}
+
+function renderUploadedAssembly() {
+  [
+    { key: "front", item: selectedFront() },
+    { key: "leftTemple", item: selectedTemple("leftTemple") },
+    { key: "rightTemple", item: selectedTemple("rightTemple") }
+  ].forEach(({ key, item }) => {
+    if (!item?.meshObject) return;
+    const clone = item.meshObject.clone(true);
+    const overrideColor = state.componentColors[key];
+    clone.traverse((child) => {
+      if (!child.isMesh || !child.geometry) return;
+      child.geometry.computeVertexNormals();
+      if (overrideColor) {
+        child.material = previewMaterial(item, overrideColor);
+      } else if (!child.material) {
+        child.material = previewMaterial(item);
+      }
+      addTriangles(child.geometry);
+    });
+    modelGroup.add(clone);
+  });
+  normalizeObjectForScene(modelGroup);
+  modelBasePosition.copy(modelGroup.position);
+  applyViewerTransform();
+  modelGroup.scale.setScalar(1);
+}
+
+function renderParametricPreview() {
+  const p = state.params;
+  const material = new THREE.MeshStandardMaterial({
+    color: state.frameColor,
+    roughness: 0.38,
+    metalness: 0.04
+  });
+  const lensMaterial = new THREE.MeshPhysicalMaterial({
+    color: "#ffd7b0",
+    transparent: true,
+    opacity: 0.32,
+    roughness: 0.06,
+    transmission: 0.12,
+    thickness: 1.1
+  });
+
+  const center = (p.bridge_width + p.lens_width) / 2;
+  addRim(-center, p, material, lensMaterial);
+  addRim(center, p, material, lensMaterial);
+  addBrowBar(p, material);
+  addBridge(p, material);
+  addNosePads(p, material);
+  addTemple(-1, p, material);
+  addTemple(1, p, material);
+
+  modelBasePosition.copy(modelGroup.position);
+  applyViewerTransform();
+  modelGroup.scale.setScalar(1);
+}
+
+function addRim(x, p, material, lensMaterial) {
+  const outer = roundedRectShape(p.lens_width + p.rim_thickness * 2.15, p.lens_height + p.rim_thickness * 2.05, p.corner_radius + p.rim_thickness * 0.9);
+  const inner = roundedRectShape(p.lens_width, p.lens_height, p.corner_radius);
+  outer.holes.push(inner);
+  const rimGeometry = new THREE.ExtrudeGeometry(outer, {
+    depth: p.frame_depth,
+    bevelEnabled: p.bevel > 0,
+    bevelThickness: Math.max(0.01, p.bevel),
+    bevelSize: Math.max(0.01, p.bevel),
+    bevelSegments: p.bevel > 0 ? 2 : 0
+  });
+  rimGeometry.center();
+  const rim = new THREE.Mesh(rimGeometry, material);
+  rim.position.x = x;
+  modelGroup.add(rim);
+  addTriangles(rimGeometry);
+
+  const lensGeometry = roundedPrismGeometry(p.lens_width - 1, p.lens_height - 1, 0.7, Math.max(2, p.corner_radius - 1), 0.12);
+  const lens = new THREE.Mesh(lensGeometry, lensMaterial);
+  lens.position.set(x, 0, 0);
+  modelGroup.add(lens);
+  addTriangles(lensGeometry);
+}
+
+function addBrowBar(p, material) {
+  const totalWidth = p.bridge_width + p.lens_width * 2 + p.rim_thickness * 5.3;
+  const geometry = roundedPrismGeometry(totalWidth, p.rim_thickness * 1.05, p.frame_depth * 0.95, p.rim_thickness * 0.45, p.bevel * 0.75);
+  const brow = new THREE.Mesh(geometry, material);
+  brow.position.set(0, p.lens_height / 2 + p.rim_thickness * 0.72, 0.05);
+  modelGroup.add(brow);
+  addTriangles(geometry);
+}
+
+function addBridge(p, material) {
+  const geometry = roundedPrismGeometry(p.bridge_width + p.rim_thickness * 2.35, p.rim_thickness * 1.15, p.frame_depth, p.rim_thickness * 0.35, p.bevel * 0.6);
+  const bridge = new THREE.Mesh(geometry, material);
+  bridge.position.y = p.lens_height * 0.08;
+  modelGroup.add(bridge);
+  addTriangles(geometry);
+}
+
+function addNosePads(p, material) {
+  const geometry = roundedPrismGeometry(p.nose_pad_width, p.rim_thickness * 1.45, p.frame_depth * 0.72, p.rim_thickness * 0.35, p.bevel * 0.45);
+  [-1, 1].forEach((side) => {
+    const pad = new THREE.Mesh(geometry, material);
+    pad.position.set(side * (p.bridge_width / 2 + p.nose_pad_width / 2), -p.lens_height / 4 - p.nose_pad_drop / 4, -p.frame_depth * 0.35);
+    pad.rotation.z = side * THREE.MathUtils.degToRad(10);
+    modelGroup.add(pad);
+  });
+  addTriangles(geometry, 2);
+}
+
+function addTemple(side, p, material) {
+  const center = (p.bridge_width + p.lens_width) / 2;
+  const hingeX = side * (center + p.lens_width / 2 + p.rim_thickness + p.hinge_width / 2);
+  const temple = new THREE.Group();
+  temple.position.set(hingeX, p.lens_height * 0.28, -p.frame_depth * 0.08);
+  temple.rotation.y = side * THREE.MathUtils.degToRad(p.temple_spread);
+
+  const hingeGeometry = roundedPrismGeometry(p.hinge_width, p.rim_thickness * 1.7, p.frame_depth * 1.2, p.rim_thickness * 0.32, p.bevel * 0.6);
+  const hinge = new THREE.Mesh(hingeGeometry, material);
+  temple.add(hinge);
+  addTriangles(hingeGeometry);
+
+  addHingeBarrels(side, p, temple, material);
+
+  const armGeometry = roundedPrismGeometry(p.rim_thickness * 1.25, p.rim_thickness * 1.05, p.temple_length, p.rim_thickness * 0.32, p.bevel * 0.5);
+  const arm = new THREE.Mesh(armGeometry, material);
+  arm.position.set(side * p.hinge_width * 0.34, 0.2, -p.temple_length / 2 - p.frame_depth * 0.5);
+  temple.add(arm);
+  addTriangles(armGeometry);
+
+  const hookGeometry = roundedPrismGeometry(p.rim_thickness * 1.3, p.rim_thickness * 1.05, Math.max(1, p.temple_drop), p.rim_thickness * 0.32, p.bevel * 0.5);
+  const hook = new THREE.Mesh(hookGeometry, material);
+  hook.position.set(side * p.hinge_width * 0.34, -p.temple_drop * 0.28, -p.temple_length - p.frame_depth * 0.5 - p.temple_drop * 0.28);
+  hook.rotation.x = THREE.MathUtils.degToRad(-28);
+  temple.add(hook);
+  addTriangles(hookGeometry);
+
+  modelGroup.add(temple);
+}
+
+function addHingeBarrels(side, p, temple, material) {
+  const barrelGeometry = new THREE.CylinderGeometry(p.rim_thickness * 0.34, p.rim_thickness * 0.34, p.hinge_width * 0.95, 20);
+  [-1, 1].forEach((slot) => {
+    const barrel = new THREE.Mesh(barrelGeometry, material);
+    barrel.rotation.z = Math.PI / 2;
+    barrel.position.set(side * p.hinge_width * 0.52, slot * p.rim_thickness * 0.42, -p.frame_depth * 0.78);
+    temple.add(barrel);
+  });
+  addTriangles(barrelGeometry, 2);
+
+  const pinMaterial = new THREE.MeshStandardMaterial({ color: "#1b1713", roughness: 0.34, metalness: 0.2 });
+  const pinGeometry = new THREE.CylinderGeometry(p.rim_thickness * 0.13, p.rim_thickness * 0.13, p.hinge_width * 1.15, 16);
+  const pin = new THREE.Mesh(pinGeometry, pinMaterial);
+  pin.rotation.z = Math.PI / 2;
+  pin.position.set(side * p.hinge_width * 0.52, 0, -p.frame_depth * 0.78);
+  temple.add(pin);
+  addTriangles(pinGeometry);
+}
+
+function roundedPrismGeometry(width, height, depth, radius, bevel) {
+  const geometry = new THREE.ExtrudeGeometry(roundedRectShape(width, height, radius), {
+    depth,
+    bevelEnabled: bevel > 0,
+    bevelThickness: Math.max(0.01, bevel),
+    bevelSize: Math.max(0.01, bevel),
+    bevelSegments: bevel > 0 ? 2 : 0
+  });
+  geometry.center();
+  return geometry;
+}
+
+function renderMeshObject(object) {
+  const clone = object.clone(true);
+  const material = new THREE.MeshStandardMaterial({
+    color: state.frameColor,
+    roughness: 0.46,
+    metalness: 0.04
+  });
+  clone.traverse((child) => {
+    if (!child.isMesh) return;
+    child.geometry.computeVertexNormals();
+    child.material = material;
+    addTriangles(child.geometry);
+  });
+  modelGroup.add(clone);
+  modelGroup.rotation.set(-0.1, 0.25, 0);
+}
+
+function roundedRectShape(width, height, radius) {
+  const r = Math.min(radius, width / 2 - 0.01, height / 2 - 0.01);
+  const x = -width / 2;
+  const y = -height / 2;
+  const shape = new THREE.Shape();
+  shape.moveTo(x + r, y);
+  shape.lineTo(x + width - r, y);
+  shape.quadraticCurveTo(x + width, y, x + width, y + r);
+  shape.lineTo(x + width, y + height - r);
+  shape.quadraticCurveTo(x + width, y + height, x + width - r, y + height);
+  shape.lineTo(x + r, y + height);
+  shape.quadraticCurveTo(x, y + height, x, y + height - r);
+  shape.lineTo(x, y + r);
+  shape.quadraticCurveTo(x, y, x + r, y);
+  return shape;
+}
+
+function createDefaultModel() {
+  const seed = seedCollections[0];
+  return {
+    id: defaultModelId,
+    name: seed.name,
+    category: seed.category,
+    description: seed.description,
+    scadSource: sampleScad,
+    params: { ...structuredClone(defaultParams), ...seed.params },
+    thumbnail: "",
+    components: null,
+    createdAt: Date.now(),
+    updatedAt: Date.now()
+  };
+}
+
+function loadStoredModels() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(modelStorageKey) || "[]");
+    const stored = Array.isArray(parsed)
+      ? parsed.map(normalizeStoredModel).filter((model) => model && !legacyModelIds.has(model.id))
+      : [];
+    const merged = mergeSeedCollections(stored);
+    localStorage.setItem(modelStorageKey, JSON.stringify(merged));
+    return merged;
+  } catch {
+    return mergeSeedCollections([]);
+  }
+}
+
+function mergeSeedCollections(stored) {
+  const byId = new Map(stored.map((model) => [model.id, model]));
+  seedCollections.forEach((seed) => {
+    if (byId.has(seed.id)) return;
+    byId.set(seed.id, normalizeStoredModel({
+      id: seed.id,
+      name: seed.name,
+      category: seed.category,
+      access: seed.access,
+      description: seed.description,
+      scadSource: sampleScad,
+      params: { ...structuredClone(defaultParams), ...seed.params },
+      thumbnail: "",
+      createdAt: Date.now(),
+      updatedAt: Date.now()
+    }));
+  });
+  return [...byId.values()].sort((a, b) => {
+    const categoryOrder = categoryRank(a.category) - categoryRank(b.category);
+    if (categoryOrder) return categoryOrder;
+    return a.createdAt - b.createdAt;
+  });
+}
+
+function categoryRank(category) {
+  return category === "sun" ? 0 : 1;
+}
+
+function normalizeStoredModel(model) {
+  if (!model || typeof model !== "object") return null;
+  const name = String(model.name || "Model OpenSCAD").trim() || "Model OpenSCAD";
+  const category = model.category === "optical" ? "optical" : "sun";
+  const access = ["free", "pro", "studio"].includes(model.access) ? model.access : "free";
+  const description = String(model.description || "").trim();
+  const scadSource = String(model.scadSource || sampleScad);
+  const params = { ...structuredClone(defaultParams), ...(model.params || parseScadParameters(scadSource)) };
+  return {
+    id: String(model.id || crypto.randomUUID()),
+    name,
+    category,
+    access,
+    description,
+    scadSource,
+    params,
+    thumbnail: typeof model.thumbnail === "string" ? model.thumbnail : "",
+    components: model.components && typeof model.components === "object" ? model.components : null,
+    createdAt: Number(model.createdAt) || Date.now(),
+    updatedAt: Number(model.updatedAt) || Date.now()
+  };
+}
+
+function persistModels() {
+  localStorage.setItem(modelStorageKey, JSON.stringify(state.models));
+}
+
+function currentModelRecord() {
+  return state.models.find((model) => model.id === state.activeModelId);
+}
+
+function selectModel(id, options = {}) {
+  const { rebuildControls = true, renderScene = true, logSelection = true, captureThumbnail = false } = options;
+  const model = state.models.find((item) => item.id === id) || state.models[0] || createDefaultModel();
+  if (!state.models.includes(model)) state.models.unshift(model);
+  state.activeModelId = model.id;
+  state.modelName = model.name;
+  state.scadSource = model.scadSource;
+  state.params = { ...structuredClone(defaultParams), ...model.params };
+  state.meshObject = null;
+  state.previewMode = "parametric";
+  if (rebuildControls) buildControls();
+  updateGeneratedSource();
+  if (renderScene) {
+    render();
+    if (captureThumbnail) queueThumbnailCapture();
+  }
+  renderGallery();
+  if (logSelection) log(`Loaded model: ${model.name}.`);
+}
+
+function syncActiveModel(options = {}) {
+  const { persist = true, thumbnail = null } = options;
+  const model = currentModelRecord();
+  if (!model) return;
+  model.name = state.modelName;
+  model.params = { ...state.params };
+  model.scadSource = generateScadSource();
+  model.updatedAt = Date.now();
+  if (thumbnail !== null) model.thumbnail = thumbnail;
+  if (persist) {
+    persistModels();
+    renderGallery();
+  }
+}
+
+function scheduleModelPersist() {
+  clearTimeout(persistTimer);
+  persistTimer = setTimeout(() => {
+    syncActiveModel();
+  }, 350);
+}
+
+function setActiveSection(section) {
+  if (section === "studio" && !isDeveloper()) section = "home";
+  const showEditor = section === "configurator";
+  const showStudio = section === "studio";
+  els.homePage.hidden = showEditor || showStudio;
+  els.workspace.hidden = !showEditor;
+  els.studioPanel.hidden = !showStudio || !isDeveloper();
+  els.openHome.classList.toggle("active", section === "home");
+  els.openGallery.classList.toggle("active", false);
+  els.openStudio.classList.toggle("active", showStudio && isDeveloper());
+  if (showEditor) {
+    resize();
+    render();
+  }
+}
+
+function scrollGalleryIntoView() {
+  els.galleryPanel.scrollIntoView({ behavior: "smooth", block: "start" });
+  els.openHome.classList.remove("active");
+  els.openGallery.classList.add("active");
+  els.openStudio.classList.remove("active");
+}
+
+function sessionToken() {
+  return localStorage.getItem(sessionStorageKey) || "";
+}
+
+async function apiRequest(path, options = {}) {
+  const headers = { ...(options.headers || {}) };
+  if (options.body && !headers["Content-Type"]) headers["Content-Type"] = "application/json";
+  const token = sessionToken();
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const response = await fetch(path, { ...options, headers });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload.error || "Backend request failed.");
+  return payload;
+}
+
+function accountFromUser(user) {
+  if (!user) return { email: "", plan: "free", role: "visitor", subscriptionMode: "free", subscriptionStatus: "none", planEndsAt: null };
+  return {
+    email: String(user.email || "").toLowerCase(),
+    plan: ["free", "pro", "studio"].includes(user.plan) ? user.plan : "free",
+    role: user.role === "developer" ? "developer" : "customer",
+    subscriptionMode: user.subscriptionMode || "free",
+    subscriptionStatus: user.subscriptionStatus || "none",
+    planEndsAt: user.planEndsAt || null
+  };
+}
+
+async function hydrateSessionFromBackend() {
+  if (!sessionToken()) return false;
+  try {
+    const payload = await apiRequest("/api/session");
+    state.account = accountFromUser(payload.user);
+    persistActiveAccount({ skipProfile: true });
+    return true;
+  } catch {
+    localStorage.removeItem(sessionStorageKey);
+    localStorage.removeItem(accountStorageKey);
+    state.account = accountFromUser(null);
+    return false;
+  }
+}
+
+function isDeveloper() {
+  return state.account.role === "developer";
+}
+
+function isAdminEmail(email) {
+  return adminEmails.has(String(email || "").toLowerCase());
+}
+
+function canAccessModel(model) {
+  if (isDeveloper()) return true;
+  return planRank[state.account.plan] >= planRank[model.access || "free"];
+}
+
+function accessLabel(access) {
+  if (access === "studio") return "Plus";
+  if (access === "pro") return "Pro";
+  return "Free";
+}
+
+function accountLabel() {
+  if (isDeveloper()) return "Developer";
+  if (state.account.role === "visitor" || !state.account.email) return "Login / Sign up";
+  return "Account";
+}
+
+function updateAccountUi() {
+  if (!els.accountButton) return;
+  const signedIn = state.account.role !== "visitor" && Boolean(state.account.email);
+  els.accountButton.textContent = accountLabel();
+  els.accountButton.classList.toggle("developer", isDeveloper());
+  els.openStudio.hidden = !isDeveloper();
+  els.studioPanel.hidden = els.studioPanel.hidden || !isDeveloper();
+  els.accountEmail.value = state.account.email;
+  els.authForm.hidden = signedIn;
+  els.accountProfile.hidden = !signedIn;
+  els.cancelSubscription.hidden = true;
+  if (signedIn) {
+    els.profileEmail.textContent = state.account.email;
+    els.profileRole.textContent = isDeveloper() ? "Developer account" : "Customer account";
+    els.profilePlan.textContent = accessLabel(state.account.plan);
+    els.profileStatus.textContent = subscriptionStatusLabel();
+    els.cancelSubscription.hidden = isDeveloper() || state.account.subscriptionMode !== "subscription";
+    els.cancelSubscription.disabled = state.account.subscriptionStatus !== "active";
+  }
+  els.planButtons.forEach((button) => {
+    button.classList.toggle("active", button.dataset.plan === state.account.plan);
+    button.disabled = isDeveloper() && button.dataset.plan !== "studio";
+  });
+  els.accountNote.textContent = isDeveloper()
+    ? t("accountDeveloperNote")
+    : state.account.plan === "pro"
+      ? t("accountProNote")
+      : t("accountFreeNote");
+  els.planPickButtons.forEach((button) => {
+    const picked = button.dataset.planPick === state.account.plan;
+    button.textContent = picked ? "Current plan" : `Choose ${accessLabel(button.dataset.planPick)}`;
+    button.classList.toggle("accent", !picked && button.dataset.planPick === "pro");
+  });
+  renderGallery();
+}
+
+function subscriptionStatusLabel() {
+  if (isDeveloper()) return "Developer access";
+  const ends = state.account.planEndsAt ? new Date(state.account.planEndsAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "";
+  if (state.account.subscriptionStatus === "active") return ends ? `Subscription active until ${ends}` : "Subscription active";
+  if (state.account.subscriptionStatus === "cancel_at_period_end") return ends ? `Cancels on ${ends}` : "Cancelling";
+  if (state.account.subscriptionStatus === "paid_once") return ends ? `One-month access until ${ends}` : "One-month access";
+  return state.account.plan === "free" ? "Free access" : "Active";
+}
+
+async function signInAccount() {
+  const email = els.accountEmail.value.trim().toLowerCase();
+  const password = els.accountPassword.value;
+  if (!email || !password) {
+    els.accountNote.textContent = "Enter email and password to continue.";
+    return;
+  }
+  try {
+    els.accountNote.textContent = "Connecting to Frame Lab backend...";
+    const payload = await apiRequest("/api/auth/email", {
+      method: "POST",
+      body: JSON.stringify({ email, password })
+    });
+    localStorage.setItem(sessionStorageKey, payload.token);
+    state.account = accountFromUser(payload.user);
+  } catch (error) {
+    els.accountNote.textContent = error.message || "Could not sign in.";
+    return;
+  }
+  persistActiveAccount();
+  updateAccountUi();
+  els.accountPassword.value = "";
+  els.accountPanel.hidden = true;
+  if (!isDeveloper()) els.plansPanel.hidden = false;
+  log(`${email || "account"}: ${accountLabel()}.`);
+}
+
+async function signOutAccount() {
+  try {
+    if (sessionToken()) await apiRequest("/api/auth/sign-out", { method: "POST" });
+  } catch {
+    // Local logout should still complete if the session expired server-side.
+  }
+  localStorage.removeItem(sessionStorageKey);
+  state.account = accountFromUser(null);
+  persistActiveAccount();
+  els.plansPanel.hidden = true;
+  els.accountPanel.hidden = true;
+  els.paymentPanel.hidden = true;
+  els.accountPassword.value = "";
+  setActiveSection("home");
+  updateAccountUi();
+  log("Signed out.");
+}
+
+function openPayment(plan) {
+  state.pendingPlan = plan;
+  state.pendingPaymentMode = "one_time";
+  const label = accessLabel(plan);
+  const price = planPrices[plan] || "$0";
+  if (plan === "free") {
+    state.account.plan = "free";
+    if (state.account.role === "visitor") state.account.role = "customer";
+    persistActiveAccount();
+    updateAccountUi();
+    els.plansPanel.hidden = true;
+    log("Free plan selected.");
+    return;
+  }
+  if (state.account.role === "visitor" || !state.account.email) {
+    els.plansPanel.hidden = true;
+    els.accountPanel.hidden = false;
+    updateAccountUi();
+    els.accountNote.textContent = "Create an account before checkout.";
+    els.accountEmail.focus();
+    return;
+  }
+  els.paymentPlanName.textContent = label;
+  els.paymentTitle.textContent = `${label} checkout`;
+  els.paymentSubtitle.textContent = `${label} access for Frame Lab production files.`;
+  els.paymentAmount.textContent = price;
+  updatePaymentModeUi();
+  els.paymentEmail.value = state.account.email;
+  els.paymentCard.value = "";
+  els.paymentExpiry.value = "";
+  els.paymentCvc.value = "";
+  els.paymentNote.textContent = "Local backend checkout. Stripe can be connected when production keys are ready.";
+  els.plansPanel.hidden = true;
+  els.paymentPanel.hidden = false;
+}
+
+function updatePaymentModeUi() {
+  els.paymentModeButtons.forEach((button) => {
+    button.classList.toggle("active", button.dataset.paymentMode === state.pendingPaymentMode);
+  });
+  const recurring = state.pendingPaymentMode === "subscription";
+  els.paymentSubtitle.textContent = recurring
+    ? `${accessLabel(state.pendingPlan)} monthly subscription. You can cancel from your account.`
+    : `${accessLabel(state.pendingPlan)} access for one month, no renewal.`;
+}
+
+async function completePayment() {
+  const plan = state.pendingPlan;
+  if (!["pro", "studio"].includes(plan)) return;
+  if (!els.paymentEmail.value.trim() || !els.paymentCard.value.trim() || !els.paymentExpiry.value.trim() || !els.paymentCvc.value.trim()) {
+    els.paymentNote.textContent = "Fill in the checkout fields to continue.";
+    return;
+  }
+  try {
+    els.paymentNote.textContent = "Creating checkout on the backend...";
+    const payload = await apiRequest("/api/checkout", {
+      method: "POST",
+      body: JSON.stringify({ plan, mode: state.pendingPaymentMode })
+    });
+    state.account = accountFromUser(payload.user);
+    els.paymentNote.textContent = payload.checkout?.message || "Plan activated.";
+  } catch (error) {
+    els.paymentNote.textContent = error.message || "Checkout failed.";
+    return;
+  }
+  persistActiveAccount();
+  updateAccountUi();
+  els.paymentPanel.hidden = true;
+  els.accountPanel.hidden = false;
+  log(`Activated ${accessLabel(plan)} for ${state.account.email}.`);
+}
+
+async function cancelSubscription() {
+  if (state.account.subscriptionMode !== "subscription") return;
+  try {
+    const payload = await apiRequest("/api/subscription/cancel", { method: "POST" });
+    state.account = accountFromUser(payload.user);
+    persistActiveAccount();
+    updateAccountUi();
+    log(payload.message || "Subscription cancellation scheduled.");
+  } catch (error) {
+    log(error.message || "Could not cancel subscription.");
+  }
+}
+
+async function startOauth(provider) {
+  try {
+    const payload = await apiRequest(`/api/auth/oauth/${provider}`);
+    if (payload.url) window.location.href = payload.url;
+  } catch (error) {
+    els.accountNote.textContent = `${provider === "apple" ? "Apple" : "Google"} login needs provider credentials before it can go live.`;
+  }
+}
+
+function accountProfile(email) {
+  return accountProfiles()[String(email || "").toLowerCase()] || null;
+}
+
+function accountProfiles() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(accountProfilesStorageKey) || "{}");
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function upsertAccountProfile(account) {
+  const email = String(account.email || "").toLowerCase();
+  const profiles = accountProfiles();
+  const existing = profiles[email] || {};
+  const profile = {
+    email,
+    role: isAdminEmail(email) ? "developer" : (account.role === "developer" ? "developer" : "customer"),
+    plan: isAdminEmail(email) ? "studio" : (["free", "pro", "studio"].includes(account.plan) ? account.plan : "free"),
+    subscriptionMode: account.subscriptionMode || existing.subscriptionMode || "free",
+    subscriptionStatus: account.subscriptionStatus || existing.subscriptionStatus || "none",
+    planEndsAt: account.planEndsAt || existing.planEndsAt || null,
+    createdAt: existing.createdAt || Date.now(),
+    updatedAt: Date.now()
+  };
+  profiles[email] = profile;
+  localStorage.setItem(accountProfilesStorageKey, JSON.stringify(profiles));
+  return {
+    email: profile.email,
+    role: profile.role,
+    plan: profile.plan,
+    subscriptionMode: profile.subscriptionMode,
+    subscriptionStatus: profile.subscriptionStatus,
+    planEndsAt: profile.planEndsAt
+  };
+}
+
+function persistActiveAccount(options = {}) {
+  localStorage.setItem(accountStorageKey, JSON.stringify(state.account));
+  if (state.account.email && !options.skipProfile) upsertAccountProfile(state.account);
+}
+
+function renderGallery() {
+  if (!els.sunGalleryGrid || !els.opticalGalleryGrid) return;
+  els.sunGalleryGrid.innerHTML = "";
+  els.opticalGalleryGrid.innerHTML = "";
+  state.models.forEach((model, index) => {
+    const locked = !canAccessModel(model);
+    const card = document.createElement("article");
+    card.className = `gallery-card${model.id === state.activeModelId ? " active" : ""}${locked ? " locked" : ""}`;
+    card.dataset.modelId = model.id;
+    const thumb = model.thumbnail
+      ? `<img src="${model.thumbnail}" alt="Miniatura modelu ${escapeHtml(model.name)}" />`
+      : `<span class="gallery-placeholder gallery-placeholder-${(index % 5) + 1}" aria-hidden="true"></span>`;
+    card.innerHTML = `
+      <div class="gallery-thumb">${thumb}</div>
+      <div class="gallery-body">
+        <div class="gallery-title-row">
+          <div>
+            <h3>${escapeHtml(model.name)}</h3>
+            <div class="gallery-meta">${escapeHtml(model.description || (model.category === "sun" ? t("sunMeta") : t("opticalMeta")))}</div>
+          </div>
+          <span class="access-badge access-${model.access || "free"}">${accessLabel(model.access)}</span>
+        </div>
+        <div class="gallery-actions">
+          <button type="button" class="accent" data-action="${locked ? "upgrade" : "open"}">${locked ? t("upgrade") : t("open")}</button>
+          <button type="button" data-action="export">${t("export")}</button>
+          ${isDeveloper() ? `<button type="button" data-action="edit">Edit</button>` : ""}
+          ${isDeveloper() && model.id !== defaultModelId ? `<button type="button" class="delete-button" data-action="delete">${t("delete")}</button>` : ""}
+        </div>
+      </div>
+    `;
+    (model.category === "optical" ? els.opticalGalleryGrid : els.sunGalleryGrid).append(card);
+  });
+}
+
+function handleGalleryClick(event) {
+  const button = event.target.closest("button[data-action]");
+  if (!button) return;
+  const card = button.closest(".gallery-card");
+  const model = state.models.find((item) => item.id === card?.dataset.modelId);
+  if (!model) return;
+  if (button.dataset.action === "upgrade") {
+    els.accountPanel.hidden = false;
+    log(`${model.name}: ${t("lockedModel")} ${accessLabel(model.access)}.`);
+    return;
+  }
+  if (button.dataset.action === "open") {
+    selectModel(model.id);
+    setActiveSection("configurator");
+    return;
+  }
+  if (button.dataset.action === "export") {
+    if (!canAccessModel(model)) {
+      els.accountPanel.hidden = false;
+      log(`${model.name}: ${t("lockedModel")} ${accessLabel(model.access)}.`);
+      return;
+    }
+    downloadText(`${slugify(model.name)}.scad`, model.scadSource, "application/scad");
+    log(`Exported ${model.name}.scad.`);
+    return;
+  }
+  if (button.dataset.action === "edit") {
+    if (!isDeveloper()) {
+      log("Editing is available only in developer mode.");
+      return;
+    }
+    startModelEdit(model);
+    return;
+  }
+  if (button.dataset.action === "delete") {
+    if (!isDeveloper()) {
+      log("Deletion is available only in developer mode.");
+      return;
+    }
+    state.models = state.models.filter((item) => item.id !== model.id);
+    if (state.activeModelId === model.id) selectModel(state.models[0]?.id || defaultModelId, { logSelection: false });
+    persistModels();
+    renderGallery();
+    log(`Deleted model: ${model.name}.`);
+  }
+}
+
+function queueThumbnailCapture() {
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      try {
+        renderer.render(scene, camera);
+        syncActiveModel({ thumbnail: els.canvas.toDataURL("image/png") });
+      } catch {
+        syncActiveModel();
+      }
+    });
+  });
+}
+
+async function handleScadImport(event) {
+  const file = event.target.files?.[0];
+  if (!file) return;
+  const source = await file.text();
+  const parsed = parseScadParameters(source);
+  const model = {
+    id: crypto.randomUUID(),
+    name: file.name.replace(/\.[^.]+$/, ""),
+    scadSource: source,
+    params: { ...structuredClone(defaultParams), ...parsed },
+    thumbnail: "",
+    createdAt: Date.now(),
+    updatedAt: Date.now()
+  };
+  state.models.unshift(model);
+  persistModels();
+  selectModel(model.id);
+  setActiveSection("configurator");
+  log(`Added ${file.name}. Detected ${Object.keys(parsed).length} Frame Lab-compatible parameters.`);
+  event.target.value = "";
+}
+
+async function addCollectionFromStudio() {
+  const scadFile = els.galleryScadInput.files?.[0];
+  const imageFile = els.collectionImageInput.files?.[0];
+  const frontFile = els.collectionFrontInput.files?.[0];
+  const templeFiles = [...(els.collectionTempleInput.files || [])];
+  const existing = state.editingModelId ? state.models.find((model) => model.id === state.editingModelId) : null;
+  const title = (els.collectionTitle.value.trim() || scadFile?.name?.replace(/\.[^.]+$/, "") || existing?.name || "New collection");
+  const source = scadFile ? await scadFile.text() : sampleScad;
+  const parsed = scadFile ? parseScadParameters(source) : {};
+  const params = existing && !scadFile ? existing.params : { ...structuredClone(defaultParams), ...parsed };
+  const thumbnail = imageFile
+    ? state.croppedCollectionImage || await readFileAsDataUrl(imageFile)
+    : existing?.thumbnail || makeAutoCollectionThumbnail(title, params, els.collectionCategory.value);
+  const model = normalizeStoredModel({
+    id: existing?.id || crypto.randomUUID(),
+    name: title,
+    category: els.collectionCategory.value === "optical" ? "optical" : "sun",
+    access: ["free", "pro", "studio"].includes(els.collectionAccess.value) ? els.collectionAccess.value : "pro",
+    description: els.collectionDescription.value.trim(),
+    scadSource: scadFile ? source : existing?.scadSource || source,
+    params,
+    thumbnail,
+    components: {
+      front: frontFile ? fileSummary(frontFile) : existing?.components?.front || null,
+      temples: templeFiles.length ? templeFiles.map(fileSummary) : existing?.components?.temples || []
+    },
+    createdAt: existing?.createdAt || Date.now(),
+    updatedAt: Date.now()
+  });
+  if (existing) {
+    state.models = state.models.map((item) => item.id === existing.id ? model : item);
+  } else {
+    state.models.unshift(model);
+  }
+  persistModels();
+  selectModel(model.id, { logSelection: false, captureThumbnail: !thumbnail });
+  renderGallery();
+  clearCollectionForm();
+  setActiveSection("home");
+  requestAnimationFrame(() => scrollGalleryIntoView());
+  log(`${existing ? "Updated" : "Added"} collection: ${model.name}.`);
+}
+
+async function handleCollectionImageSelect() {
+  const file = els.collectionImageInput.files?.[0];
+  state.croppedCollectionImage = "";
+  if (!file) return;
+  if (!file.type.startsWith("image/")) {
+    log("Choose an image file for the collection photo.");
+    return;
+  }
+  const source = await readFileAsDataUrl(file);
+  const image = new Image();
+  image.addEventListener("load", () => {
+    state.cropImage = image;
+    els.cropZoom.value = "1";
+    els.cropX.value = "0";
+    els.cropY.value = "0";
+    els.cropPanel.hidden = false;
+    drawImageCrop();
+  }, { once: true });
+  image.src = source;
+}
+
+function drawImageCrop() {
+  if (!state.cropImage) return;
+  const canvas = els.cropCanvas;
+  const ctx = canvas.getContext("2d");
+  const width = canvas.width;
+  const height = canvas.height;
+  const image = state.cropImage;
+  const zoom = Number(els.cropZoom.value) || 1;
+  const baseScale = Math.max(width / image.naturalWidth, height / image.naturalHeight);
+  const scale = baseScale * zoom;
+  const drawWidth = image.naturalWidth * scale;
+  const drawHeight = image.naturalHeight * scale;
+  const maxX = Math.max(0, (drawWidth - width) / 2);
+  const maxY = Math.max(0, (drawHeight - height) / 2);
+  const offsetX = (Number(els.cropX.value) / 100) * maxX;
+  const offsetY = (Number(els.cropY.value) / 100) * maxY;
+  const x = (width - drawWidth) / 2 + offsetX;
+  const y = (height - drawHeight) / 2 + offsetY;
+  ctx.clearRect(0, 0, width, height);
+  ctx.fillStyle = "#090b0b";
+  ctx.fillRect(0, 0, width, height);
+  ctx.drawImage(image, x, y, drawWidth, drawHeight);
+  ctx.strokeStyle = "rgba(255,255,255,0.72)";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(1, 1, width - 2, height - 2);
+}
+
+function applyImageCrop() {
+  if (!state.cropImage) return;
+  drawImageCrop();
+  state.croppedCollectionImage = els.cropCanvas.toDataURL("image/jpeg", 0.92);
+  els.cropPanel.hidden = true;
+  els.cropNote.textContent = "Cropped image ready.";
+  log("Cropped gallery image ready.");
+}
+
+function cancelImageCrop() {
+  state.cropImage = null;
+  state.croppedCollectionImage = "";
+  els.collectionImageInput.value = "";
+  els.cropPanel.hidden = true;
+}
+
+function handleComponentFileSelect() {
+  const file = els.componentFileInput.files?.[0];
+  if (!file) return;
+  const cleanName = file.name.replace(/\.[^.]+$/, "");
+  if (!els.componentName.value.trim()) els.componentName.value = cleanName.replace(/\bearing\b/gi, "temple");
+  if (/temple|tample|earing|zausz/i.test(file.name)) {
+    els.componentKind.value = "temple";
+  } else if (/front|frame|ramka/i.test(file.name)) {
+    els.componentKind.value = "front";
+  }
+}
+
+function startModelEdit(model) {
+  state.editingModelId = model.id;
+  els.collectionTitle.value = model.name;
+  els.collectionCategory.value = model.category === "optical" ? "optical" : "sun";
+  els.collectionAccess.value = ["free", "pro", "studio"].includes(model.access) ? model.access : "free";
+  els.collectionDescription.value = model.description || "";
+  els.galleryScadInput.value = "";
+  els.collectionImageInput.value = "";
+  els.collectionFrontInput.value = "";
+  els.collectionTempleInput.value = "";
+  els.addCollection.textContent = "Save changes";
+  setActiveSection("studio");
+  log(`Editing collection: ${model.name}.`);
+}
+
+function makeAutoCollectionThumbnail(title, params, category) {
+  const accent = category === "optical" ? "#df8955" : "#c96b34";
+  const frame = category === "optical" ? "#2c2925" : "#171512";
+  const lensW = THREE.MathUtils.clamp(params.lens_width * 1.65, 74, 104);
+  const lensH = THREE.MathUtils.clamp(params.lens_height * 1.55, 48, 70);
+  const bridge = THREE.MathUtils.clamp(params.bridge_width * 1.2, 16, 30);
+  const x1 = 96 - bridge / 2 - lensW;
+  const x2 = 96 + bridge / 2;
+  const y = 72 - lensH / 2;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="640" height="420" viewBox="0 0 192 126">
+    <rect width="192" height="126" fill="#fff8f1"/>
+    <rect x="${x1}" y="${y}" width="${lensW}" height="${lensH}" rx="14" fill="none" stroke="${frame}" stroke-width="8"/>
+    <rect x="${x2}" y="${y}" width="${lensW}" height="${lensH}" rx="14" fill="none" stroke="${frame}" stroke-width="8"/>
+    <path d="M${x1 + lensW} 70 C${90} 62 ${102} 62 ${x2} 70" fill="none" stroke="${frame}" stroke-width="7" stroke-linecap="round"/>
+    <path d="M${x1 - 2} ${y + 8} L20 28" fill="none" stroke="${frame}" stroke-width="7" stroke-linecap="round"/>
+    <path d="M${x2 + lensW + 2} ${y + 8} L172 28" fill="none" stroke="${frame}" stroke-width="7" stroke-linecap="round"/>
+    <circle cx="154" cy="95" r="4" fill="${accent}"/>
+    <text x="24" y="110" fill="#766b63" font-size="8" font-family="Inter,Arial" font-weight="700">${escapeHtml(title).slice(0, 26)}</text>
+  </svg>`;
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+}
+
+function normalizeObjectForScene(object) {
+  const box = new THREE.Box3().setFromObject(object);
+  if (box.isEmpty()) return;
+  const center = box.getCenter(new THREE.Vector3());
+  object.position.sub(center);
+}
+
+function fileSummary(file) {
+  return {
+    name: file.name,
+    type: file.name.split(".").pop().toLowerCase(),
+    size: file.size
+  };
+}
+
+function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.addEventListener("load", () => resolve(String(reader.result || "")));
+    reader.addEventListener("error", () => reject(reader.error));
+    reader.readAsDataURL(file);
+  });
+}
+
+function clearCollectionForm() {
+  state.editingModelId = null;
+  state.cropImage = null;
+  state.croppedCollectionImage = "";
+  els.collectionTitle.value = "";
+  els.collectionDescription.value = "";
+  els.collectionAccess.value = "free";
+  els.galleryScadInput.value = "";
+  els.collectionImageInput.value = "";
+  els.collectionFrontInput.value = "";
+  els.collectionTempleInput.value = "";
+  els.addCollection.textContent = t("addCollection");
+}
+
+async function addComponentFile() {
+  const file = els.componentFileInput.files?.[0];
+  if (!file) {
+    log("Choose a 3MF, STEP, or STP file.");
+    return;
+  }
+  const format = file.name.split(".").pop().toLowerCase();
+  if (!["3mf", "step", "stp"].includes(format)) {
+    log("Supported files are .3mf, .step, and .stp.");
+    return;
+  }
+  const component = {
+    id: crypto.randomUUID(),
+    name: (els.componentName.value.trim() || file.name.replace(/\.[^.]+$/, "")),
+    kind: els.componentKind.value,
+    size: els.componentSize.value,
+    connector: els.componentConnector.value.trim() || "FL-H8",
+    format: format === "stp" ? "step" : format,
+    fileName: file.name,
+    byteSize: file.size,
+    analysis: await analyzeComponentFile(file, format === "stp" ? "step" : format),
+    createdAt: Date.now()
+  };
+  component.materialColor = component.analysis?.materialColor || null;
+  await saveComponentRecord(component, file);
+  state.uploadedComponents = [...await loadSeedComponentAssets(), ...await loadComponentRecords()]
+    .filter((item) => !state.hiddenComponentIds.has(item.id));
+  await hydrateUploadedComponentMeshes();
+  rebuildComponentLibrary();
+  if (component.kind === "front") {
+    state.assembly.front = { modelId: component.id, size: component.size };
+  } else {
+    state.assembly.leftTemple = { modelId: component.id, size: component.size };
+    state.assembly.rightTemple = { modelId: component.id, size: component.size };
+  }
+  applyAssemblyToParams();
+  buildBuilderControls();
+  buildControls();
+  updateGeneratedSource();
+  render();
+  renderGallery();
+  els.componentFileInput.value = "";
+  els.componentName.value = "";
+  log(`Added component: ${component.name} (${component.format.toUpperCase()}, ${component.size}, ${component.connector}).`);
+}
+
+async function analyzeComponentFile(file, format) {
+  if (format === "3mf") {
+    try {
+      const parsed = await parse3mfComponent(file);
+      return parsed.analysis;
+    } catch (error) {
+      return { readable: false, summary: `3MF saved, preview unavailable: ${error.message}` };
+    }
+  }
+  const header = await file.slice(0, 240).text();
+  return {
+    readable: /^ISO-10303-21/i.test(header.trim()),
+    summary: /^ISO-10303-21/i.test(header.trim()) ? "STEP AP file" : "STEP saved without CAD-kernel validation"
+  };
+}
+
+async function hydrateUploadedComponentMeshes() {
+  await Promise.all(state.uploadedComponents.map(async (component) => {
+    if (component.meshObject) return;
+    if (component.format !== "3mf" || !component.fileBlob) return;
+    try {
+      const parsed = await parse3mfComponent(component.fileBlob);
+      component.meshObject = parsed.object;
+      component.materialColor = parsed.analysis.materialColor;
+      component.analysis = { ...(component.analysis || {}), ...parsed.analysis };
+    } catch (error) {
+      component.analysis = {
+        ...(component.analysis || {}),
+        readable: false,
+        summary: `3MF saved, preview unavailable: ${error.message}`
+      };
+    }
+  }));
+}
+
+async function loadSeedComponentAssets() {
+  const results = [];
+  await Promise.all(seedComponentAssets.map(async (component) => {
+    try {
+      const response = await fetch(component.assetUrl);
+      if (!response.ok) return;
+      const blob = await response.blob();
+      const parsed = await parse3mfComponent(blob);
+      results.push({
+        ...component,
+        byteSize: blob.size,
+        materialColor: parsed.analysis.materialColor,
+        analysis: parsed.analysis,
+        meshObject: parsed.object,
+        createdAt: Date.now()
+      });
+    } catch {
+      // Optional local test assets should never block the app.
+    }
+  }));
+  return results;
+}
+
+async function parse3mfComponent(fileOrBlob) {
+  const buffer = await fileOrBlob.arrayBuffer();
+  const loader = new ThreeMFLoader();
+  const object = loader.parse(buffer.slice(0));
+  let meshes = 0;
+  let triangles = 0;
+  object.traverse((child) => {
+    if (!child.isMesh || !child.geometry) return;
+    meshes += 1;
+    const position = child.geometry.getAttribute("position");
+    if (position) triangles += Math.floor(position.count / 3);
+  });
+  const materialColors = [...new Set([...extract3mfXmlColors(buffer), ...extractObjectMaterialColors(object)])];
+  const materialColor = materialColors[0] || null;
+  return {
+    object,
+    analysis: {
+      readable: true,
+      meshes,
+      triangles,
+      materialColor,
+      materialColors,
+      summary: `${meshes} mesh / ${triangles.toLocaleString("en-US")} tris${materialColor ? ` / ${materialColor}` : ""}`
+    }
+  };
+}
+
+function extractObjectMaterialColors(object) {
+  const colors = [];
+  object.traverse((child) => {
+    if (!child.isMesh || !child.material) return;
+    const materials = Array.isArray(child.material) ? child.material : [child.material];
+    materials.forEach((material) => {
+      if (material?.color?.isColor) colors.push(`#${material.color.getHexString().toUpperCase()}`);
+    });
+  });
+  return colors;
+}
+
+function extract3mfXmlColors(buffer) {
+  try {
+    const files = unzipSync(new Uint8Array(buffer));
+    const modelFile = files["3D/3dmodel.model"];
+    if (!modelFile) return [];
+    const xml = strFromU8(modelFile);
+    return [...xml.matchAll(/<m:color\b[^>]*\bcolor="(#[0-9a-fA-F]{6})(?:[0-9a-fA-F]{2})?"/g)].map((match) => match[1].toUpperCase());
+  } catch {
+    return [];
+  }
+}
+
+function parseScadParameters(source) {
+  const params = {};
+  parameterSchema.forEach(([key, , , min, max]) => {
+    const pattern = new RegExp(`(^|\\n)\\s*${escapeRegExp(key)}\\s*=\\s*([-+]?\\d*\\.?\\d+)\\s*;`);
+    const match = source.match(pattern);
+    if (match) params[key] = THREE.MathUtils.clamp(Number(match[2]), min, max);
+  });
+  return params;
+}
+
+function updateGeneratedSource() {
+  els.scadPreview.textContent = generateScadSource();
+  els.modelName.textContent = state.modelName;
+}
+
+function generateScadSource() {
+  const generated = buildGeneratedScad();
+  if (!state.scadSource || state.scadSource === sampleScad) return generated;
+  let source = state.scadSource;
+  parameterSchema.forEach(([key]) => {
+    const assignment = `${key} = ${formatNumber(state.params[key])};`;
+    const pattern = new RegExp(`(^|\\n)(\\s*)${escapeRegExp(key)}\\s*=\\s*[-+]?\\d*\\.?\\d+\\s*;`);
+    if (pattern.test(source)) {
+      source = source.replace(pattern, `$1$2${assignment}`);
+    } else {
+      source = `${assignment}\n${source}`;
+    }
+  });
+  return source;
+}
+
+function buildGeneratedScad() {
+  const paramLines = parameterSchema
+    .map(([key, label, , min, max, step]) => `${key} = ${formatNumber(state.params[key])}; // [${min}:${step}:${max}] ${label}`)
+    .join("\n");
+  return `${paramLines}
+
+module rounded_square_2d(size=[10,10], r=2) {
+  offset(r=r) square([size[0]-2*r, size[1]-2*r], center=true);
+}
+
+module lens_rim(cx=0) {
+  translate([cx, 0, 0])
+  linear_extrude(height=frame_depth, center=true, convexity=8)
+  difference() {
+    rounded_square_2d([lens_width + rim_thickness*2.15, lens_height + rim_thickness*2.05], corner_radius + rim_thickness*0.9);
+    rounded_square_2d([lens_width, lens_height], corner_radius);
+  }
+}
+
+module soft_bar(size=[10,4,4], r=1) {
+  linear_extrude(height=size[2], center=true, convexity=4)
+  rounded_square_2d([size[0], size[1]], r);
+}
+
+module brow_bar() {
+  total_width = bridge_width + lens_width*2 + rim_thickness*5.3;
+  translate([0, lens_height/2 + rim_thickness*0.72, 0.05])
+  soft_bar([total_width, rim_thickness*1.05, frame_depth*0.95], rim_thickness*0.45);
+}
+
+module bridge() {
+  translate([0, lens_height*0.08, 0])
+  soft_bar([bridge_width + rim_thickness*2.35, rim_thickness*1.15, frame_depth], rim_thickness*0.35);
+}
+
+module nose_pads() {
+  for (side=[-1,1])
+  translate([side*(bridge_width/2 + nose_pad_width/2), -lens_height/4 - nose_pad_drop/4, -frame_depth/2])
+  rotate([0, 0, side*10])
+  soft_bar([nose_pad_width, rim_thickness*1.45, frame_depth*0.72], rim_thickness*0.35);
+}
+
+module temple(side=1) {
+  lens_center = (bridge_width + lens_width) / 2;
+  hinge_x = side * (lens_center + lens_width/2 + rim_thickness + hinge_width/2);
+  translate([hinge_x, lens_height*0.28, -frame_depth*0.08])
+  rotate([0, side*temple_spread, 0])
+  union() {
+    soft_bar([hinge_width, rim_thickness*1.7, frame_depth*1.2], rim_thickness*0.32);
+    for (slot=[-1,1])
+    translate([side*hinge_width*0.52, slot*rim_thickness*0.42, -frame_depth*0.78])
+    rotate([0, 90, 0])
+    cylinder(h=hinge_width*0.95, r=rim_thickness*0.34, center=true, $fn=20);
+    translate([side*hinge_width*0.34, 0.2, -temple_length/2 - frame_depth*0.5])
+    soft_bar([rim_thickness*1.25, rim_thickness*1.05, temple_length], rim_thickness*0.32);
+    translate([side*hinge_width*0.34, -temple_drop*0.28, -temple_length - frame_depth*0.5 - temple_drop*0.28])
+    rotate([-28, 0, 0])
+    soft_bar([rim_thickness*1.3, rim_thickness*1.05, temple_drop], rim_thickness*0.32);
+  }
+}
+
+module glasses() {
+  lens_center = (bridge_width + lens_width) / 2;
+  union() {
+    lens_rim(-lens_center);
+    lens_rim(lens_center);
+    brow_bar();
+    bridge();
+    nose_pads();
+    temple(-1);
+    temple(1);
+  }
+}
+
+glasses();
+`;
+}
+
+async function renderWithOpenScadEndpoint() {
+  const endpoint = localStorage.getItem("framelab.openscadEndpoint") || "";
+  if (!endpoint) {
+    throw new Error("Brak endpointu OpenSCAD.");
+  }
+  const formData = new FormData();
+  formData.append("source", generateScadSource());
+  formData.append("parameters", JSON.stringify(state.params));
+  formData.append("modelName", state.modelName);
+  const response = await fetch(endpoint, { method: "POST", body: formData });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  const geometry = new STLLoader().parse(await response.arrayBuffer());
+  state.meshObject = new THREE.Mesh(geometry);
+  state.previewMode = "stl";
+  render();
+  return geometry;
+}
+
+async function generate3mf() {
+  showLoader(true, "Generating 3MF", "Packing the current geometry for production...");
+  await waitFrame();
+  try {
+    const mesh = collectCurrentMesh();
+    if (!mesh.triangles.length) throw new Error("brak geometrii do eksportu");
+    const blob = make3mfBlob(mesh);
+    downloadBlob(`${slugify(state.modelName)}.3mf`, blob);
+    log(`Generated 3MF locally: ${mesh.triangles.length.toLocaleString("en-US")} triangles.`);
+  } catch (error) {
+    log(`Could not generate 3MF: ${error.message}`);
+  } finally {
+    showLoader(false);
+  }
+}
+
+async function generateStl() {
+  showLoader(true, "Generating STL", "Writing the current geometry...");
+  await waitFrame();
+  try {
+    const mesh = collectCurrentMesh();
+    if (!mesh.triangles.length) throw new Error("brak geometrii do eksportu");
+    downloadText(`${slugify(state.modelName)}.stl`, makeAsciiStl(mesh), "model/stl");
+    log(`Generated STL locally: ${mesh.triangles.length.toLocaleString("en-US")} triangles.`);
+  } catch (error) {
+    log(`Could not generate STL: ${error.message}`);
+  } finally {
+    showLoader(false);
+  }
+}
+
+async function downloadAssemblyPackage() {
+  showLoader(true, "Packaging kit", "Collecting selected components and manifest...");
+  await waitFrame();
+  try {
+    const selected = getSelectedUploadedComponents();
+    const manifest = buildAssemblyManifest(selected);
+    const files = {
+      "frame-lab-assembly.json": strToU8(JSON.stringify(manifest, null, 2))
+    };
+    for (const item of selected) {
+      const stored = await getComponentRecord(item.id);
+      if (!stored?.fileBlob) continue;
+      const bytes = new Uint8Array(await stored.fileBlob.arrayBuffer());
+      files[`components/${item.role}-${item.size}-${item.fileName}`] = bytes;
+    }
+    const zipped = zipSync(files);
+    downloadBlob(`${slugify(state.modelName)}-assembly.zip`, new Blob([zipped], { type: "application/zip" }));
+    log(`Packaged kit: ${selected.length} component files and JSON manifest.`);
+  } catch (error) {
+    log(`Could not package kit: ${error.message}`);
+  } finally {
+    showLoader(false);
+  }
+}
+
+function getSelectedUploadedComponents() {
+  const selected = [
+    { role: "front", item: selectedFront(), size: state.assembly.front.size },
+    { role: "leftTemple", item: selectedTemple("leftTemple"), size: state.assembly.leftTemple.size },
+    { role: "rightTemple", item: selectedTemple("rightTemple"), size: state.assembly.rightTemple.size }
+  ];
+  return selected
+    .filter(({ item }) => item.source === "uploaded")
+    .map(({ role, item, size }) => ({
+      role,
+      id: item.id,
+      name: item.name,
+      size,
+      connector: item.connector,
+      format: item.format,
+      fileName: item.fileName
+    }));
+}
+
+function buildAssemblyManifest(selectedFiles) {
+  return {
+    app: "Frame Lab",
+    version: 1,
+    createdAt: new Date().toISOString(),
+    assembly: {
+      front: serializeAssemblyPart("front", selectedFront(), state.assembly.front.size),
+      leftTemple: serializeAssemblyPart("leftTemple", selectedTemple("leftTemple"), state.assembly.leftTemple.size),
+      rightTemple: serializeAssemblyPart("rightTemple", selectedTemple("rightTemple"), state.assembly.rightTemple.size)
+    },
+    parameters: state.params,
+    selectedFiles
+  };
+}
+
+function serializeAssemblyPart(role, item, size) {
+  return {
+    role,
+    id: item.id,
+    name: item.name,
+    size,
+    connector: item.connector,
+    source: item.source || "demo",
+    format: item.format || "generated",
+    fileName: item.fileName || null
+  };
+}
+
+function saveCurrentModel() {
+  syncActiveModel();
+  queueThumbnailCapture();
+  log(`Saved model to gallery: ${state.modelName}.`);
+}
+
+function loadSample() {
+  state.params = structuredClone(defaultParams);
+  state.scadSource = sampleScad;
+  state.modelName = "Frame 001";
+  state.meshObject = null;
+  buildControls();
+  updateGeneratedSource();
+  render();
+  syncActiveModel();
+  queueThumbnailCapture();
+  log("Loaded the Frame Lab sample model.");
+}
+
+function resetParams() {
+  state.params = structuredClone(defaultParams);
+  state.meshObject = null;
+  buildControls();
+  updateGeneratedSource();
+  render();
+  syncActiveModel();
+  queueThumbnailCapture();
+  log("Parameters restored to the production baseline.");
+}
+
+function exportScad() {
+  downloadText(`${slugify(state.modelName)}.scad`, generateScadSource(), "application/scad");
+  log("Exported plik OpenSCAD.");
+}
+
+function exportJson() {
+  downloadText(`${slugify(state.modelName)}-params.json`, JSON.stringify(state.params, null, 2), "application/json");
+  log("Exported parameter JSON.");
+}
+
+async function copyScad() {
+  await navigator.clipboard.writeText(generateScadSource());
+  log("Copied OpenSCAD source to clipboard.");
+}
+
+function saveEndpoint() {
+  localStorage.setItem("framelab.openscadEndpoint", els.renderEndpoint.value.trim());
+  log("Saved OpenSCAD endpoint.");
+}
+
+function loadSettings() {
+  els.renderEndpoint.value = localStorage.getItem("framelab.openscadEndpoint") || "";
+  state.lang = "en";
+  try {
+    const hidden = JSON.parse(localStorage.getItem(hiddenComponentsStorageKey) || "[]");
+    state.hiddenComponentIds = new Set(Array.isArray(hidden) ? hidden.map(String) : []);
+  } catch {
+    state.hiddenComponentIds = new Set();
+  }
+  try {
+    const storedAccount = JSON.parse(localStorage.getItem(accountStorageKey) || "null");
+    if (storedAccount && typeof storedAccount === "object") {
+      const email = String(storedAccount.email || "").toLowerCase();
+      const profile = accountProfile(email);
+      state.account.email = email;
+      state.account.role = isAdminEmail(email) ? "developer" : (profile?.role || storedAccount.role) === "customer" ? "customer" : "visitor";
+      state.account.plan = state.account.role === "developer" ? "studio" : (["free", "pro", "studio"].includes(profile?.plan || storedAccount.plan) ? (profile?.plan || storedAccount.plan) : "free");
+      state.account.subscriptionMode = profile?.subscriptionMode || storedAccount.subscriptionMode || "free";
+      state.account.subscriptionStatus = profile?.subscriptionStatus || storedAccount.subscriptionStatus || "none";
+      state.account.planEndsAt = profile?.planEndsAt || storedAccount.planEndsAt || null;
+    }
+  } catch {
+    state.account = accountFromUser(null);
+  }
+  if (!sessionToken()) state.account = accountFromUser(null);
+  document.documentElement.lang = "en";
+}
+
+function setView(view) {
+  if (view === "front") state.viewerRotation = { x: 0, y: 0, z: 0 };
+  if (view === "side") state.viewerRotation = { x: 0, y: Math.PI / 2, z: 0 };
+  if (view === "iso") state.viewerRotation = { x: -0.48, y: 0.62, z: 0.03 };
+  applyViewerTransform();
+}
+
+function handleCanvasWheel(event) {
+  event.preventDefault();
+  const direction = event.deltaY > 0 ? 1.06 : 0.94;
+  cameraZoomScale = THREE.MathUtils.clamp(cameraZoomScale * direction, 0.42, 2.6);
+  fitCameraToObject(modelGroup);
+}
+
+function applyViewerTransform() {
+  modelGroup.rotation.set(state.viewerRotation.x, state.viewerRotation.y, state.viewerRotation.z);
+  modelGroup.position.set(modelBasePosition.x + state.viewerPan.x, modelBasePosition.y + state.viewerPan.y, modelBasePosition.z);
+}
+
+function resetViewerPose() {
+  state.viewerRotation = { x: -0.48, y: 0.62, z: 0.03 };
+  state.viewerPan = { x: 0, y: 0 };
+  cameraZoomScale = 1;
+  render();
+}
+
+function updateMetrics() {
+  els.metricWidth.textContent = Math.round(state.params.head_width);
+  els.metricBridge.textContent = formatNumber(state.params.bridge_width);
+  els.metricTemple.textContent = Math.round(state.params.temple_length);
+}
+
+function resize() {
+  const rect = els.canvas.getBoundingClientRect();
+  const width = Math.max(1, rect.width);
+  const height = Math.max(1, rect.height);
+  camera.aspect = width / height;
+  camera.updateProjectionMatrix();
+  renderer.setSize(width, height, false);
+}
+
+function animate() {
+  resize();
+  renderer.render(scene, camera);
+  requestAnimationFrame(animate);
+}
+
+function fitCameraToObject(object) {
+  const box = new THREE.Box3().setFromObject(object);
+  if (box.isEmpty()) return;
+  const sphere = box.getBoundingSphere(new THREE.Sphere());
+  const distance = Math.max(95, sphere.radius * 1.85) * cameraZoomScale;
+  const panelShift = sphere.radius * 0.32;
+  const target = new THREE.Vector3(sphere.center.x + panelShift, sphere.center.y, sphere.center.z);
+  camera.position.set(target.x, target.y + sphere.radius * 0.32, target.z + distance);
+  camera.lookAt(target);
+  camera.near = Math.max(0.1, distance / 100);
+  camera.far = distance * 8;
+  camera.updateProjectionMatrix();
+}
+
+function addTriangles(geometry, multiplier = 1) {
+  const position = geometry.getAttribute("position");
+  if (!position) return;
+  triangleCount += Math.floor(position.count / 3) * multiplier;
+}
+
+function findParam(key) {
+  return parameterSchema.find(([item]) => item === key);
+}
+
+function formatValue(value, unit) {
+  return `${formatNumber(Number(value))}${unit ? ` ${unit}` : ""}`;
+}
+
+function formatNumber(value) {
+  return Number(value).toFixed(Number.isInteger(Number(value)) ? 0 : 1);
+}
+
+function log(message) {
+  els.importLog.textContent = message;
+}
+
+function showLoader(visible, title = "Preparing file", text = "Preparing production geometry...") {
+  els.loaderOverlay.hidden = !visible;
+  els.loaderTitle.textContent = title;
+  els.loaderText.textContent = text;
+}
+
+function collectCurrentMesh() {
+  modelGroup.updateMatrixWorld(true);
+  const vertices = [];
+  const triangles = [];
+  const vertexMap = new Map();
+  const addVertex = (vector) => {
+    const key = `${vector.x.toFixed(5)},${vector.y.toFixed(5)},${vector.z.toFixed(5)}`;
+    if (vertexMap.has(key)) return vertexMap.get(key);
+    const index = vertices.length;
+    vertices.push({ x: vector.x, y: vector.y, z: vector.z });
+    vertexMap.set(key, index);
+    return index;
+  };
+
+  modelGroup.traverse((child) => {
+    if (!child.isMesh || !child.geometry) return;
+    const geometry = child.geometry;
+    const position = geometry.getAttribute("position");
+    if (!position) return;
+    const index = geometry.index;
+    const matrix = child.matrixWorld;
+    const readVertex = (i) => new THREE.Vector3(position.getX(i), position.getY(i), position.getZ(i)).applyMatrix4(matrix);
+    const triangleTotal = index ? Math.floor(index.count / 3) : Math.floor(position.count / 3);
+    for (let i = 0; i < triangleTotal; i += 1) {
+      const aIndex = index ? index.getX(i * 3) : i * 3;
+      const bIndex = index ? index.getX(i * 3 + 1) : i * 3 + 1;
+      const cIndex = index ? index.getX(i * 3 + 2) : i * 3 + 2;
+      const a = readVertex(aIndex);
+      const b = readVertex(bIndex);
+      const c = readVertex(cIndex);
+      if (triangleArea(a, b, c) < 1e-8) continue;
+      triangles.push([addVertex(a), addVertex(b), addVertex(c)]);
+    }
+  });
+
+  return { vertices, triangles };
+}
+
+function make3mfBlob(mesh) {
+  const modelXml = `<?xml version="1.0" encoding="UTF-8"?>
+<model unit="millimeter" xml:lang="en-US" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">
+  <metadata name="Title">${escapeXml(state.modelName)}</metadata>
+  <metadata name="Designer">Frame Lab</metadata>
+  <resources>
+    <object id="1" type="model">
+      <mesh>
+        <vertices>
+${mesh.vertices.map((vertex) => `          <vertex x="${formatMeshNumber(vertex.x)}" y="${formatMeshNumber(vertex.y)}" z="${formatMeshNumber(vertex.z)}"/>`).join("\n")}
+        </vertices>
+        <triangles>
+${mesh.triangles.map(([a, b, c]) => `          <triangle v1="${a}" v2="${b}" v3="${c}"/>`).join("\n")}
+        </triangles>
+      </mesh>
+    </object>
+  </resources>
+  <build>
+    <item objectid="1"/>
+  </build>
+</model>`;
+
+  const contentTypes = `<?xml version="1.0" encoding="UTF-8"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="model" ContentType="application/vnd.ms-package.3dmanufacturing-3dmodel+xml"/>
+</Types>`;
+
+  const rels = `<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Target="/3D/3dmodel.model" Id="rel0" Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"/>
+</Relationships>`;
+
+  const zipped = zipSync({
+    "[Content_Types].xml": strToU8(contentTypes),
+    "_rels/.rels": strToU8(rels),
+    "3D/3dmodel.model": strToU8(modelXml)
+  });
+  return new Blob([zipped], { type: "model/3mf" });
+}
+
+function makeAsciiStl(mesh) {
+  const lines = [`solid ${slugify(state.modelName)}`];
+  mesh.triangles.forEach(([ia, ib, ic]) => {
+    const a = mesh.vertices[ia];
+    const b = mesh.vertices[ib];
+    const c = mesh.vertices[ic];
+    const normal = triangleNormal(a, b, c);
+    lines.push(`  facet normal ${formatMeshNumber(normal.x)} ${formatMeshNumber(normal.y)} ${formatMeshNumber(normal.z)}`);
+    lines.push("    outer loop");
+    lines.push(`      vertex ${formatMeshNumber(a.x)} ${formatMeshNumber(a.y)} ${formatMeshNumber(a.z)}`);
+    lines.push(`      vertex ${formatMeshNumber(b.x)} ${formatMeshNumber(b.y)} ${formatMeshNumber(b.z)}`);
+    lines.push(`      vertex ${formatMeshNumber(c.x)} ${formatMeshNumber(c.y)} ${formatMeshNumber(c.z)}`);
+    lines.push("    endloop");
+    lines.push("  endfacet");
+  });
+  lines.push(`endsolid ${slugify(state.modelName)}`);
+  return lines.join("\n");
+}
+
+function triangleArea(a, b, c) {
+  const ab = new THREE.Vector3(b.x - a.x, b.y - a.y, b.z - a.z);
+  const ac = new THREE.Vector3(c.x - a.x, c.y - a.y, c.z - a.z);
+  return ab.cross(ac).length() * 0.5;
+}
+
+function triangleNormal(a, b, c) {
+  const ab = new THREE.Vector3(b.x - a.x, b.y - a.y, b.z - a.z);
+  const ac = new THREE.Vector3(c.x - a.x, c.y - a.y, c.z - a.z);
+  return ab.cross(ac).normalize();
+}
+
+function formatMeshNumber(value) {
+  return Number(value).toFixed(5).replace(/\.?0+$/, "");
+}
+
+function escapeXml(value) {
+  return String(value).replace(/[<>&"']/g, (char) => ({
+    "<": "&lt;",
+    ">": "&gt;",
+    "&": "&amp;",
+    "\"": "&quot;",
+    "'": "&apos;"
+  })[char]);
+}
+
+function escapeHtml(value) {
+  return String(value).replace(/[<>&"']/g, (char) => ({
+    "<": "&lt;",
+    ">": "&gt;",
+    "&": "&amp;",
+    "\"": "&quot;",
+    "'": "&#39;"
+  })[char]);
+}
+
+function downloadText(name, content, type) {
+  const blob = new Blob([content], { type });
+  downloadBlob(name, blob);
+}
+
+function downloadBlob(name, blob) {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = name;
+  document.body.append(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+}
+
+function waitFrame() {
+  return new Promise((resolve) => requestAnimationFrame(resolve));
+}
+
+function openComponentDb() {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(componentDbName, 1);
+    request.onupgradeneeded = () => {
+      request.result.createObjectStore(componentStoreName, { keyPath: "id" });
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function loadComponentRecords() {
+  const db = await openComponentDb();
+  return new Promise((resolve, reject) => {
+    const request = db.transaction(componentStoreName, "readonly").objectStore(componentStoreName).getAll();
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function getComponentRecord(id) {
+  const db = await openComponentDb();
+  return new Promise((resolve, reject) => {
+    const request = db.transaction(componentStoreName, "readonly").objectStore(componentStoreName).get(id);
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function saveComponentRecord(component, file) {
+  const db = await openComponentDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(componentStoreName, "readwrite");
+    tx.objectStore(componentStoreName).put({ ...component, fileBlob: file });
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+async function deleteComponentRecord(id) {
+  const db = await openComponentDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(componentStoreName, "readwrite");
+    tx.objectStore(componentStoreName).delete(id);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+function slugify(value) {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "model";
+}
+
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
