@@ -1444,7 +1444,8 @@ input[type="password"] {
   font-weight: 850;
 }
 
-.access-free {
+.access-free,
+.access-basic {
   border-color: #3d4642;
   color: #b7c2bc;
 }

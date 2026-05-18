@@ -35,10 +35,13 @@ function defaultDb() {
   return { users: [], sessions: [], payments: [], collections: [], downloads: [], licenseCodes: [] };
 }
 
-const planRank = { free: 0, pro: 1, studio: 2 };
+const planRank = { free: 0, basic: 1, pro: 2, studio: 3 };
+const monthlyDownloadLimits = { free: 0, basic: 15, pro: 50, studio: null };
 const licenseCodeTypes = {
+  basic_month: { label: "Basic / 1 month", plan: "basic", duration: "month" },
   pro_month: { label: "Pro / 1 month", plan: "pro", duration: "month" },
   plus_month: { label: "Plus / 1 month", plan: "studio", duration: "month" },
+  basic_lifetime: { label: "Basic / lifetime", plan: "basic", duration: "lifetime" },
   pro_lifetime: { label: "Pro / lifetime", plan: "pro", duration: "lifetime" },
   plus_lifetime: { label: "Plus / lifetime", plan: "studio", duration: "lifetime" }
 };
@@ -109,7 +112,7 @@ function publicUser(user) {
     firstName: user.firstName || "",
     lastName: user.lastName || "",
     role: user.role,
-    plan: user.plan,
+    plan: normalizePlan(user.plan),
     subscriptionStatus: user.subscriptionStatus || "none",
     subscriptionMode: user.subscriptionMode || "free",
     planEndsAt: user.planEndsAt || null,
@@ -141,7 +144,52 @@ function userRole(email) {
 
 function planForUser(email, requested = "free") {
   if (adminEmails.has(String(email).toLowerCase())) return "studio";
-  return ["free", "pro", "studio"].includes(requested) ? requested : "free";
+  return Object.prototype.hasOwnProperty.call(planRank, requested) ? requested : "free";
+}
+
+function normalizePlan(plan, fallback = "free") {
+  return Object.prototype.hasOwnProperty.call(planRank, plan) ? plan : fallback;
+}
+
+function normalizeAccess(access) {
+  return ["free", "basic", "pro", "studio"].includes(access) ? access : "free";
+}
+
+function planLabel(plan) {
+  if (plan === "studio") return "Plus";
+  if (plan === "pro") return "Pro";
+  if (plan === "basic") return "Basic";
+  return "No plan";
+}
+
+function downloadQuotaWindow(now = new Date()) {
+  const start = new Date(now);
+  start.setDate(1);
+  start.setHours(0, 0, 0, 0);
+  const end = new Date(start);
+  end.setMonth(end.getMonth() + 1);
+  return { start, end };
+}
+
+function downloadQuotaForUser(user, db, now = new Date()) {
+  const plan = user?.role === "developer" ? "studio" : normalizePlan(user?.plan);
+  const limit = user?.role === "developer" || Object.prototype.hasOwnProperty.call(monthlyDownloadLimits, plan)
+    ? monthlyDownloadLimits[plan]
+    : 0;
+  const { start, end } = downloadQuotaWindow(now);
+  const used = (db.downloads || []).filter((item) => {
+    if (item.userId !== user.id) return false;
+    const createdAt = new Date(item.createdAt);
+    return !Number.isNaN(createdAt.getTime()) && createdAt >= start && createdAt < end;
+  }).length;
+  return {
+    plan,
+    label: planLabel(plan),
+    used,
+    limit,
+    remaining: limit === null ? null : Math.max(0, limit - used),
+    resetAt: end.toISOString()
+  };
 }
 
 function addOneMonth(date = new Date()) {
@@ -191,7 +239,7 @@ function sanitizeCollection(model) {
     id: String(model.id || randomBytes(8).toString("hex")),
     name: String(model.name || "Frame collection").slice(0, 120),
     category: model.category === "optical" ? "optical" : "sun",
-    access: ["free", "pro", "studio"].includes(model.access) ? model.access : "free",
+    access: normalizeAccess(model.access),
     description: String(model.description || "").slice(0, 260),
     scadSource: String(model.scadSource || "").slice(0, 500_000),
     params: model.params && typeof model.params === "object" ? model.params : {},
@@ -212,7 +260,7 @@ function sanitizeDownload(item, userId) {
     fileName: String(item.fileName || "frame-lab-export.3mf").slice(0, 180),
     modelId: String(item.modelId || "").slice(0, 120),
     modelName: String(item.modelName || "Frame Lab model").slice(0, 140),
-    plan: ["free", "pro", "studio"].includes(item.plan) ? item.plan : "free",
+    plan: normalizeAccess(item.plan),
     lensMode: ["open", "perforated", "cut-template"].includes(item.lensMode) ? item.lensMode : "cut-template",
     lensLabel: String(item.lensLabel || "Cut template").slice(0, 80),
     configuration: item.configuration && typeof item.configuration === "object" ? item.configuration : {},
@@ -236,10 +284,10 @@ function applyLicenseCode(user, license) {
   const currentEnds = user.planEndsAt ? new Date(user.planEndsAt) : null;
   const hasFutureAccess = currentEnds && !Number.isNaN(currentEnds.getTime()) && currentEnds > now;
   const hasLifetime = user.subscriptionStatus === "lifetime";
-  if (hasLifetime && planRank[user.plan] >= planRank[details.plan]) {
+  if (hasLifetime && planRank[normalizePlan(user.plan)] >= planRank[details.plan]) {
     return { error: "This account already has equal or higher lifetime access." };
   }
-  if (details.duration === "month" && planRank[user.plan] > planRank[details.plan] && (hasFutureAccess || hasLifetime)) {
+  if (details.duration === "month" && planRank[normalizePlan(user.plan)] > planRank[details.plan] && (hasFutureAccess || hasLifetime)) {
     return { error: "This account already has a higher active plan." };
   }
 
@@ -333,9 +381,22 @@ async function handleApi(req, res, pathname) {
     return sendJson(res, 200, { downloads });
   }
 
+  if (req.method === "GET" && pathname === "/api/download-quota") {
+    const user = currentUser(req, db);
+    if (!user) return sendJson(res, 401, { error: "Login is required." });
+    return sendJson(res, 200, { quota: downloadQuotaForUser(user, db) });
+  }
+
   if (req.method === "POST" && pathname === "/api/downloads") {
     const user = currentUser(req, db);
     if (!user) return sendJson(res, 401, { error: "Login is required." });
+    const quota = downloadQuotaForUser(user, db);
+    if (quota.limit !== null && quota.remaining <= 0) {
+      return sendJson(res, 402, {
+        error: `${quota.label} monthly download limit reached. Upgrade your plan to continue exporting 3MF files.`,
+        quota
+      });
+    }
     const body = await readBody(req);
     const download = sanitizeDownload({ ...body, createdAt: new Date().toISOString() }, user.id);
     const existing = db.downloads || [];
@@ -346,7 +407,7 @@ async function handleApi(req, res, pathname) {
     const otherDownloads = existing.filter((item) => item.userId !== user.id);
     db.downloads = [download, ...userDownloads, ...otherDownloads].slice(0, 5000);
     writeDb(db);
-    return sendJson(res, 200, { download });
+    return sendJson(res, 200, { download, quota: downloadQuotaForUser(user, db) });
   }
 
   if (req.method === "GET" && pathname === "/api/license-codes") {
@@ -412,9 +473,9 @@ async function handleApi(req, res, pathname) {
     const user = currentUser(req, db);
     if (!user) return sendJson(res, 401, { error: "Login is required before checkout." });
     const body = await readBody(req);
-    const plan = body.plan === "studio" ? "studio" : body.plan === "pro" ? "pro" : "";
+    const plan = ["basic", "pro", "studio"].includes(body.plan) ? body.plan : "";
     const mode = body.mode === "one_time" ? "one_time" : "subscription";
-    if (!plan) return sendJson(res, 400, { error: "Choose Pro or Plus." });
+    if (!plan) return sendJson(res, 400, { error: "Choose Basic, Pro or Plus." });
     if (user.role === "developer") {
       user.plan = "studio";
       user.subscriptionStatus = "admin";

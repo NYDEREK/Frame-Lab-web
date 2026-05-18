@@ -32,8 +32,10 @@ const translations = {
     signInAccount: "Login",
     signOutAccount: "Sign out",
     closeAccount: "Close",
-    accountFreeNote: "Free: access to selected starter models.",
-    accountProNote: "Pro: unlocks premium collections.",
+    accountFreeNote: "No active plan: configure models freely, then choose a plan to export 3MF.",
+    accountBasicNote: "Basic: 15 3MF downloads per month.",
+    accountProNote: "Pro: 50 3MF downloads per month.",
+    accountPlusNote: "Plus: unlimited 3MF downloads.",
     accountDeveloperNote: "Developer: full access, Studio and collection deletion.",
     lockedModel: "Plan required to download",
     upgrade: "Plan",
@@ -142,11 +144,13 @@ const accountStorageKey = "framelab.account.v1";
 const sessionStorageKey = "framelab.sessionToken.v1";
 const accountProfilesStorageKey = "framelab.accounts.v1";
 const hiddenComponentsStorageKey = "framelab.hiddenComponents.v1";
-const planRank = { free: 0, pro: 1, studio: 2 };
-const planPrices = { free: "$0", pro: "$29.99", studio: "$49.99" };
+const planRank = { free: 0, basic: 1, pro: 2, studio: 3 };
+const planPrices = { basic: "$20", pro: "$45", studio: "$60" };
 const licenseCodeTypes = {
+  basic_month: { label: "Basic / 1 month", plan: "basic", duration: "month" },
   pro_month: { label: "Pro / 1 month", plan: "pro", duration: "month" },
   plus_month: { label: "Plus / 1 month", plan: "studio", duration: "month" },
+  basic_lifetime: { label: "Basic / lifetime", plan: "basic", duration: "lifetime" },
   pro_lifetime: { label: "Pro / lifetime", plan: "pro", duration: "lifetime" },
   plus_lifetime: { label: "Plus / lifetime", plan: "studio", duration: "lifetime" }
 };
@@ -173,7 +177,7 @@ const seedCollections = [
     id: defaultModelId,
     name: "Frame 001",
     category: "sun",
-    access: "free",
+    access: "basic",
     description: "First production-ready modular frame kit.",
     params: { head_width: 150, bridge_width: 18, lens_width: 52, lens_height: 37, temple_length: 145 }
   }
@@ -375,11 +379,12 @@ const state = {
     subscriptionStatus: "none",
     planEndsAt: null
   },
-  pendingPlan: "pro",
+  pendingPlan: "basic",
   pendingPaymentMode: "one_time",
   authMode: "login",
   lensMode: "cut-template",
   downloads: [],
+  downloadQuota: null,
   licenseCodes: [],
   editingModelId: null,
   cropImage: null,
@@ -1590,7 +1595,7 @@ function normalizeStoredModel(model) {
   if (!model || typeof model !== "object") return null;
   const name = String(model.name || "Model OpenSCAD").trim() || "Model OpenSCAD";
   const category = model.category === "optical" ? "optical" : "sun";
-  const access = ["free", "pro", "studio"].includes(model.access) ? model.access : "free";
+  const access = ["free", "basic", "pro", "studio"].includes(model.access) ? model.access : "basic";
   const description = String(model.description || "").trim();
   const scadSource = String(model.scadSource || sampleScad);
   const params = { ...structuredClone(defaultParams), ...(model.params || parseScadParameters(scadSource)) };
@@ -1730,7 +1735,7 @@ function accountFromUser(user) {
     email: String(user.email || "").toLowerCase(),
     firstName: String(user.firstName || ""),
     lastName: String(user.lastName || ""),
-    plan: ["free", "pro", "studio"].includes(user.plan) ? user.plan : "free",
+    plan: validAccountPlan(user.plan) ? user.plan : "free",
     role: user.role === "developer" ? "developer" : "customer",
     subscriptionMode: user.subscriptionMode || "free",
     subscriptionStatus: user.subscriptionStatus || "none",
@@ -1743,7 +1748,7 @@ async function hydrateSessionFromBackend() {
   try {
     const payload = await apiRequest("/api/session");
     state.account = accountFromUser(payload.user);
-    await loadDownloadFolder({ silent: true });
+    await Promise.all([loadDownloadQuota({ silent: true }), loadDownloadFolder({ silent: true })]);
     if (isDeveloper()) await loadLicenseCodes({ silent: true });
     persistActiveAccount({ skipProfile: true });
     return true;
@@ -1751,6 +1756,7 @@ async function hydrateSessionFromBackend() {
     localStorage.removeItem(sessionStorageKey);
     localStorage.removeItem(accountStorageKey);
     state.account = accountFromUser(null);
+    state.downloadQuota = null;
     return false;
   }
 }
@@ -1763,15 +1769,30 @@ function isAdminEmail(email) {
   return adminEmails.has(String(email || "").toLowerCase());
 }
 
+function validAccountPlan(plan) {
+  return Object.prototype.hasOwnProperty.call(planRank, plan);
+}
+
+function modelAccessPlan(access) {
+  if (access === "studio") return "studio";
+  if (access === "pro") return "pro";
+  return "basic";
+}
+
 function canAccessModel(model) {
   if (isDeveloper()) return true;
-  return planRank[state.account.plan] >= planRank[model.access || "free"];
+  return planRank[state.account.plan] >= planRank[modelAccessPlan(model?.access)];
 }
 
 function accessLabel(access) {
-  if (access === "studio") return "Plus";
-  if (access === "pro") return "Pro";
-  return "Free";
+  return planLabel(modelAccessPlan(access));
+}
+
+function planLabel(plan) {
+  if (plan === "studio") return "Plus";
+  if (plan === "pro") return "Pro";
+  if (plan === "basic") return "Basic";
+  return "No plan";
 }
 
 function validLensMode(value) {
@@ -1838,9 +1859,9 @@ function updateAccountUi() {
     els.profileEmail.textContent = state.account.email;
     els.profileName.textContent = [state.account.firstName, state.account.lastName].filter(Boolean).join(" ") || "Customer";
     els.profileRole.textContent = isDeveloper() ? "Developer account" : "Customer account";
-    els.profilePlan.textContent = accessLabel(state.account.plan);
+    els.profilePlan.textContent = planLabel(state.account.plan);
     els.profileStatus.textContent = subscriptionStatusLabel();
-    if (els.profileExports) els.profileExports.textContent = state.downloads.length ? `${state.downloads.length} saved` : "Ready";
+    if (els.profileExports) els.profileExports.textContent = downloadQuotaLabel();
     els.cancelSubscription.hidden = isDeveloper() || state.account.subscriptionMode !== "subscription";
     els.cancelSubscription.disabled = state.account.subscriptionStatus !== "active";
   }
@@ -1850,12 +1871,16 @@ function updateAccountUi() {
   });
   els.accountNote.textContent = isDeveloper()
     ? t("accountDeveloperNote")
-    : state.account.plan === "pro"
-      ? t("accountProNote")
-      : t("accountFreeNote");
+    : state.account.plan === "studio"
+      ? t("accountPlusNote")
+      : state.account.plan === "pro"
+        ? t("accountProNote")
+        : state.account.plan === "basic"
+          ? t("accountBasicNote")
+          : t("accountFreeNote");
   els.planPickButtons.forEach((button) => {
     const picked = button.dataset.planPick === state.account.plan;
-    button.textContent = picked ? "Current plan" : `Choose ${accessLabel(button.dataset.planPick)}`;
+    button.textContent = picked ? "Current plan" : `Choose ${planLabel(button.dataset.planPick)}`;
     button.classList.toggle("accent", !picked && button.dataset.planPick === "pro");
   });
   renderDownloadFolder();
@@ -1865,7 +1890,7 @@ function updateAccountUi() {
 
 function renderDownloadFolder() {
   if (!els.downloadFolder) return;
-  if (els.profileExports) els.profileExports.textContent = state.downloads.length ? `${state.downloads.length} saved` : "Ready";
+  if (els.profileExports) els.profileExports.textContent = downloadQuotaLabel();
   const signedIn = state.account.role !== "visitor" && Boolean(state.account.email);
   if (!signedIn) {
     els.downloadFolder.innerHTML = "";
@@ -1905,6 +1930,15 @@ function renderDownloadFolder() {
   }).join("");
 }
 
+function downloadQuotaLabel() {
+  if (isDeveloper()) return "Unlimited";
+  if (state.account.role === "visitor" || !state.account.email) return "Plan required";
+  if (state.account.plan === "free") return "Plan required";
+  if (!state.downloadQuota) return "Loading";
+  if (state.downloadQuota.limit === null) return "Unlimited";
+  return `${state.downloadQuota.used} / ${state.downloadQuota.limit} this month`;
+}
+
 function downloadDateLabel(value) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "Saved";
@@ -1926,6 +1960,25 @@ async function loadDownloadFolder(options = {}) {
     state.downloads = [];
     renderDownloadFolder();
     if (!options.silent) log(error.message || "Could not load download folder.");
+    return false;
+  }
+}
+
+async function loadDownloadQuota(options = {}) {
+  if (!sessionToken() || state.account.role === "visitor") {
+    state.downloadQuota = null;
+    renderDownloadFolder();
+    return false;
+  }
+  try {
+    const payload = await apiRequest("/api/download-quota");
+    state.downloadQuota = payload.quota || null;
+    renderDownloadFolder();
+    return true;
+  } catch (error) {
+    state.downloadQuota = null;
+    renderDownloadFolder();
+    if (!options.silent) log(error.message || "Could not load download quota.");
     return false;
   }
 }
@@ -1956,6 +2009,7 @@ async function redeemLicenseCode() {
     persistActiveAccount();
     els.licenseCodeInput.value = "";
     els.licenseCodeNote.textContent = payload.message || "Code activated.";
+    await loadDownloadQuota({ silent: true });
     if (isDeveloper()) await loadLicenseCodes({ silent: true });
     updateAccountUi();
     log(payload.message || "Activation code applied.");
@@ -2054,7 +2108,7 @@ function subscriptionStatusLabel() {
   if (state.account.subscriptionStatus === "cancel_at_period_end") return ends ? `Cancels on ${ends}` : "Cancelling";
   if (state.account.subscriptionMode === "license_month") return ends ? `Code access until ${ends}` : "Code access";
   if (state.account.subscriptionStatus === "paid_once") return ends ? `One-month access until ${ends}` : "One-month access";
-  return state.account.plan === "free" ? "Free access" : "Active";
+  return state.account.plan === "free" ? "No active plan" : "Active";
 }
 
 async function signInAccount() {
@@ -2089,7 +2143,7 @@ async function signInAccount() {
     });
     localStorage.setItem(sessionStorageKey, payload.token);
     state.account = accountFromUser(payload.user);
-    await loadDownloadFolder({ silent: true });
+    await Promise.all([loadDownloadQuota({ silent: true }), loadDownloadFolder({ silent: true })]);
     if (isDeveloper()) await loadLicenseCodes({ silent: true });
   } catch (error) {
     els.accountNote.textContent = error.message || "Could not sign in.";
@@ -2113,6 +2167,7 @@ async function signOutAccount() {
   localStorage.removeItem(sessionStorageKey);
   state.account = accountFromUser(null);
   state.downloads = [];
+  state.downloadQuota = null;
   state.licenseCodes = [];
   persistActiveAccount();
   els.plansPanel.hidden = true;
@@ -2128,19 +2183,10 @@ async function signOutAccount() {
 }
 
 function openPayment(plan) {
-  state.pendingPlan = plan;
+  state.pendingPlan = ["basic", "pro", "studio"].includes(plan) ? plan : "basic";
   state.pendingPaymentMode = "one_time";
-  const label = accessLabel(plan);
-  const price = planPrices[plan] || "$0";
-  if (plan === "free") {
-    state.account.plan = "free";
-    if (state.account.role === "visitor") state.account.role = "customer";
-    persistActiveAccount();
-    updateAccountUi();
-    els.plansPanel.hidden = true;
-    log("Free plan selected.");
-    return;
-  }
+  const label = planLabel(state.pendingPlan);
+  const price = planPrices[state.pendingPlan] || "$20";
   if (state.account.role === "visitor" || !state.account.email) {
     els.plansPanel.hidden = true;
     els.accountPanel.hidden = false;
@@ -2169,13 +2215,13 @@ function updatePaymentModeUi() {
   });
   const recurring = state.pendingPaymentMode === "subscription";
   els.paymentSubtitle.textContent = recurring
-    ? `${accessLabel(state.pendingPlan)} monthly subscription. You can cancel from your account.`
-    : `${accessLabel(state.pendingPlan)} access for one month, no renewal.`;
+    ? `${planLabel(state.pendingPlan)} monthly subscription. You can cancel from your account.`
+    : `${planLabel(state.pendingPlan)} access for one month, no renewal.`;
 }
 
 async function completePayment() {
   const plan = state.pendingPlan;
-  if (!["pro", "studio"].includes(plan)) return;
+  if (!["basic", "pro", "studio"].includes(plan)) return;
   if (!els.paymentEmail.value.trim() || !els.paymentCard.value.trim() || !els.paymentExpiry.value.trim() || !els.paymentCvc.value.trim()) {
     els.paymentNote.textContent = "Fill in the checkout fields to continue.";
     return;
@@ -2187,6 +2233,7 @@ async function completePayment() {
       body: JSON.stringify({ plan, mode: state.pendingPaymentMode })
     });
     state.account = accountFromUser(payload.user);
+    await loadDownloadQuota({ silent: true });
     els.paymentNote.textContent = payload.checkout?.message || "Plan activated.";
   } catch (error) {
     els.paymentNote.textContent = error.message || "Checkout failed.";
@@ -2196,7 +2243,7 @@ async function completePayment() {
   updateAccountUi();
   els.paymentPanel.hidden = true;
   els.accountPanel.hidden = false;
-  log(`Activated ${accessLabel(plan)} for ${state.account.email}.`);
+  log(`Activated ${planLabel(plan)} for ${state.account.email}.`);
 }
 
 async function cancelSubscription() {
@@ -2243,7 +2290,7 @@ function upsertAccountProfile(account) {
     firstName: String(account.firstName || existing.firstName || ""),
     lastName: String(account.lastName || existing.lastName || ""),
     role: isAdminEmail(email) ? "developer" : (account.role === "developer" ? "developer" : "customer"),
-    plan: isAdminEmail(email) ? "studio" : (["free", "pro", "studio"].includes(account.plan) ? account.plan : "free"),
+    plan: isAdminEmail(email) ? "studio" : (validAccountPlan(account.plan) ? account.plan : "free"),
     subscriptionMode: account.subscriptionMode || existing.subscriptionMode || "free",
     subscriptionStatus: account.subscriptionStatus || existing.subscriptionStatus || "none",
     planEndsAt: account.planEndsAt || existing.planEndsAt || null,
@@ -2288,7 +2335,7 @@ function renderGallery() {
             <h3>${escapeHtml(model.name)}</h3>
             <div class="gallery-meta">${escapeHtml(model.description || (model.category === "sun" ? t("sunMeta") : t("opticalMeta")))}</div>
           </div>
-          <span class="access-badge access-${model.access || "free"}">${accessLabel(model.access)}</span>
+          <span class="access-badge access-${modelAccessPlan(model.access)}">${accessLabel(model.access)}</span>
         </div>
         <div class="gallery-actions">
           <button type="button" class="accent" data-action="open">${t("open")}</button>
@@ -2395,7 +2442,7 @@ async function addCollectionFromStudio() {
     id: existing?.id || crypto.randomUUID(),
     name: title,
     category: els.collectionCategory.value === "optical" ? "optical" : "sun",
-    access: ["free", "pro", "studio"].includes(els.collectionAccess.value) ? els.collectionAccess.value : "pro",
+    access: ["basic", "pro", "studio"].includes(els.collectionAccess.value) ? els.collectionAccess.value : "pro",
     description: els.collectionDescription.value.trim(),
     scadSource: scadFile ? source : existing?.scadSource || source,
     params,
@@ -2502,7 +2549,7 @@ function startModelEdit(model) {
   state.editingModelId = model.id;
   els.collectionTitle.value = model.name;
   els.collectionCategory.value = model.category === "optical" ? "optical" : "sun";
-  els.collectionAccess.value = ["free", "pro", "studio"].includes(model.access) ? model.access : "free";
+  els.collectionAccess.value = ["basic", "pro", "studio"].includes(modelAccessPlan(model.access)) ? modelAccessPlan(model.access) : "basic";
   els.collectionDescription.value = model.description || "";
   els.galleryScadInput.value = "";
   els.collectionImageInput.value = "";
@@ -2857,11 +2904,7 @@ async function renderWithOpenScadEndpoint() {
 
 async function generate3mf() {
   const model = currentModelRecord();
-  if (model && !canAccessModel(model)) {
-    openPlansPanel(`${model.name} requires ${accessLabel(model.access)} to download 3MF.`);
-    log(`${model.name}: ${t("lockedModel")} ${accessLabel(model.access)}.`);
-    return;
-  }
+  if (!(await ensureDownloadAllowed(model))) return;
   showLoader(true, "Generating 3MF", "Packing the current geometry for production...");
   await waitFrame();
   try {
@@ -2869,15 +2912,37 @@ async function generate3mf() {
     if (!mesh.triangles.length) throw new Error("brak geometrii do eksportu");
     const blob = make3mfBlob(mesh);
     const fileName = `${slugify(state.modelName)}.3mf`;
-    downloadBlob(fileName, blob);
     const saved = await recordDownload(fileName, mesh);
-    const folderNote = saved ? " Saved to your production folder." : state.account.role === "visitor" ? " Login to keep it in your production folder." : "";
+    if (!saved) return;
+    downloadBlob(fileName, blob);
+    const folderNote = " Saved to your production folder.";
     log(`Generated 3MF locally: ${mesh.triangles.length.toLocaleString("en-US")} triangles.${folderNote}`);
   } catch (error) {
     log(`Could not generate 3MF: ${error.message}`);
   } finally {
     showLoader(false);
   }
+}
+
+async function ensureDownloadAllowed(model) {
+  if (model && !canAccessModel(model)) {
+    openPlansPanel(`${model.name} requires ${accessLabel(model.access)} to download 3MF.`);
+    log(`${model.name}: ${t("lockedModel")} ${accessLabel(model.access)}.`);
+    return false;
+  }
+  if (state.account.role === "visitor" || !sessionToken()) {
+    openPlansPanel("Create an account and choose Basic, Pro or Plus to download 3MF files.");
+    log("Create an account and choose a plan before downloading 3MF.");
+    return false;
+  }
+  await loadDownloadQuota({ silent: true });
+  const quota = state.downloadQuota;
+  if (quota && quota.limit !== null && quota.remaining <= 0) {
+    openPlansPanel(`${planLabel(state.account.plan)} monthly download limit reached. Upgrade your plan to continue exporting 3MF files.`);
+    log(`${planLabel(state.account.plan)} monthly download limit reached.`);
+    return false;
+  }
+  return true;
 }
 
 async function generateStl() {
@@ -2985,7 +3050,7 @@ function currentConfigurationSnapshot() {
     model: {
       id: model?.id || state.activeModelId,
       name: state.modelName,
-      access: model?.access || "free"
+      access: modelAccessPlan(model?.access)
     },
     assembly: manifest.assembly,
     parameters: { ...state.params },
@@ -3002,7 +3067,7 @@ async function recordDownload(fileName, mesh) {
     fileName,
     modelId: model?.id || state.activeModelId,
     modelName: state.modelName,
-    plan: model?.access || "free",
+    plan: modelAccessPlan(model?.access),
     lensMode: state.lensMode,
     lensLabel: lensModeLabel(),
     configuration: {
@@ -3019,9 +3084,11 @@ async function recordDownload(fileName, mesh) {
       body: JSON.stringify(payload)
     });
     state.downloads = [response.download, ...state.downloads.filter((item) => item.id !== response.download.id)].slice(0, 100);
+    state.downloadQuota = response.quota || state.downloadQuota;
     renderDownloadFolder();
     return true;
   } catch (error) {
+    if (/download limit|Upgrade your plan/i.test(error.message || "")) openPlansPanel(error.message);
     log(error.message || "Could not save download history.");
     return false;
   }
@@ -3097,7 +3164,7 @@ function loadSettings() {
       state.account.firstName = profile?.firstName || storedAccount.firstName || "";
       state.account.lastName = profile?.lastName || storedAccount.lastName || "";
       state.account.role = isAdminEmail(email) ? "developer" : (profile?.role || storedAccount.role) === "customer" ? "customer" : "visitor";
-      state.account.plan = state.account.role === "developer" ? "studio" : (["free", "pro", "studio"].includes(profile?.plan || storedAccount.plan) ? (profile?.plan || storedAccount.plan) : "free");
+      state.account.plan = state.account.role === "developer" ? "studio" : (validAccountPlan(profile?.plan || storedAccount.plan) ? (profile?.plan || storedAccount.plan) : "free");
       state.account.subscriptionMode = profile?.subscriptionMode || storedAccount.subscriptionMode || "free";
       state.account.subscriptionStatus = profile?.subscriptionStatus || storedAccount.subscriptionStatus || "none";
       state.account.planEndsAt = profile?.planEndsAt || storedAccount.planEndsAt || null;

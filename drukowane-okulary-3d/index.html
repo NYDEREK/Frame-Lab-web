@@ -108,7 +108,7 @@
             <dl class="profile-details">
               <div>
                 <dt>Plan</dt>
-                <dd id="profilePlan">Free</dd>
+                <dd id="profilePlan">No plan</dd>
               </div>
               <div>
                 <dt>Status</dt>
@@ -162,21 +162,21 @@
           </div>
           <div class="pricing-grid">
             <article class="pricing-card">
-              <span>Free</span>
-              <div class="price-line"><strong>$0</strong><small>/ month</small></div>
-              <small>Starter frames and preview access.</small>
-              <button type="button" data-plan-pick="free">Current</button>
+              <span>Basic</span>
+              <div class="price-line"><strong>$20</strong><small>/ month</small></div>
+              <small>Full configurator access with 15 3MF downloads per month.</small>
+              <button type="button" data-plan-pick="basic">Choose Basic</button>
             </article>
             <article class="pricing-card featured">
               <span>Pro</span>
-              <div class="price-line"><strong>$29.99</strong><small>/ month</small></div>
-              <small>Premium collections and export access.</small>
+              <div class="price-line"><strong>$45</strong><small>/ month</small></div>
+              <small>Premium collections with 50 3MF downloads per month.</small>
               <button type="button" class="accent" data-plan-pick="pro">Choose Pro</button>
             </article>
             <article class="pricing-card">
               <span>Plus</span>
-              <div class="price-line"><strong>$49.99</strong><small>/ month</small></div>
-              <small>All collections, Studio-ready kits and early drops.</small>
+              <div class="price-line"><strong>$60</strong><small>/ month</small></div>
+              <small>All collections, unlimited 3MF downloads and early drops.</small>
               <button type="button" data-plan-pick="studio">Choose Plus</button>
             </article>
           </div>
@@ -199,7 +199,7 @@
               <button id="closePaymentPanel" type="button" class="compact ghost">Close</button>
             </div>
             <div class="payment-total">
-              <span id="paymentAmount">$29.99</span>
+              <span id="paymentAmount">$20</span>
               <small>/ month</small>
             </div>
             <div class="billing-switch" role="radiogroup" aria-label="Billing mode">
@@ -391,7 +391,7 @@
               <option value="optical" data-i18n="opticalCategory">Optical</option>
             </select>
             <select id="collectionAccess" class="component-select">
-              <option value="free">Free</option>
+              <option value="basic">Basic</option>
               <option value="pro">Pro</option>
               <option value="studio">Plus</option>
             </select>
@@ -455,8 +455,10 @@
         <section class="studio-card license-admin-card">
           <div class="license-admin-grid">
             <select id="licenseCodeType" class="component-select">
+              <option value="basic_month">Basic / 1 month</option>
               <option value="pro_month">Pro / 1 month</option>
               <option value="plus_month">Plus / 1 month</option>
+              <option value="basic_lifetime">Basic / lifetime</option>
               <option value="pro_lifetime">Pro / lifetime</option>
               <option value="plus_lifetime">Plus / lifetime</option>
             </select>
@@ -469,6 +471,6 @@
       </section>
     </div>
 
-    <script type="module" src="./src/app.js?v=license-codes-20260518-1"></script>
+    <script type="module" src="./src/app.js?v=tiers-downloads-20260518-1"></script>
   </body>
 </html>
