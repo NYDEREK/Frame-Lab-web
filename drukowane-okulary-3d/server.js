@@ -45,7 +45,7 @@ const licenseCodeTypes = {
 };
 
 function defaultDb() {
-  return { users: [], sessions: [], payments: [], collections: [], downloads: [], licenseCodes: [], settings: { ...defaultBrandSettings } };
+  return { users: [], sessions: [], collections: [], downloads: [], licenseCodes: [], settings: { ...defaultBrandSettings } };
 }
 
 function sanitizeAccentColor(value, fallback = defaultBrandSettings.accentColor) {
@@ -263,6 +263,7 @@ function sanitizeCollection(model) {
     lensMode: ["none", "component"].includes(model.lensMode) ? model.lensMode : "none",
     thumbnail: typeof model.thumbnail === "string" ? model.thumbnail : "",
     components: model.components && typeof model.components === "object" ? model.components : null,
+    assembly: model.assembly && typeof model.assembly === "object" ? model.assembly : null,
     createdAt: Number(model.createdAt) || Date.now(),
     updatedAt: Number(model.updatedAt) || Date.now()
   };
@@ -497,33 +498,6 @@ async function handleApi(req, res, pathname) {
     db.sessions = db.sessions.filter((session) => session.tokenHash !== tokenHash);
     writeDb(db);
     return sendJson(res, 200, { ok: true });
-  }
-
-  if (req.method === "POST" && pathname === "/api/checkout") {
-    const user = currentUser(req, db);
-    if (!user) return sendJson(res, 401, { error: "Login is required before checkout." });
-    const body = await readBody(req);
-    const plan = ["basic", "pro", "studio"].includes(body.plan) ? body.plan : "";
-    const mode = body.mode === "one_time" ? "one_time" : "subscription";
-    if (!plan) return sendJson(res, 400, { error: "Choose Basic, Pro or Plus." });
-    if (user.role === "developer") {
-      user.plan = "studio";
-      user.subscriptionStatus = "admin";
-      user.subscriptionMode = "admin";
-      user.planEndsAt = null;
-    } else {
-      user.plan = plan;
-      user.subscriptionMode = mode;
-      user.subscriptionStatus = mode === "subscription" ? "active" : "paid_once";
-      user.planEndsAt = addOneMonth();
-    }
-    user.updatedAt = new Date().toISOString();
-    db.payments.push({ id: randomBytes(12).toString("hex"), userId: user.id, plan, mode, provider: "local-dev", createdAt: new Date().toISOString() });
-    writeDb(db);
-    return sendJson(res, 200, {
-      user: publicUser(user),
-      checkout: { provider: "local-dev", mode, message: "Local development checkout completed without charging a card." }
-    });
   }
 
   if (req.method === "POST" && pathname === "/api/subscription/cancel") {

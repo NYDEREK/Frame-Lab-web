@@ -164,68 +164,21 @@
             <article class="pricing-card">
               <span>Basic</span>
               <div class="price-line"><strong>$20</strong><small>/ month</small></div>
-              <small>Full configurator access with 15 3MF downloads per month.</small>
-              <button type="button" data-plan-pick="basic">Choose Basic</button>
+              <small>15 3MF downloads per month. Activated with a 12-digit code.</small>
+              <button type="button" data-plan-pick="basic">Enter code</button>
             </article>
             <article class="pricing-card featured">
               <span>Pro</span>
               <div class="price-line"><strong>$45</strong><small>/ month</small></div>
-              <small>Premium collections with 50 3MF downloads per month.</small>
-              <button type="button" class="accent" data-plan-pick="pro">Choose Pro</button>
+              <small>50 3MF downloads per month. Activated with a 12-digit code.</small>
+              <button type="button" class="accent" data-plan-pick="pro">Enter code</button>
             </article>
             <article class="pricing-card">
               <span>Plus</span>
               <div class="price-line"><strong>$60</strong><small>/ month</small></div>
-              <small>All collections, unlimited 3MF downloads and early drops.</small>
-              <button type="button" data-plan-pick="studio">Choose Plus</button>
+              <small>Unlimited 3MF downloads. Activated with a 12-digit code.</small>
+              <button type="button" data-plan-pick="studio">Enter code</button>
             </article>
-          </div>
-        </div>
-      </section>
-
-      <section id="paymentPanel" class="account-panel payment-screen" hidden aria-label="Payment">
-        <div class="account-card payment-card">
-          <div class="payment-copy">
-            <p class="eyebrow">Checkout</p>
-            <h2 id="paymentTitle">Complete plan</h2>
-            <p id="paymentSubtitle">Frontend payment screen for the selected Frame Lab plan.</p>
-          </div>
-          <div class="payment-form" role="form" aria-label="Payment details">
-            <div class="section-head">
-              <div>
-                <p class="eyebrow">Payment</p>
-                <h3 id="paymentPlanName">Pro</h3>
-              </div>
-              <button id="closePaymentPanel" type="button" class="compact ghost">Close</button>
-            </div>
-            <div class="payment-total">
-              <span id="paymentAmount">$20</span>
-              <small>/ month</small>
-            </div>
-            <div class="billing-switch" role="radiogroup" aria-label="Billing mode">
-              <button id="paymentModeOnce" type="button" class="active" data-payment-mode="one_time">One month</button>
-              <button id="paymentModeSubscription" type="button" data-payment-mode="subscription">Subscribe</button>
-            </div>
-            <label class="auth-field">
-              <span>Email</span>
-              <input id="paymentEmail" type="email" autocomplete="email" placeholder="you@example.com" />
-            </label>
-            <label class="auth-field">
-              <span>Card number</span>
-              <input id="paymentCard" type="text" inputmode="numeric" autocomplete="cc-number" placeholder="4242 4242 4242 4242" />
-            </label>
-            <div class="payment-row">
-              <label class="auth-field">
-                <span>Expiry</span>
-                <input id="paymentExpiry" type="text" inputmode="numeric" autocomplete="cc-exp" placeholder="MM / YY" />
-              </label>
-              <label class="auth-field">
-                <span>CVC</span>
-                <input id="paymentCvc" type="text" inputmode="numeric" autocomplete="cc-csc" placeholder="123" />
-              </label>
-            </div>
-            <button id="completePayment" type="button" class="accent">Activate plan</button>
-            <p id="paymentNote" class="account-note">Frontend only. No card is charged in this prototype.</p>
           </div>
         </div>
       </section>
@@ -427,6 +380,10 @@
               <input id="collectionTempleInput" type="file" accept=".3mf,.step,.stp" multiple />
               <span data-i18n="templeModelFile">Temple models</span>
             </label>
+            <label class="file-button" for="collectionLensInput">
+              <input id="collectionLensInput" type="file" accept=".3mf,.step,.stp" multiple />
+              <span data-i18n="lensModelFile">Lens models</span>
+            </label>
             <button id="addCollection" type="button" class="accent" data-i18n="addCollection">Add to gallery</button>
           </div>
         </section>
@@ -487,6 +444,6 @@
       </section>
     </div>
 
-    <script type="module" src="./src/app.js?v=brand-settings-20260518-1"></script>
+    <script type="module" src="./src/app.js?v=collection-components-20260521-1"></script>
   </body>
 </html>

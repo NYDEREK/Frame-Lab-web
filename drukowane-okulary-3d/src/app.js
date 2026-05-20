@@ -85,6 +85,7 @@ const translations = {
     addScad: ".scad file",
     frontModelFile: "Front model",
     templeModelFile: "Temple models",
+    lensModelFile: "Lens models",
     addCollection: "Add to gallery",
     componentImportKicker: "Components",
     componentImportHeading: "Add Fusion file",
@@ -149,7 +150,6 @@ const accountProfilesStorageKey = "framelab.accounts.v1";
 const hiddenComponentsStorageKey = "framelab.hiddenComponents.v1";
 const brandSettingsStorageKey = "framelab.brandSettings.v1";
 const planRank = { free: 0, basic: 1, pro: 2, studio: 3 };
-const planPrices = { basic: "$20", pro: "$45", studio: "$60" };
 const licenseCodeTypes = {
   basic_month: { label: "Basic / 1 month", plan: "basic", duration: "month" },
   pro_month: { label: "Pro / 1 month", plan: "pro", duration: "month" },
@@ -368,7 +368,6 @@ const state = {
     planEndsAt: null
   },
   pendingPlan: "basic",
-  pendingPaymentMode: "one_time",
   authMode: "login",
   lensMode: "none",
   downloads: [],
@@ -413,7 +412,6 @@ const els = {
   componentFileList: document.querySelector("#componentFileList"),
   accountPanel: document.querySelector("#accountPanel"),
   plansPanel: document.querySelector("#plansPanel"),
-  paymentPanel: document.querySelector("#paymentPanel"),
   licensePanel: document.querySelector("#licensePanel"),
   plansContext: document.querySelector("#plansContext"),
   accountButton: document.querySelector("#accountButton"),
@@ -445,18 +443,6 @@ const els = {
   profileSignOut: document.querySelector("#profileSignOut"),
   cancelSubscription: document.querySelector("#cancelSubscription"),
   closeProfilePanel: document.querySelector("#closeProfilePanel"),
-  paymentTitle: document.querySelector("#paymentTitle"),
-  paymentSubtitle: document.querySelector("#paymentSubtitle"),
-  paymentPlanName: document.querySelector("#paymentPlanName"),
-  paymentAmount: document.querySelector("#paymentAmount"),
-  paymentEmail: document.querySelector("#paymentEmail"),
-  paymentCard: document.querySelector("#paymentCard"),
-  paymentExpiry: document.querySelector("#paymentExpiry"),
-  paymentCvc: document.querySelector("#paymentCvc"),
-  paymentNote: document.querySelector("#paymentNote"),
-  completePayment: document.querySelector("#completePayment"),
-  paymentModeButtons: document.querySelectorAll("[data-payment-mode]"),
-  closePaymentPanel: document.querySelector("#closePaymentPanel"),
   cropPanel: document.querySelector("#cropPanel"),
   cropCanvas: document.querySelector("#cropCanvas"),
   cropZoom: document.querySelector("#cropZoom"),
@@ -484,6 +470,7 @@ const els = {
   collectionImageInput: document.querySelector("#collectionImageInput"),
   collectionFrontInput: document.querySelector("#collectionFrontInput"),
   collectionTempleInput: document.querySelector("#collectionTempleInput"),
+  collectionLensInput: document.querySelector("#collectionLensInput"),
   addCollection: document.querySelector("#addCollection"),
   openHome: document.querySelector("#openHome"),
   openConfigurator: document.querySelector("#openConfigurator"),
@@ -684,9 +671,6 @@ function bindUi() {
   els.closePlansPanel.addEventListener("click", () => {
     els.plansPanel.hidden = true;
   });
-  els.closePaymentPanel.addEventListener("click", () => {
-    els.paymentPanel.hidden = true;
-  });
   els.authModeButtons.forEach((button) => {
     button.addEventListener("click", () => setAuthMode(button.dataset.authMode === "register" ? "register" : "login"));
   });
@@ -726,16 +710,9 @@ function bindUi() {
   });
   els.planPickButtons.forEach((button) => {
     button.addEventListener("click", () => {
-      openPayment(button.dataset.planPick);
+      openLicenseActivation(button.dataset.planPick);
     });
   });
-  els.paymentModeButtons.forEach((button) => {
-    button.addEventListener("click", () => {
-      state.pendingPaymentMode = button.dataset.paymentMode === "subscription" ? "subscription" : "one_time";
-      updatePaymentModeUi();
-    });
-  });
-  els.completePayment.addEventListener("click", () => completePayment());
   [els.cropZoom, els.cropX, els.cropY].forEach((input) => input.addEventListener("input", drawImageCrop));
   els.applyCrop.addEventListener("click", applyImageCrop);
   els.cancelCrop.addEventListener("click", cancelImageCrop);
@@ -1252,11 +1229,78 @@ function selectedLens() {
   return componentLibrary.lenses.find((item) => item.id === state.assembly.lens.modelId) || null;
 }
 
+function visibleUploadedComponents() {
+  return state.uploadedComponents.filter((component) => !state.hiddenComponentIds.has(component.id));
+}
+
+function componentSummary(component) {
+  return normalizeComponentSummary(component, component?.kind);
+}
+
+function normalizeComponentSummary(value, forcedKind = "") {
+  if (!value || typeof value !== "object") return null;
+  const id = String(value.id || "").trim();
+  if (!id) return null;
+  const kind = ["front", "temple", "lens"].includes(value.kind) ? value.kind : forcedKind;
+  if (!["front", "temple", "lens"].includes(kind)) return null;
+  const fileName = String(value.fileName || value.name || "").trim();
+  return {
+    id,
+    name: String(value.name || fileName || componentTypeLabel(kind)).trim(),
+    kind,
+    size: ["S", "M", "L"].includes(value.size) ? value.size : "M",
+    connector: String(value.connector || "FL-H8").trim() || "FL-H8",
+    format: String(value.format || value.type || "").toLowerCase(),
+    fileName,
+    byteSize: Number(value.byteSize || 0) || 0
+  };
+}
+
+function normalizeModelComponents(components) {
+  if (!components || typeof components !== "object") return null;
+  const normalizeList = (value, kind) => {
+    const list = Array.isArray(value) ? value : value ? [value] : [];
+    return list.map((item) => normalizeComponentSummary(item, kind)).filter(Boolean);
+  };
+  const normalized = {
+    front: normalizeList(components.front, "front"),
+    temples: normalizeList(components.temples, "temple"),
+    lenses: normalizeList(components.lenses, "lens")
+  };
+  return normalized.front.length || normalized.temples.length || normalized.lenses.length ? normalized : null;
+}
+
+function modelComponentIds(model = currentModelRecord()) {
+  const components = normalizeModelComponents(model?.components);
+  if (!components) return new Set();
+  return new Set([...components.front, ...components.temples, ...components.lenses].map((item) => item.id));
+}
+
+function componentsForActiveModel() {
+  const model = currentModelRecord();
+  const visible = visibleUploadedComponents();
+  const linkedIds = modelComponentIds(model);
+  if (linkedIds.size) return visible.filter((component) => linkedIds.has(component.id));
+  if (model?.id === defaultModelId) return visible.filter((component) => component.source === "asset" || !component.collectionId);
+  return visible.filter((component) => component.collectionId === model?.id);
+}
+
 function rebuildComponentLibrary() {
   componentLibrary.fronts = structuredClone(baseComponentLibrary.fronts);
   componentLibrary.temples = structuredClone(baseComponentLibrary.temples);
   componentLibrary.lenses = structuredClone(baseComponentLibrary.lenses);
-  state.uploadedComponents.filter((component) => !state.hiddenComponentIds.has(component.id)).forEach((component) => {
+
+  const visible = visibleUploadedComponents();
+  const scoped = componentsForActiveModel();
+  const scopedByKind = (kind) => scoped.filter((component) => component.kind === kind);
+  const seedByKind = (kind) => visible.filter((component) => component.source === "asset" && component.kind === kind);
+  const components = [
+    ...(scopedByKind("front").length ? scopedByKind("front") : seedByKind("front")),
+    ...(scopedByKind("temple").length ? scopedByKind("temple") : seedByKind("temple")),
+    ...scopedByKind("lens")
+  ];
+
+  components.forEach((component) => {
     const target = component.kind === "front" ? componentLibrary.fronts : component.kind === "lens" ? componentLibrary.lenses : componentLibrary.temples;
     target.push(componentToLibraryItem(component));
   });
@@ -1283,6 +1327,7 @@ function componentToLibraryItem(component) {
     kind: component.kind,
     connector: component.connector,
     source: component.source || "uploaded",
+    collectionId: component.collectionId || "",
     fileName: component.fileName,
     format: component.format,
     analysis: component.analysis || null,
@@ -1296,11 +1341,12 @@ function componentToLibraryItem(component) {
 
 function renderComponentFileList() {
   if (!els.componentFileList) return;
-  if (!state.uploadedComponents.length) {
+  const components = componentsForActiveModel();
+  if (!components.length) {
     els.componentFileList.innerHTML = `<div class="compatibility-note">${t("noComponents")}</div>`;
     return;
   }
-  els.componentFileList.innerHTML = state.uploadedComponents.map((component) => `
+  els.componentFileList.innerHTML = components.map((component) => `
     <div class="component-file-row">
       <div>
         <strong>${escapeHtml(component.name)}</strong>
@@ -1329,8 +1375,8 @@ async function handleComponentFileListClick(event) {
 async function deleteComponent(id) {
   const component = state.uploadedComponents.find((item) => item.id === id);
   if (!component) return;
-  const sameKindCount = state.uploadedComponents.filter((item) => item.kind === component.kind && !state.hiddenComponentIds.has(item.id)).length;
-  if (component.kind !== "lens" && sameKindCount <= 1) {
+  const activeKindCount = (component.kind === "front" ? componentLibrary.fronts : component.kind === "lens" ? componentLibrary.lenses : componentLibrary.temples).length;
+  if (component.kind !== "lens" && component.source === "asset" && activeKindCount <= 1) {
     log(`Cannot delete the last ${componentTypeLabel(component.kind).toLowerCase()} component.`);
     return;
   }
@@ -1341,28 +1387,89 @@ async function deleteComponent(id) {
     await deleteComponentRecord(component.id);
   }
   state.uploadedComponents = state.uploadedComponents.filter((item) => item.id !== component.id);
+  removeComponentFromModels(component.id);
   rebuildComponentLibrary();
-  repairAssemblyAfterComponentDelete(component);
+  repairAssemblyForActiveModel();
   applyAssemblyToParams();
   buildBuilderControls();
   buildControls();
   updateGeneratedSource();
   render();
+  syncActiveModel();
   log(`Deleted component: ${component.name}.`);
 }
 
-function repairAssemblyAfterComponentDelete(component) {
-  if (component.kind === "front" && state.assembly.front.modelId === component.id) {
-    state.assembly.front = { modelId: componentLibrary.fronts[0]?.id || "", size: Object.keys(componentLibrary.fronts[0]?.sizes || {})[0] || "M" };
+function firstSizeKey(item) {
+  return Object.keys(item?.sizes || {})[0] || "M";
+}
+
+function assemblyPartForItem(item) {
+  return {
+    modelId: item?.id || "",
+    size: firstSizeKey(item)
+  };
+}
+
+function normalizeAssemblyPart(value, fallbackItem = null) {
+  const fallback = assemblyPartForItem(fallbackItem);
+  if (!value || typeof value !== "object") return fallback;
+  return {
+    modelId: String(value.modelId || value.id || fallback.modelId || ""),
+    size: ["S", "M", "L"].includes(value.size) ? value.size : fallback.size
+  };
+}
+
+function assemblyPartExists(part, items) {
+  return items.some((item) => item.id === part.modelId);
+}
+
+function repairAssemblyForActiveModel(model = currentModelRecord()) {
+  state.assembly.front = normalizeAssemblyPart(model?.assembly?.front || state.assembly.front, componentLibrary.fronts[0]);
+  if (!assemblyPartExists(state.assembly.front, componentLibrary.fronts)) {
+    state.assembly.front = assemblyPartForItem(componentLibrary.fronts[0]);
   }
-  ["leftTemple", "rightTemple"].forEach((key) => {
-    if (component.kind === "temple" && state.assembly[key].modelId === component.id) {
-      state.assembly[key] = { modelId: componentLibrary.temples[0]?.id || "", size: Object.keys(componentLibrary.temples[0]?.sizes || {})[0] || "M" };
+
+  ["leftTemple", "rightTemple"].forEach((key, index) => {
+    const fallback = componentLibrary.temples[index] || componentLibrary.temples[0];
+    state.assembly[key] = normalizeAssemblyPart(model?.assembly?.[key] || state.assembly[key], fallback);
+    if (!assemblyPartExists(state.assembly[key], componentLibrary.temples)) {
+      state.assembly[key] = assemblyPartForItem(fallback);
     }
   });
-  if (component.kind === "lens" && state.assembly.lens.modelId === component.id) {
-    state.assembly.lens = { modelId: componentLibrary.lenses[0]?.id || "", size: Object.keys(componentLibrary.lenses[0]?.sizes || {})[0] || "M" };
-  }
+
+  const lensPart = normalizeAssemblyPart(model?.assembly?.lens || state.assembly.lens, null);
+  state.assembly.lens = assemblyPartExists(lensPart, componentLibrary.lenses)
+    ? lensPart
+    : { modelId: "", size: "M" };
+}
+
+function serializeAssemblySelection() {
+  return {
+    front: { ...state.assembly.front },
+    leftTemple: { ...state.assembly.leftTemple },
+    rightTemple: { ...state.assembly.rightTemple },
+    lens: { ...state.assembly.lens }
+  };
+}
+
+function removeComponentFromModels(componentId) {
+  state.models.forEach((model) => {
+    const components = normalizeModelComponents(model.components);
+    if (!components) return;
+    const before = JSON.stringify(components);
+    components.front = components.front.filter((item) => item.id !== componentId);
+    components.temples = components.temples.filter((item) => item.id !== componentId);
+    components.lenses = components.lenses.filter((item) => item.id !== componentId);
+    const after = JSON.stringify(components);
+    if (before === after) return;
+    model.components = components.front.length || components.temples.length || components.lenses.length ? components : null;
+    ["front", "leftTemple", "rightTemple", "lens"].forEach((key) => {
+      if (model.assembly?.[key]?.modelId === componentId) model.assembly[key] = { modelId: "", size: "M" };
+    });
+    model.updatedAt = Date.now();
+  });
+  persistModels({ syncBackend: false });
+  scheduleCollectionsBackendSync();
 }
 
 function persistHiddenComponents() {
@@ -1596,6 +1703,7 @@ function createDefaultModel() {
     lensMode: "none",
     thumbnail: "",
     components: null,
+    assembly: null,
     createdAt: Date.now(),
     updatedAt: Date.now()
   };
@@ -1686,7 +1794,8 @@ function normalizeStoredModel(model) {
     params,
     lensMode: validLensMode(model.lensMode),
     thumbnail: typeof model.thumbnail === "string" ? model.thumbnail : "",
-    components: model.components && typeof model.components === "object" ? model.components : null,
+    components: normalizeModelComponents(model.components),
+    assembly: model.assembly && typeof model.assembly === "object" ? model.assembly : null,
     createdAt: Number(model.createdAt) || Date.now(),
     updatedAt: Number(model.updatedAt) || Date.now()
   };
@@ -1727,10 +1836,16 @@ function selectModel(id, options = {}) {
   state.modelName = model.name;
   state.scadSource = model.scadSource;
   state.params = { ...structuredClone(defaultParams), ...model.params };
+  rebuildComponentLibrary();
+  repairAssemblyForActiveModel(model);
+  applyAssemblyToParams();
   state.lensMode = selectedLens() ? "component" : "none";
   state.meshObject = null;
   state.previewMode = "parametric";
-  if (rebuildControls) buildControls();
+  if (rebuildControls) {
+    buildBuilderControls();
+    buildControls();
+  }
   updateGeneratedSource();
   if (renderScene) {
     render();
@@ -1748,6 +1863,7 @@ function syncActiveModel(options = {}) {
   model.params = { ...state.params };
   model.scadSource = generateScadSource();
   model.lensMode = selectedLens() ? "component" : "none";
+  model.assembly = serializeAssemblySelection();
   model.updatedAt = Date.now();
   if (thumbnail !== null) model.thumbnail = thumbnail;
   if (persist) {
@@ -1957,7 +2073,7 @@ function updateAccountUi() {
           : t("accountFreeNote");
   els.planPickButtons.forEach((button) => {
     const picked = button.dataset.planPick === state.account.plan;
-    button.textContent = picked ? "Current plan" : `Choose ${planLabel(button.dataset.planPick)}`;
+    button.textContent = picked ? "Current plan" : "Enter code";
     button.classList.toggle("accent", !picked && button.dataset.planPick === "pro");
   });
   renderDownloadFolder();
@@ -2256,7 +2372,6 @@ async function signOutAccount() {
   persistActiveAccount();
   els.plansPanel.hidden = true;
   els.accountPanel.hidden = true;
-  els.paymentPanel.hidden = true;
   els.accountPassword.value = "";
   els.accountPasswordConfirm.value = "";
   els.accountFirstName.value = "";
@@ -2266,68 +2381,18 @@ async function signOutAccount() {
   log("Signed out.");
 }
 
-function openPayment(plan) {
+function openLicenseActivation(plan) {
   state.pendingPlan = ["basic", "pro", "studio"].includes(plan) ? plan : "basic";
-  state.pendingPaymentMode = "one_time";
-  const label = planLabel(state.pendingPlan);
-  const price = planPrices[state.pendingPlan] || "$20";
+  els.plansPanel.hidden = true;
+  els.accountPanel.hidden = false;
+  updateAccountUi();
   if (state.account.role === "visitor" || !state.account.email) {
-    els.plansPanel.hidden = true;
-    els.accountPanel.hidden = false;
-    updateAccountUi();
-    els.accountNote.textContent = "Create an account before checkout.";
+    els.accountNote.textContent = `Create an account, then activate ${planLabel(state.pendingPlan)} with a 12-digit code.`;
     els.accountEmail.focus();
     return;
   }
-  els.paymentPlanName.textContent = label;
-  els.paymentTitle.textContent = `${label} checkout`;
-  els.paymentSubtitle.textContent = `${label} access for Frame Lab production files.`;
-  els.paymentAmount.textContent = price;
-  updatePaymentModeUi();
-  els.paymentEmail.value = state.account.email;
-  els.paymentCard.value = "";
-  els.paymentExpiry.value = "";
-  els.paymentCvc.value = "";
-  els.paymentNote.textContent = "Local backend checkout. Stripe can be connected when production keys are ready.";
-  els.plansPanel.hidden = true;
-  els.paymentPanel.hidden = false;
-}
-
-function updatePaymentModeUi() {
-  els.paymentModeButtons.forEach((button) => {
-    button.classList.toggle("active", button.dataset.paymentMode === state.pendingPaymentMode);
-  });
-  const recurring = state.pendingPaymentMode === "subscription";
-  els.paymentSubtitle.textContent = recurring
-    ? `${planLabel(state.pendingPlan)} monthly subscription. You can cancel from your account.`
-    : `${planLabel(state.pendingPlan)} access for one month, no renewal.`;
-}
-
-async function completePayment() {
-  const plan = state.pendingPlan;
-  if (!["basic", "pro", "studio"].includes(plan)) return;
-  if (!els.paymentEmail.value.trim() || !els.paymentCard.value.trim() || !els.paymentExpiry.value.trim() || !els.paymentCvc.value.trim()) {
-    els.paymentNote.textContent = "Fill in the checkout fields to continue.";
-    return;
-  }
-  try {
-    els.paymentNote.textContent = "Creating checkout on the backend...";
-    const payload = await apiRequest("/api/checkout", {
-      method: "POST",
-      body: JSON.stringify({ plan, mode: state.pendingPaymentMode })
-    });
-    state.account = accountFromUser(payload.user);
-    await loadDownloadQuota({ silent: true });
-    els.paymentNote.textContent = payload.checkout?.message || "Plan activated.";
-  } catch (error) {
-    els.paymentNote.textContent = error.message || "Checkout failed.";
-    return;
-  }
-  persistActiveAccount();
-  updateAccountUi();
-  els.paymentPanel.hidden = true;
-  els.accountPanel.hidden = false;
-  log(`Activated ${planLabel(plan)} for ${state.account.email}.`);
+  els.licenseCodeNote.textContent = `Enter a ${planLabel(state.pendingPlan)} activation code.`;
+  els.licenseCodeInput.focus();
 }
 
 async function cancelSubscription() {
@@ -2515,7 +2580,9 @@ async function addCollectionFromStudio() {
   const imageFile = els.collectionImageInput.files?.[0];
   const frontFile = els.collectionFrontInput.files?.[0];
   const templeFiles = [...(els.collectionTempleInput.files || [])];
+  const lensFiles = [...(els.collectionLensInput.files || [])];
   const existing = state.editingModelId ? state.models.find((model) => model.id === state.editingModelId) : null;
+  const modelId = existing?.id || crypto.randomUUID();
   const title = (els.collectionTitle.value.trim() || scadFile?.name?.replace(/\.[^.]+$/, "") || existing?.name || "New collection");
   const source = scadFile ? await scadFile.text() : sampleScad;
   const parsed = scadFile ? parseScadParameters(source) : {};
@@ -2523,8 +2590,39 @@ async function addCollectionFromStudio() {
   const thumbnail = imageFile
     ? state.croppedCollectionImage || await readFileAsDataUrl(imageFile)
     : existing?.thumbnail || makeAutoCollectionThumbnail(title, params, els.collectionCategory.value);
+  const frontComponents = frontFile
+    ? [await createComponentRecordFromFile(frontFile, "front", { collectionId: modelId, name: `${title} Front` })]
+    : [];
+  const templeComponents = [];
+  for (const [index, file] of templeFiles.entries()) {
+    templeComponents.push(await createComponentRecordFromFile(file, "temple", {
+      collectionId: modelId,
+      name: `${title} Temple ${index + 1}`
+    }));
+  }
+  const lensComponents = [];
+  for (const [index, file] of lensFiles.entries()) {
+    lensComponents.push(await createComponentRecordFromFile(file, "lens", {
+      collectionId: modelId,
+      name: `${title} Lens ${index + 1}`
+    }));
+  }
+  if (frontComponents.length || templeComponents.length || lensComponents.length) {
+    state.uploadedComponents = [...await loadSeedComponentAssets(), ...await loadComponentRecords()]
+      .filter((component) => !state.hiddenComponentIds.has(component.id));
+    await hydrateUploadedComponentMeshes();
+  }
+  const existingComponents = normalizeModelComponents(existing?.components) || { front: [], temples: [], lenses: [] };
+  const assembly = existing?.assembly ? structuredClone(existing.assembly) : serializeAssemblySelection();
+  if (frontComponents[0]) assembly.front = { modelId: frontComponents[0].id, size: frontComponents[0].size };
+  if (templeComponents[0]) assembly.leftTemple = { modelId: templeComponents[0].id, size: templeComponents[0].size };
+  if (templeComponents[1] || templeComponents[0]) {
+    const rightTemple = templeComponents[1] || templeComponents[0];
+    assembly.rightTemple = { modelId: rightTemple.id, size: rightTemple.size };
+  }
+  if (lensComponents[0]) assembly.lens = { modelId: lensComponents[0].id, size: lensComponents[0].size };
   const model = normalizeStoredModel({
-    id: existing?.id || crypto.randomUUID(),
+    id: modelId,
     name: title,
     category: els.collectionCategory.value === "optical" ? "optical" : "sun",
     access: ["basic", "pro", "studio"].includes(els.collectionAccess.value) ? els.collectionAccess.value : "pro",
@@ -2533,9 +2631,11 @@ async function addCollectionFromStudio() {
     params,
     thumbnail,
     components: {
-      front: frontFile ? fileSummary(frontFile) : existing?.components?.front || null,
-      temples: templeFiles.length ? templeFiles.map(fileSummary) : existing?.components?.temples || []
+      front: frontComponents.length ? frontComponents.map(componentSummary) : existingComponents.front,
+      temples: templeComponents.length ? templeComponents.map(componentSummary) : existingComponents.temples,
+      lenses: lensComponents.length ? lensComponents.map(componentSummary) : existingComponents.lenses
     },
+    assembly,
     createdAt: existing?.createdAt || Date.now(),
     updatedAt: Date.now()
   });
@@ -2642,6 +2742,7 @@ function startModelEdit(model) {
   els.collectionImageInput.value = "";
   els.collectionFrontInput.value = "";
   els.collectionTempleInput.value = "";
+  els.collectionLensInput.value = "";
   els.addCollection.textContent = "Save changes";
   setActiveSection("studio");
   log(`Editing collection: ${model.name}.`);
@@ -2676,12 +2777,30 @@ function normalizeObjectForScene(object) {
   object.position.sub(center);
 }
 
-function fileSummary(file) {
-  return {
-    name: file.name,
-    type: file.name.split(".").pop().toLowerCase(),
-    size: file.size
+async function createComponentRecordFromFile(file, kind, options = {}) {
+  const formatRaw = file.name.split(".").pop().toLowerCase();
+  if (!["3mf", "step", "stp"].includes(formatRaw)) {
+    throw new Error(`Unsupported component file: ${file.name}`);
+  }
+  const format = formatRaw === "stp" ? "step" : formatRaw;
+  const cleanName = file.name.replace(/\.[^.]+$/, "");
+  const component = {
+    id: crypto.randomUUID(),
+    name: (options.name || cleanName).trim(),
+    kind: ["front", "temple", "lens"].includes(kind) ? kind : "front",
+    size: ["S", "M", "L"].includes(options.size) ? options.size : "M",
+    connector: String(options.connector || "FL-H8").trim() || "FL-H8",
+    format,
+    fileName: file.name,
+    byteSize: file.size,
+    collectionId: options.collectionId || "",
+    source: "uploaded",
+    analysis: await analyzeComponentFile(file, format),
+    createdAt: Date.now()
   };
+  component.materialColor = component.analysis?.materialColor || null;
+  await saveComponentRecord(component, file);
+  return component;
 }
 
 function readFileAsDataUrl(file) {
@@ -2704,7 +2823,25 @@ function clearCollectionForm() {
   els.collectionImageInput.value = "";
   els.collectionFrontInput.value = "";
   els.collectionTempleInput.value = "";
+  els.collectionLensInput.value = "";
   els.addCollection.textContent = t("addCollection");
+}
+
+function attachComponentToCurrentModel(component) {
+  const model = currentModelRecord();
+  const summary = componentSummary(component);
+  if (!model || !summary) return;
+  const components = normalizeModelComponents(model.components) || { front: [], temples: [], lenses: [] };
+  if (component.kind === "front") {
+    components.front = [summary];
+  } else if (component.kind === "lens") {
+    components.lenses = [...components.lenses.filter((item) => item.id !== summary.id), summary];
+  } else {
+    components.temples = [...components.temples.filter((item) => item.id !== summary.id), summary];
+  }
+  model.components = components;
+  model.assembly = serializeAssemblySelection();
+  model.updatedAt = Date.now();
 }
 
 async function addComponentFile() {
@@ -2718,20 +2855,12 @@ async function addComponentFile() {
     log("Supported files are .3mf, .step, and .stp.");
     return;
   }
-  const component = {
-    id: crypto.randomUUID(),
-    name: (els.componentName.value.trim() || file.name.replace(/\.[^.]+$/, "")),
-    kind: ["front", "temple", "lens"].includes(els.componentKind.value) ? els.componentKind.value : "front",
+  const component = await createComponentRecordFromFile(file, els.componentKind.value, {
+    collectionId: state.activeModelId,
+    name: els.componentName.value.trim() || file.name.replace(/\.[^.]+$/, ""),
     size: els.componentSize.value,
-    connector: els.componentConnector.value.trim() || "FL-H8",
-    format: format === "stp" ? "step" : format,
-    fileName: file.name,
-    byteSize: file.size,
-    analysis: await analyzeComponentFile(file, format === "stp" ? "step" : format),
-    createdAt: Date.now()
-  };
-  component.materialColor = component.analysis?.materialColor || null;
-  await saveComponentRecord(component, file);
+    connector: els.componentConnector.value.trim() || "FL-H8"
+  });
   state.uploadedComponents = [...await loadSeedComponentAssets(), ...await loadComponentRecords()]
     .filter((item) => !state.hiddenComponentIds.has(item.id));
   await hydrateUploadedComponentMeshes();
@@ -2744,12 +2873,14 @@ async function addComponentFile() {
     state.assembly.leftTemple = { modelId: component.id, size: component.size };
     state.assembly.rightTemple = { modelId: component.id, size: component.size };
   }
+  attachComponentToCurrentModel(component);
   applyAssemblyToParams();
   buildBuilderControls();
   buildControls();
   updateGeneratedSource();
   render();
   renderGallery();
+  syncActiveModel();
   els.componentFileInput.value = "";
   els.componentName.value = "";
   log(`Added component: ${component.name} (${component.format.toUpperCase()}, ${component.size}, ${component.connector}).`);
