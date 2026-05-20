@@ -5,6 +5,13 @@ import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL(".", import.meta.url));
+const dataDirSource = process.env.FRAME_LAB_DATA_DIR
+  ? "FRAME_LAB_DATA_DIR"
+  : process.env.RAILWAY_VOLUME_MOUNT_PATH
+    ? "RAILWAY_VOLUME_MOUNT_PATH"
+    : existsSync("/data")
+      ? "/data"
+      : "";
 const persistentDataRoot = process.env.FRAME_LAB_DATA_DIR || process.env.RAILWAY_VOLUME_MOUNT_PATH || (existsSync("/data") ? "/data" : "");
 const dataDir = persistentDataRoot ? persistentDataRoot : join(root, "data");
 const dbPath = join(dataDir, "frame-lab-db.json");
@@ -56,6 +63,17 @@ function sanitizeAccentColor(value, fallback = defaultBrandSettings.accentColor)
 function sanitizeSettings(settings = {}) {
   return {
     accentColor: sanitizeAccentColor(settings.accentColor)
+  };
+}
+
+function storageStatus() {
+  const persistent = Boolean(persistentDataRoot);
+  return {
+    persistent,
+    source: dataDirSource || "application filesystem",
+    message: persistent
+      ? "Persistent data directory is configured."
+      : "Persistent data directory is not configured, so accounts and settings can reset after each deploy."
   };
 }
 
@@ -264,6 +282,7 @@ function sanitizeCollection(model) {
     thumbnail: typeof model.thumbnail === "string" ? model.thumbnail : "",
     components: model.components && typeof model.components === "object" ? model.components : null,
     assembly: model.assembly && typeof model.assembly === "object" ? model.assembly : null,
+    order: Number.isFinite(Number(model.order)) ? Number(model.order) : 0,
     createdAt: Number(model.createdAt) || Date.now(),
     updatedAt: Number(model.updatedAt) || Date.now()
   };
@@ -500,6 +519,10 @@ async function handleApi(req, res, pathname) {
     return sendJson(res, 200, { ok: true });
   }
 
+  if (req.method === "GET" && pathname === "/api/system") {
+    return sendJson(res, 200, { storage: storageStatus() });
+  }
+
   if (req.method === "POST" && pathname === "/api/subscription/cancel") {
     const user = currentUser(req, db);
     if (!user) return sendJson(res, 401, { error: "Login is required." });
@@ -552,5 +575,5 @@ createServer(async (req, res) => {
   }
 }).listen(port, "0.0.0.0", () => {
   console.log(`Frame Lab running at http://localhost:${port}/`);
-  console.log(`Frame Lab data directory: ${dataDir}`);
+  console.log(`Frame Lab data directory: ${dataDir} (${storageStatus().source})`);
 });

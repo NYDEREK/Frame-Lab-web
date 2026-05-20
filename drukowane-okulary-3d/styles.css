@@ -1405,6 +1405,10 @@ input[type="password"] {
   flex: 1 1 7rem;
 }
 
+.gallery-actions .order-button {
+  flex: 0 0 4.6rem;
+}
+
 .access-badge {
   display: inline-flex;
   align-items: center;
@@ -1569,9 +1573,13 @@ input[type="password"] {
 
 .component-import-grid {
   display: grid;
-  grid-template-columns: minmax(12rem, 1.4fr) minmax(8rem, 0.8fr) minmax(5rem, 0.5fr) minmax(7rem, 0.7fr) auto auto;
+  grid-template-columns: minmax(12rem, 1.4fr) minmax(8rem, 0.8fr) minmax(7rem, 0.65fr) minmax(5rem, 0.5fr) minmax(7rem, 0.7fr) auto auto;
   gap: 0.65rem;
   align-items: center;
+}
+
+.muted-control {
+  opacity: 0.54;
 }
 
 .component-file-list {
@@ -1582,7 +1590,7 @@ input[type="password"] {
 
 .component-file-row {
   display: grid;
-  grid-template-columns: minmax(10rem, 1fr) auto auto auto auto auto;
+  grid-template-columns: minmax(10rem, 1fr) auto auto auto auto auto auto;
   gap: 0.55rem;
   align-items: center;
   padding: 0.65rem;

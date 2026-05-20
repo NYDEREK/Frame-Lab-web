@@ -85,6 +85,8 @@ const translations = {
     addScad: ".scad file",
     frontModelFile: "Front model",
     templeModelFile: "Temple models",
+    leftTempleModelFile: "Left temples",
+    rightTempleModelFile: "Right temples",
     lensModelFile: "Lens models",
     addCollection: "Add to gallery",
     componentImportKicker: "Components",
@@ -92,6 +94,9 @@ const translations = {
     componentNamePlaceholder: "Component name",
     connectorPlaceholder: "Connector",
     templeComponent: "Temple",
+    leftSide: "Left",
+    rightSide: "Right",
+    universalSide: "Universal",
     lensComponent: "Lens",
     noLensComponent: "No lens model selected",
     chooseCadFile: "Choose 3MF / STEP",
@@ -104,6 +109,8 @@ const translations = {
     variants: "Options",
     export: "Export",
     delete: "Delete",
+    moveUp: "Up",
+    moveDown: "Down",
     parametersDetected: "params",
     param_head_width_label: "Head width",
     param_head_width_hint: "Overall fit width",
@@ -165,7 +172,8 @@ const seedCollections = [
     category: "sun",
     access: "basic",
     description: "First production-ready modular frame kit.",
-    params: { head_width: 150, bridge_width: 18, lens_width: 52, lens_height: 37, temple_length: 145 }
+    params: { head_width: 150, bridge_width: 18, lens_width: 52, lens_height: 37, temple_length: 145 },
+    order: 0
   }
 ];
 
@@ -308,6 +316,7 @@ const seedComponentAssets = [
     format: "3mf",
     fileName: "frame-001-temple-left.3mf",
     assetUrl: "./assets/test-models/frame-001-temple-left.3mf",
+    templeSide: "left",
     source: "asset"
   },
   {
@@ -319,6 +328,7 @@ const seedComponentAssets = [
     format: "3mf",
     fileName: "frame-001-temple-right.3mf",
     assetUrl: "./assets/test-models/frame-001-temple-right.3mf",
+    templeSide: "right",
     source: "asset"
   },
   {
@@ -330,6 +340,7 @@ const seedComponentAssets = [
     format: "3mf",
     fileName: "frame-001-no-logo-temple-left.3mf",
     assetUrl: "./assets/test-models/frame-001-no-logo-temple-left.3mf",
+    templeSide: "left",
     source: "asset"
   },
   {
@@ -341,6 +352,7 @@ const seedComponentAssets = [
     format: "3mf",
     fileName: "frame-001-no-logo-temple-right.3mf",
     assetUrl: "./assets/test-models/frame-001-no-logo-temple-right.3mf",
+    templeSide: "right",
     source: "asset"
   }
 ];
@@ -387,6 +399,9 @@ const state = {
   brandSettings: {
     accentColor: defaultAccentColor
   },
+  system: {
+    storage: { persistent: false, source: "unknown", message: "" }
+  },
   assembly: {
     front: { modelId: "frame001-front", size: "M" },
     leftTemple: { modelId: "frame001-temple-left", size: "M" },
@@ -405,6 +420,7 @@ const els = {
   builderControls: document.querySelector("#builderControls"),
   componentName: document.querySelector("#componentName"),
   componentKind: document.querySelector("#componentKind"),
+  componentTempleSide: document.querySelector("#componentTempleSide"),
   componentSize: document.querySelector("#componentSize"),
   componentConnector: document.querySelector("#componentConnector"),
   componentFileInput: document.querySelector("#componentFileInput"),
@@ -469,7 +485,8 @@ const els = {
   collectionDescription: document.querySelector("#collectionDescription"),
   collectionImageInput: document.querySelector("#collectionImageInput"),
   collectionFrontInput: document.querySelector("#collectionFrontInput"),
-  collectionTempleInput: document.querySelector("#collectionTempleInput"),
+  collectionLeftTempleInput: document.querySelector("#collectionLeftTempleInput"),
+  collectionRightTempleInput: document.querySelector("#collectionRightTempleInput"),
   collectionLensInput: document.querySelector("#collectionLensInput"),
   addCollection: document.querySelector("#addCollection"),
   openHome: document.querySelector("#openHome"),
@@ -482,6 +499,7 @@ const els = {
   saveBrandSettings: document.querySelector("#saveBrandSettings"),
   resetBrandSettings: document.querySelector("#resetBrandSettings"),
   brandSettingsNote: document.querySelector("#brandSettingsNote"),
+  storageStatusNote: document.querySelector("#storageStatusNote"),
   licenseCodeType: document.querySelector("#licenseCodeType"),
   licenseCodeQuantity: document.querySelector("#licenseCodeQuantity"),
   generateLicenseCodes: document.querySelector("#generateLicenseCodes"),
@@ -533,6 +551,7 @@ init();
 async function init() {
   loadSettings();
   applyBrandSettings();
+  await hydrateSystemStatus();
   await hydrateBrandSettings();
   await hydrateSessionFromBackend();
   state.uploadedComponents = [...await loadSeedComponentAssets(), ...await loadComponentRecords()]
@@ -551,6 +570,7 @@ async function init() {
   buildControls();
   setupScene();
   bindUi();
+  syncComponentSideInput();
   applyTranslations();
   updateAccountUi();
   updateGeneratedSource();
@@ -654,6 +674,7 @@ function bindUi() {
   els.addCollection.addEventListener("click", addCollectionFromStudio);
   els.collectionImageInput.addEventListener("change", handleCollectionImageSelect);
   els.componentFileInput.addEventListener("change", handleComponentFileSelect);
+  els.componentKind.addEventListener("change", syncComponentSideInput);
   els.accountButton.addEventListener("click", () => {
     els.accountPanel.hidden = false;
     updateAccountUi();
@@ -859,6 +880,32 @@ function syncBrandSettingsUi() {
   if (els.brandAccentText) els.brandAccentText.value = state.brandSettings.accentColor;
 }
 
+async function hydrateSystemStatus() {
+  try {
+    const payload = await apiRequest("/api/system");
+    if (payload.storage) state.system.storage = payload.storage;
+  } catch {
+    state.system.storage = {
+      persistent: false,
+      source: "unknown",
+      message: "Could not verify Railway storage."
+    };
+  }
+  renderStorageStatus();
+}
+
+function renderStorageStatus() {
+  if (!els.storageStatusNote) return;
+  if (!isDeveloper()) {
+    els.storageStatusNote.textContent = "";
+    return;
+  }
+  const storage = state.system.storage || {};
+  els.storageStatusNote.textContent = storage.persistent
+    ? `Persistent storage active: ${storage.source || "Railway volume"}. Accounts, colors and collections should survive deploys.`
+    : `${storage.message || "Persistent storage is not configured."} Add a Railway Volume and set FRAME_LAB_DATA_DIR to its mount path, for example /data.`;
+}
+
 async function hydrateBrandSettings() {
   try {
     const payload = await apiRequest("/api/settings");
@@ -945,8 +992,8 @@ function buildBuilderControls() {
   disposeComponentPreviews();
   const parts = [
     { key: "front", label: t("frontComponent"), items: componentLibrary.fronts },
-    { key: "leftTemple", label: t("leftTempleComponent"), items: componentLibrary.temples },
-    { key: "rightTemple", label: t("rightTempleComponent"), items: componentLibrary.temples },
+    { key: "leftTemple", label: t("leftTempleComponent"), items: templeItemsForKey("leftTemple") },
+    { key: "rightTemple", label: t("rightTempleComponent"), items: templeItemsForKey("rightTemple") },
     { key: "lens", label: t("lensComponent"), items: componentLibrary.lenses, optional: true }
   ];
   els.builderControls.innerHTML = parts.map((part) => componentCardTemplate(part)).join("");
@@ -1025,10 +1072,15 @@ function optionCardTemplate(part, item, active) {
       <canvas class="component-option-canvas" data-option-preview="${part.key}:${item.id}" aria-label="${escapeHtml(item.name)} 3D"></canvas>
       <span class="component-option-main">
         <strong>${escapeHtml(item.name)}</strong>
-        <small>${escapeHtml(componentTypeLabel(part.key))} · ${firstAvailableSize}</small>
+        <small>${escapeHtml(componentOptionMeta(part, item, firstAvailableSize))}</small>
       </span>
     </button>
   `;
+}
+
+function componentOptionMeta(part, item, size) {
+  const side = item.kind === "temple" ? ` · ${templeSideLabel(item.templeSide)}` : "";
+  return `${componentTypeLabel(part.key)}${side} · ${size}`;
 }
 
 function noLensOptionTemplate(part) {
@@ -1047,6 +1099,13 @@ function componentTypeLabel(keyOrKind) {
   if (keyOrKind === "front") return t("frontComponent");
   if (keyOrKind === "lens") return t("lensComponent");
   return t("templeComponent");
+}
+
+function templeSideLabel(side) {
+  const normalized = normalizeTempleSide(side);
+  if (normalized === "left") return t("leftSide");
+  if (normalized === "right") return t("rightSide");
+  return t("universalSide");
 }
 
 function disposeComponentPreviews() {
@@ -1222,11 +1281,36 @@ function selectedFront() {
 }
 
 function selectedTemple(key) {
-  return componentLibrary.temples.find((item) => item.id === state.assembly[key].modelId) || componentLibrary.temples[0];
+  const items = templeItemsForKey(key);
+  return items.find((item) => item.id === state.assembly[key].modelId) || items[0];
 }
 
 function selectedLens() {
   return componentLibrary.lenses.find((item) => item.id === state.assembly.lens.modelId) || null;
+}
+
+function normalizeTempleSide(value) {
+  return ["left", "right", "universal"].includes(value) ? value : "universal";
+}
+
+function inferTempleSide(fileName = "") {
+  const name = String(fileName).toLowerCase();
+  if (/(^|[-_\s])(left|lewy|lhs)(?=[-_\s.]|$)/i.test(name)) return "left";
+  if (/(^|[-_\s])(right|prawy|rhs)(?=[-_\s.]|$)/i.test(name)) return "right";
+  return "universal";
+}
+
+function templeSideForKey(key) {
+  return key === "rightTemple" ? "right" : "left";
+}
+
+function templeItemsForKey(key) {
+  const side = templeSideForKey(key);
+  const matching = componentLibrary.temples.filter((item) => {
+    const itemSide = normalizeTempleSide(item.templeSide);
+    return itemSide === side || itemSide === "universal";
+  });
+  return matching.length ? matching : componentLibrary.temples;
 }
 
 function visibleUploadedComponents() {
@@ -1244,10 +1328,12 @@ function normalizeComponentSummary(value, forcedKind = "") {
   const kind = ["front", "temple", "lens"].includes(value.kind) ? value.kind : forcedKind;
   if (!["front", "temple", "lens"].includes(kind)) return null;
   const fileName = String(value.fileName || value.name || "").trim();
+  const templeSide = kind === "temple" ? normalizeTempleSide(value.templeSide || value.side || inferTempleSide(fileName)) : "";
   return {
     id,
     name: String(value.name || fileName || componentTypeLabel(kind)).trim(),
     kind,
+    templeSide,
     size: ["S", "M", "L"].includes(value.size) ? value.size : "M",
     connector: String(value.connector || "FL-H8").trim() || "FL-H8",
     format: String(value.format || value.type || "").toLowerCase(),
@@ -1258,22 +1344,40 @@ function normalizeComponentSummary(value, forcedKind = "") {
 
 function normalizeModelComponents(components) {
   if (!components || typeof components !== "object") return null;
-  const normalizeList = (value, kind) => {
+  const normalizeList = (value, kind, templeSide = "") => {
     const list = Array.isArray(value) ? value : value ? [value] : [];
-    return list.map((item) => normalizeComponentSummary(item, kind)).filter(Boolean);
+    return list
+      .map((item) => normalizeComponentSummary(templeSide ? { ...item, templeSide } : item, kind))
+      .filter(Boolean);
   };
+  const legacyTemples = normalizeList(components.temples, "temple");
+  const leftTemples = uniqueComponentsById([
+    ...normalizeList(components.leftTemples, "temple", "left"),
+    ...legacyTemples.filter((item) => item.templeSide === "left")
+  ]);
+  const rightTemples = uniqueComponentsById([
+    ...normalizeList(components.rightTemples, "temple", "right"),
+    ...legacyTemples.filter((item) => item.templeSide === "right")
+  ]);
+  const universalTemples = legacyTemples.filter((item) => normalizeTempleSide(item.templeSide) === "universal");
   const normalized = {
     front: normalizeList(components.front, "front"),
-    temples: normalizeList(components.temples, "temple"),
+    temples: uniqueComponentsById(universalTemples),
+    leftTemples,
+    rightTemples,
     lenses: normalizeList(components.lenses, "lens")
   };
-  return normalized.front.length || normalized.temples.length || normalized.lenses.length ? normalized : null;
+  return normalized.front.length || normalized.temples.length || normalized.leftTemples.length || normalized.rightTemples.length || normalized.lenses.length ? normalized : null;
+}
+
+function uniqueComponentsById(components) {
+  return [...new Map(components.map((item) => [item.id, item])).values()];
 }
 
 function modelComponentIds(model = currentModelRecord()) {
   const components = normalizeModelComponents(model?.components);
   if (!components) return new Set();
-  return new Set([...components.front, ...components.temples, ...components.lenses].map((item) => item.id));
+  return new Set([...components.front, ...components.temples, ...components.leftTemples, ...components.rightTemples, ...components.lenses].map((item) => item.id));
 }
 
 function componentsForActiveModel() {
@@ -1325,6 +1429,7 @@ function componentToLibraryItem(component) {
     id: component.id,
     name: component.name,
     kind: component.kind,
+    templeSide: component.kind === "temple" ? normalizeTempleSide(component.templeSide || inferTempleSide(component.fileName)) : "",
     connector: component.connector,
     source: component.source || "uploaded",
     collectionId: component.collectionId || "",
@@ -1355,6 +1460,7 @@ function renderComponentFileList() {
       </div>
       ${component.materialColor || component.analysis?.materialColor ? `<span class="material-swatch" style="--swatch:${escapeHtml(component.materialColor || component.analysis.materialColor)}">${escapeHtml(component.materialColor || component.analysis.materialColor)}</span>` : ""}
       <span class="status">${escapeHtml(componentTypeLabel(component.kind))}</span>
+      ${component.kind === "temple" ? `<span class="status">${escapeHtml(templeSideLabel(component.templeSide))}</span>` : ""}
       <span class="status">${component.size} · ${component.connector}</span>
       <small>${component.format.toUpperCase()} · ${component.source === "asset" ? "Test asset" : t("storedLocally")}</small>
       ${isDeveloper() ? `<button type="button" class="compact delete-button" data-component-delete="${component.id}">Delete</button>` : ""}
@@ -1430,9 +1536,10 @@ function repairAssemblyForActiveModel(model = currentModelRecord()) {
   }
 
   ["leftTemple", "rightTemple"].forEach((key, index) => {
-    const fallback = componentLibrary.temples[index] || componentLibrary.temples[0];
+    const items = templeItemsForKey(key);
+    const fallback = items[index] || items[0];
     state.assembly[key] = normalizeAssemblyPart(model?.assembly?.[key] || state.assembly[key], fallback);
-    if (!assemblyPartExists(state.assembly[key], componentLibrary.temples)) {
+    if (!assemblyPartExists(state.assembly[key], items)) {
       state.assembly[key] = assemblyPartForItem(fallback);
     }
   });
@@ -1459,10 +1566,12 @@ function removeComponentFromModels(componentId) {
     const before = JSON.stringify(components);
     components.front = components.front.filter((item) => item.id !== componentId);
     components.temples = components.temples.filter((item) => item.id !== componentId);
+    components.leftTemples = components.leftTemples.filter((item) => item.id !== componentId);
+    components.rightTemples = components.rightTemples.filter((item) => item.id !== componentId);
     components.lenses = components.lenses.filter((item) => item.id !== componentId);
     const after = JSON.stringify(components);
     if (before === after) return;
-    model.components = components.front.length || components.temples.length || components.lenses.length ? components : null;
+    model.components = components.front.length || components.temples.length || components.leftTemples.length || components.rightTemples.length || components.lenses.length ? components : null;
     ["front", "leftTemple", "rightTemple", "lens"].forEach((key) => {
       if (model.assembly?.[key]?.modelId === componentId) model.assembly[key] = { modelId: "", size: "M" };
     });
@@ -1704,6 +1813,7 @@ function createDefaultModel() {
     thumbnail: "",
     components: null,
     assembly: null,
+    order: seed.order || 0,
     createdAt: Date.now(),
     updatedAt: Date.now()
   };
@@ -1761,6 +1871,7 @@ function mergeSeedCollections(stored) {
       params: { ...structuredClone(defaultParams), ...seed.params },
       lensMode: "none",
       thumbnail: "",
+      order: seed.order || 0,
       createdAt: Date.now(),
       updatedAt: Date.now()
     }));
@@ -1768,6 +1879,8 @@ function mergeSeedCollections(stored) {
   return [...byId.values()].sort((a, b) => {
     const categoryOrder = categoryRank(a.category) - categoryRank(b.category);
     if (categoryOrder) return categoryOrder;
+    const order = Number(a.order || 0) - Number(b.order || 0);
+    if (order) return order;
     return a.createdAt - b.createdAt;
   });
 }
@@ -1796,6 +1909,7 @@ function normalizeStoredModel(model) {
     thumbnail: typeof model.thumbnail === "string" ? model.thumbnail : "",
     components: normalizeModelComponents(model.components),
     assembly: model.assembly && typeof model.assembly === "object" ? model.assembly : null,
+    order: Number.isFinite(Number(model.order)) ? Number(model.order) : 0,
     createdAt: Number(model.createdAt) || Date.now(),
     updatedAt: Number(model.updatedAt) || Date.now()
   };
@@ -2076,6 +2190,7 @@ function updateAccountUi() {
     button.textContent = picked ? "Current plan" : "Enter code";
     button.classList.toggle("accent", !picked && button.dataset.planPick === "pro");
   });
+  renderStorageStatus();
   renderDownloadFolder();
   renderLicenseCodeList();
   renderGallery();
@@ -2469,7 +2584,7 @@ function renderGallery() {
   if (!els.sunGalleryGrid || !els.opticalGalleryGrid) return;
   els.sunGalleryGrid.innerHTML = "";
   els.opticalGalleryGrid.innerHTML = "";
-  state.models.forEach((model, index) => {
+  galleryModels().forEach((model, index) => {
     const card = document.createElement("article");
     card.className = `gallery-card${model.id === state.activeModelId ? " active" : ""}`;
     card.dataset.modelId = model.id;
@@ -2490,11 +2605,23 @@ function renderGallery() {
         <div class="gallery-actions">
           <button type="button" class="accent" data-action="open">${t("open")}</button>
           ${isDeveloper() ? `<button type="button" data-action="edit">Edit</button>` : ""}
+          ${isDeveloper() ? `<button type="button" class="compact order-button" data-action="move-up">${t("moveUp")}</button>` : ""}
+          ${isDeveloper() ? `<button type="button" class="compact order-button" data-action="move-down">${t("moveDown")}</button>` : ""}
           ${isDeveloper() && model.id !== defaultModelId ? `<button type="button" class="delete-button" data-action="delete">${t("delete")}</button>` : ""}
         </div>
       </div>
     `;
     (model.category === "optical" ? els.opticalGalleryGrid : els.sunGalleryGrid).append(card);
+  });
+}
+
+function galleryModels() {
+  return [...state.models].sort((a, b) => {
+    const categoryOrder = categoryRank(a.category) - categoryRank(b.category);
+    if (categoryOrder) return categoryOrder;
+    const order = Number(a.order || 0) - Number(b.order || 0);
+    if (order) return order;
+    return Number(a.createdAt || 0) - Number(b.createdAt || 0);
   });
 }
 
@@ -2527,6 +2654,14 @@ function handleGalleryClick(event) {
     startModelEdit(model);
     return;
   }
+  if (button.dataset.action === "move-up" || button.dataset.action === "move-down") {
+    if (!isDeveloper()) {
+      log("Ordering is available only in developer mode.");
+      return;
+    }
+    moveModelInGallery(model.id, button.dataset.action === "move-up" ? -1 : 1);
+    return;
+  }
   if (button.dataset.action === "delete") {
     if (!isDeveloper()) {
       log("Deletion is available only in developer mode.");
@@ -2534,10 +2669,48 @@ function handleGalleryClick(event) {
     }
     state.models = state.models.filter((item) => item.id !== model.id);
     if (state.activeModelId === model.id) selectModel(state.models[0]?.id || defaultModelId, { logSelection: false });
+    normalizeGalleryOrder(model.category);
     persistModels();
     renderGallery();
     log(`Deleted model: ${model.name}.`);
   }
+}
+
+function moveModelInGallery(modelId, direction) {
+  const model = state.models.find((item) => item.id === modelId);
+  if (!model) return;
+  const siblings = state.models
+    .filter((item) => item.category === model.category)
+    .sort((a, b) => {
+      const order = Number(a.order || 0) - Number(b.order || 0);
+      if (order) return order;
+      return Number(a.createdAt || 0) - Number(b.createdAt || 0);
+    });
+  const index = siblings.findIndex((item) => item.id === modelId);
+  const targetIndex = index + direction;
+  if (index < 0 || targetIndex < 0 || targetIndex >= siblings.length) return;
+  const target = siblings[targetIndex];
+  const currentOrder = Number(model.order || index);
+  model.order = Number(target.order || targetIndex);
+  target.order = currentOrder;
+  normalizeGalleryOrder(model.category);
+  persistModels();
+  renderGallery();
+  log(`Moved ${model.name} ${direction < 0 ? "up" : "down"} in the gallery.`);
+}
+
+function normalizeGalleryOrder(category) {
+  state.models
+    .filter((item) => item.category === category)
+    .sort((a, b) => {
+      const order = Number(a.order || 0) - Number(b.order || 0);
+      if (order) return order;
+      return Number(a.createdAt || 0) - Number(b.createdAt || 0);
+    })
+    .forEach((model, index) => {
+      model.order = index;
+      model.updatedAt = Date.now();
+    });
 }
 
 function queueThumbnailCapture() {
@@ -2579,7 +2752,8 @@ async function addCollectionFromStudio() {
   const scadFile = els.galleryScadInput.files?.[0];
   const imageFile = els.collectionImageInput.files?.[0];
   const frontFile = els.collectionFrontInput.files?.[0];
-  const templeFiles = [...(els.collectionTempleInput.files || [])];
+  const leftTempleFiles = [...(els.collectionLeftTempleInput.files || [])];
+  const rightTempleFiles = [...(els.collectionRightTempleInput.files || [])];
   const lensFiles = [...(els.collectionLensInput.files || [])];
   const existing = state.editingModelId ? state.models.find((model) => model.id === state.editingModelId) : null;
   const modelId = existing?.id || crypto.randomUUID();
@@ -2593,11 +2767,20 @@ async function addCollectionFromStudio() {
   const frontComponents = frontFile
     ? [await createComponentRecordFromFile(frontFile, "front", { collectionId: modelId, name: `${title} Front` })]
     : [];
-  const templeComponents = [];
-  for (const [index, file] of templeFiles.entries()) {
-    templeComponents.push(await createComponentRecordFromFile(file, "temple", {
+  const leftTempleComponents = [];
+  for (const [index, file] of leftTempleFiles.entries()) {
+    leftTempleComponents.push(await createComponentRecordFromFile(file, "temple", {
       collectionId: modelId,
-      name: `${title} Temple ${index + 1}`
+      name: `${title} Left Temple ${index + 1}`,
+      templeSide: "left"
+    }));
+  }
+  const rightTempleComponents = [];
+  for (const [index, file] of rightTempleFiles.entries()) {
+    rightTempleComponents.push(await createComponentRecordFromFile(file, "temple", {
+      collectionId: modelId,
+      name: `${title} Right Temple ${index + 1}`,
+      templeSide: "right"
     }));
   }
   const lensComponents = [];
@@ -2607,24 +2790,23 @@ async function addCollectionFromStudio() {
       name: `${title} Lens ${index + 1}`
     }));
   }
-  if (frontComponents.length || templeComponents.length || lensComponents.length) {
+  if (frontComponents.length || leftTempleComponents.length || rightTempleComponents.length || lensComponents.length) {
     state.uploadedComponents = [...await loadSeedComponentAssets(), ...await loadComponentRecords()]
       .filter((component) => !state.hiddenComponentIds.has(component.id));
     await hydrateUploadedComponentMeshes();
   }
-  const existingComponents = normalizeModelComponents(existing?.components) || { front: [], temples: [], lenses: [] };
+  const existingComponents = normalizeModelComponents(existing?.components) || { front: [], temples: [], leftTemples: [], rightTemples: [], lenses: [] };
   const assembly = existing?.assembly ? structuredClone(existing.assembly) : serializeAssemblySelection();
   if (frontComponents[0]) assembly.front = { modelId: frontComponents[0].id, size: frontComponents[0].size };
-  if (templeComponents[0]) assembly.leftTemple = { modelId: templeComponents[0].id, size: templeComponents[0].size };
-  if (templeComponents[1] || templeComponents[0]) {
-    const rightTemple = templeComponents[1] || templeComponents[0];
-    assembly.rightTemple = { modelId: rightTemple.id, size: rightTemple.size };
-  }
+  if (leftTempleComponents[0]) assembly.leftTemple = { modelId: leftTempleComponents[0].id, size: leftTempleComponents[0].size };
+  if (rightTempleComponents[0]) assembly.rightTemple = { modelId: rightTempleComponents[0].id, size: rightTempleComponents[0].size };
   if (lensComponents[0]) assembly.lens = { modelId: lensComponents[0].id, size: lensComponents[0].size };
+  const category = els.collectionCategory.value === "optical" ? "optical" : "sun";
+  const nextOrder = Math.max(-1, ...state.models.filter((item) => item.category === category).map((item) => Number(item.order || 0))) + 1;
   const model = normalizeStoredModel({
     id: modelId,
     name: title,
-    category: els.collectionCategory.value === "optical" ? "optical" : "sun",
+    category,
     access: ["basic", "pro", "studio"].includes(els.collectionAccess.value) ? els.collectionAccess.value : "pro",
     description: els.collectionDescription.value.trim(),
     scadSource: scadFile ? source : existing?.scadSource || source,
@@ -2632,10 +2814,13 @@ async function addCollectionFromStudio() {
     thumbnail,
     components: {
       front: frontComponents.length ? frontComponents.map(componentSummary) : existingComponents.front,
-      temples: templeComponents.length ? templeComponents.map(componentSummary) : existingComponents.temples,
+      temples: existingComponents.temples,
+      leftTemples: leftTempleComponents.length ? leftTempleComponents.map(componentSummary) : existingComponents.leftTemples,
+      rightTemples: rightTempleComponents.length ? rightTempleComponents.map(componentSummary) : existingComponents.rightTemples,
       lenses: lensComponents.length ? lensComponents.map(componentSummary) : existingComponents.lenses
     },
     assembly,
+    order: existing?.order ?? nextOrder,
     createdAt: existing?.createdAt || Date.now(),
     updatedAt: Date.now()
   });
@@ -2730,6 +2915,18 @@ function handleComponentFileSelect() {
   } else if (/front|frame|ramka/i.test(file.name)) {
     els.componentKind.value = "front";
   }
+  if (els.componentKind.value === "temple") {
+    els.componentTempleSide.value = inferTempleSide(file.name);
+  }
+  syncComponentSideInput();
+}
+
+function syncComponentSideInput() {
+  if (!els.componentTempleSide) return;
+  const isTemple = els.componentKind.value === "temple";
+  els.componentTempleSide.disabled = !isTemple;
+  els.componentTempleSide.classList.toggle("muted-control", !isTemple);
+  if (!isTemple) els.componentTempleSide.value = "universal";
 }
 
 function startModelEdit(model) {
@@ -2741,7 +2938,8 @@ function startModelEdit(model) {
   els.galleryScadInput.value = "";
   els.collectionImageInput.value = "";
   els.collectionFrontInput.value = "";
-  els.collectionTempleInput.value = "";
+  els.collectionLeftTempleInput.value = "";
+  els.collectionRightTempleInput.value = "";
   els.collectionLensInput.value = "";
   els.addCollection.textContent = "Save changes";
   setActiveSection("studio");
@@ -2788,6 +2986,7 @@ async function createComponentRecordFromFile(file, kind, options = {}) {
     id: crypto.randomUUID(),
     name: (options.name || cleanName).trim(),
     kind: ["front", "temple", "lens"].includes(kind) ? kind : "front",
+    templeSide: kind === "temple" ? normalizeTempleSide(options.templeSide || inferTempleSide(file.name)) : "",
     size: ["S", "M", "L"].includes(options.size) ? options.size : "M",
     connector: String(options.connector || "FL-H8").trim() || "FL-H8",
     format,
@@ -2822,7 +3021,8 @@ function clearCollectionForm() {
   els.galleryScadInput.value = "";
   els.collectionImageInput.value = "";
   els.collectionFrontInput.value = "";
-  els.collectionTempleInput.value = "";
+  els.collectionLeftTempleInput.value = "";
+  els.collectionRightTempleInput.value = "";
   els.collectionLensInput.value = "";
   els.addCollection.textContent = t("addCollection");
 }
@@ -2831,13 +3031,20 @@ function attachComponentToCurrentModel(component) {
   const model = currentModelRecord();
   const summary = componentSummary(component);
   if (!model || !summary) return;
-  const components = normalizeModelComponents(model.components) || { front: [], temples: [], lenses: [] };
+  const components = normalizeModelComponents(model.components) || { front: [], temples: [], leftTemples: [], rightTemples: [], lenses: [] };
   if (component.kind === "front") {
     components.front = [summary];
   } else if (component.kind === "lens") {
     components.lenses = [...components.lenses.filter((item) => item.id !== summary.id), summary];
   } else {
-    components.temples = [...components.temples.filter((item) => item.id !== summary.id), summary];
+    const side = normalizeTempleSide(component.templeSide);
+    if (side === "left") {
+      components.leftTemples = [...components.leftTemples.filter((item) => item.id !== summary.id), summary];
+    } else if (side === "right") {
+      components.rightTemples = [...components.rightTemples.filter((item) => item.id !== summary.id), summary];
+    } else {
+      components.temples = [...components.temples.filter((item) => item.id !== summary.id), summary];
+    }
   }
   model.components = components;
   model.assembly = serializeAssemblySelection();
@@ -2859,7 +3066,8 @@ async function addComponentFile() {
     collectionId: state.activeModelId,
     name: els.componentName.value.trim() || file.name.replace(/\.[^.]+$/, ""),
     size: els.componentSize.value,
-    connector: els.componentConnector.value.trim() || "FL-H8"
+    connector: els.componentConnector.value.trim() || "FL-H8",
+    templeSide: els.componentTempleSide.value
   });
   state.uploadedComponents = [...await loadSeedComponentAssets(), ...await loadComponentRecords()]
     .filter((item) => !state.hiddenComponentIds.has(item.id));
@@ -2870,8 +3078,9 @@ async function addComponentFile() {
   } else if (component.kind === "lens") {
     state.assembly.lens = { modelId: component.id, size: component.size };
   } else {
-    state.assembly.leftTemple = { modelId: component.id, size: component.size };
-    state.assembly.rightTemple = { modelId: component.id, size: component.size };
+    const side = normalizeTempleSide(component.templeSide);
+    if (side === "left" || side === "universal") state.assembly.leftTemple = { modelId: component.id, size: component.size };
+    if (side === "right" || side === "universal") state.assembly.rightTemple = { modelId: component.id, size: component.size };
   }
   attachComponentToCurrentModel(component);
   applyAssemblyToParams();

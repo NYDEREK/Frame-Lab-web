@@ -15,7 +15,7 @@
         document.documentElement.dataset.appError = event.reason?.message || String(event.reason || "promise");
       });
     </script>
-    <link rel="stylesheet" href="./styles.css?v=studio-polish-20260518-1" />
+    <link rel="stylesheet" href="./styles.css?v=temple-sides-20260521-1" />
     <script type="importmap">
       {
         "imports": {
@@ -350,6 +350,7 @@
             <button id="resetBrandSettings" type="button">Reset</button>
           </div>
           <p id="brandSettingsNote" class="account-note"></p>
+          <p id="storageStatusNote" class="account-note"></p>
         </section>
         <section class="studio-card">
           <div class="studio-grid">
@@ -376,9 +377,13 @@
               <input id="collectionFrontInput" type="file" accept=".3mf,.step,.stp" />
               <span data-i18n="frontModelFile">Front model</span>
             </label>
-            <label class="file-button" for="collectionTempleInput">
-              <input id="collectionTempleInput" type="file" accept=".3mf,.step,.stp" multiple />
-              <span data-i18n="templeModelFile">Temple models</span>
+            <label class="file-button" for="collectionLeftTempleInput">
+              <input id="collectionLeftTempleInput" type="file" accept=".3mf,.step,.stp" multiple />
+              <span data-i18n="leftTempleModelFile">Left temples</span>
+            </label>
+            <label class="file-button" for="collectionRightTempleInput">
+              <input id="collectionRightTempleInput" type="file" accept=".3mf,.step,.stp" multiple />
+              <span data-i18n="rightTempleModelFile">Right temples</span>
             </label>
             <label class="file-button" for="collectionLensInput">
               <input id="collectionLensInput" type="file" accept=".3mf,.step,.stp" multiple />
@@ -401,6 +406,11 @@
               <option value="front" data-i18n="frontComponent">Front</option>
               <option value="temple" data-i18n="templeComponent">Temple</option>
               <option value="lens" data-i18n="lensComponent">Lens</option>
+            </select>
+            <select id="componentTempleSide" class="component-select" aria-label="Temple side">
+              <option value="universal" data-i18n="universalSide">Universal</option>
+              <option value="left" data-i18n="leftSide">Left</option>
+              <option value="right" data-i18n="rightSide">Right</option>
             </select>
             <select id="componentSize" class="component-select">
               <option value="S">S</option>
@@ -444,6 +454,6 @@
       </section>
     </div>
 
-    <script type="module" src="./src/app.js?v=collection-components-20260521-1"></script>
+    <script type="module" src="./src/app.js?v=temple-sides-20260521-1"></script>
   </body>
 </html>
