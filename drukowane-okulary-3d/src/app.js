@@ -162,6 +162,12 @@ const defaultAccentColor = "#c96b34";
 const defaultHeroImage = "./assets/frame-lab-hero.png";
 const defaultBrandSettings = {
   accentColor: defaultAccentColor,
+  backgroundColor: "#0c0d0d",
+  surfaceColor: "#141616",
+  textColor: "#f1eee9",
+  mutedColor: "#9a9690",
+  borderColor: "#292c2c",
+  sceneColor: "#070909",
   heroTitle: "Your next frame is 3D printed.",
   heroText: "Choose a collection, combine a front with temples, and prepare a clean production kit for additive manufacturing.",
   heroImage: ""
@@ -176,6 +182,9 @@ const licenseCodeTypes = {
   basic_month: { label: "Basic / 1 month", plan: "basic", duration: "month" },
   pro_month: { label: "Pro / 1 month", plan: "pro", duration: "month" },
   plus_month: { label: "Plus / 1 month", plan: "studio", duration: "month" },
+  basic_year: { label: "Basic / 1 year", plan: "basic", duration: "year" },
+  pro_year: { label: "Pro / 1 year", plan: "pro", duration: "year" },
+  plus_year: { label: "Plus / 1 year", plan: "studio", duration: "year" },
   basic_lifetime: { label: "Basic / lifetime", plan: "basic", duration: "lifetime" },
   pro_lifetime: { label: "Pro / lifetime", plan: "pro", duration: "lifetime" },
   plus_lifetime: { label: "Plus / lifetime", plan: "studio", duration: "lifetime" }
@@ -524,6 +533,12 @@ const els = {
   developerCollectionList: document.querySelector("#developerCollectionList"),
   brandAccentColor: document.querySelector("#brandAccentColor"),
   brandAccentText: document.querySelector("#brandAccentText"),
+  brandBackgroundColor: document.querySelector("#brandBackgroundColor"),
+  brandSurfaceColor: document.querySelector("#brandSurfaceColor"),
+  brandTextColor: document.querySelector("#brandTextColor"),
+  brandMutedColor: document.querySelector("#brandMutedColor"),
+  brandBorderColor: document.querySelector("#brandBorderColor"),
+  brandSceneColor: document.querySelector("#brandSceneColor"),
   saveBrandSettings: document.querySelector("#saveBrandSettings"),
   resetBrandSettings: document.querySelector("#resetBrandSettings"),
   heroTitleInput: document.querySelector("#heroTitleInput"),
@@ -806,10 +821,20 @@ function bindUi() {
     await Promise.all([loadStaticLicenseCodes(), loadLicenseCodes()]);
   });
   els.brandAccentColor?.addEventListener("input", () => {
-    setBrandAccent(els.brandAccentColor.value, { previewOnly: true });
+    setBrandColor("accentColor", els.brandAccentColor.value, { previewOnly: true });
   });
   els.brandAccentText?.addEventListener("input", () => {
-    setBrandAccent(els.brandAccentText.value, { previewOnly: true });
+    setBrandColor("accentColor", els.brandAccentText.value, { previewOnly: true });
+  });
+  [
+    ["backgroundColor", els.brandBackgroundColor],
+    ["surfaceColor", els.brandSurfaceColor],
+    ["textColor", els.brandTextColor],
+    ["mutedColor", els.brandMutedColor],
+    ["borderColor", els.brandBorderColor],
+    ["sceneColor", els.brandSceneColor]
+  ].forEach(([key, input]) => {
+    input?.addEventListener("input", () => setBrandColor(key, input.value, { previewOnly: true }));
   });
   els.heroTitleInput?.addEventListener("input", () => {
     state.brandSettings.heroTitle = els.heroTitleInput.value;
@@ -898,16 +923,20 @@ function getParameterText(key, fallbackLabel, fallbackHint) {
 }
 
 function sceneBackgroundColor() {
-  return "#070909";
+  return state.brandSettings?.sceneColor || defaultBrandSettings.sceneColor;
 }
 
 function previewBackgroundColor() {
-  return "#111313";
+  return mixHex(state.brandSettings?.sceneColor || defaultBrandSettings.sceneColor, state.brandSettings?.surfaceColor || defaultBrandSettings.surfaceColor, 0.42);
+}
+
+function sanitizeHexColor(value, fallback = defaultAccentColor) {
+  const match = String(value || "").trim().match(/^#?([0-9a-f]{6})$/i);
+  return match ? `#${match[1].toLowerCase()}` : fallback;
 }
 
 function sanitizeAccentColor(value, fallback = defaultAccentColor) {
-  const match = String(value || "").trim().match(/^#?([0-9a-f]{6})$/i);
-  return match ? `#${match[1].toLowerCase()}` : fallback;
+  return sanitizeHexColor(value, fallback);
 }
 
 function normalizeBrandSettings(settings = {}) {
@@ -916,6 +945,12 @@ function normalizeBrandSettings(settings = {}) {
     : "";
   return {
     accentColor: sanitizeAccentColor(settings.accentColor),
+    backgroundColor: sanitizeHexColor(settings.backgroundColor, defaultBrandSettings.backgroundColor),
+    surfaceColor: sanitizeHexColor(settings.surfaceColor, defaultBrandSettings.surfaceColor),
+    textColor: sanitizeHexColor(settings.textColor, defaultBrandSettings.textColor),
+    mutedColor: sanitizeHexColor(settings.mutedColor, defaultBrandSettings.mutedColor),
+    borderColor: sanitizeHexColor(settings.borderColor, defaultBrandSettings.borderColor),
+    sceneColor: sanitizeHexColor(settings.sceneColor, defaultBrandSettings.sceneColor),
     heroTitle: String(settings.heroTitle || defaultBrandSettings.heroTitle).trim().slice(0, 120) || defaultBrandSettings.heroTitle,
     heroText: String(settings.heroText || defaultBrandSettings.heroText).trim().slice(0, 320) || defaultBrandSettings.heroText,
     heroImage
@@ -923,7 +958,7 @@ function normalizeBrandSettings(settings = {}) {
 }
 
 function hexToRgb(hex) {
-  const clean = sanitizeAccentColor(hex).slice(1);
+  const clean = sanitizeHexColor(hex, defaultAccentColor).slice(1);
   return {
     r: parseInt(clean.slice(0, 2), 16),
     g: parseInt(clean.slice(2, 4), 16),
@@ -938,15 +973,59 @@ function mixHex(hex, target = "#ffffff", amount = 0.24) {
   return `#${channel(base.r, other.r)}${channel(base.g, other.g)}${channel(base.b, other.b)}`;
 }
 
+function rgbaFromHex(hex, alpha) {
+  const rgb = hexToRgb(hex);
+  return `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${alpha})`;
+}
+
+function colorLuminance(hex) {
+  const rgb = hexToRgb(hex);
+  const channel = (value) => {
+    const normalized = value / 255;
+    return normalized <= 0.03928 ? normalized / 12.92 : ((normalized + 0.055) / 1.055) ** 2.4;
+  };
+  return 0.2126 * channel(rgb.r) + 0.7152 * channel(rgb.g) + 0.0722 * channel(rgb.b);
+}
+
 function applyBrandSettings() {
   state.brandSettings = normalizeBrandSettings(state.brandSettings);
   const accent = state.brandSettings.accentColor;
+  const background = state.brandSettings.backgroundColor;
+  const surface = state.brandSettings.surfaceColor;
+  const text = state.brandSettings.textColor;
+  const muted = state.brandSettings.mutedColor;
+  const border = state.brandSettings.borderColor;
+  const sceneColor = state.brandSettings.sceneColor;
   const accent2 = mixHex(accent, "#ffffff", 0.22);
+  const surface2 = mixHex(surface, text, 0.055);
+  const lineStrong = mixHex(border, text, 0.18);
   const rgb = hexToRgb(accent);
   state.brandSettings.accentColor = accent;
+  document.documentElement.style.setProperty("--bg", background);
+  document.documentElement.style.setProperty("--surface", surface);
+  document.documentElement.style.setProperty("--surface-2", surface2);
+  document.documentElement.style.setProperty("--ink", text);
+  document.documentElement.style.setProperty("--muted", muted);
+  document.documentElement.style.setProperty("--line", border);
+  document.documentElement.style.setProperty("--line-strong", lineStrong);
   document.documentElement.style.setProperty("--accent", accent);
   document.documentElement.style.setProperty("--accent-2", accent2);
   document.documentElement.style.setProperty("--accent-soft", `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.15)`);
+  document.documentElement.style.setProperty("--graphite", mixHex(surface, background, 0.38));
+  document.documentElement.style.setProperty("--topbar-bg", rgbaFromHex(background, 0.94));
+  document.documentElement.style.setProperty("--panel-bg", rgbaFromHex(surface, 0.92));
+  document.documentElement.style.setProperty("--subtle-bg", rgbaFromHex(text, 0.035));
+  document.documentElement.style.setProperty("--switch-bg", rgbaFromHex(text, 0.035));
+  document.documentElement.style.setProperty("--preview-bg", mixHex(sceneColor, surface, 0.32));
+  document.documentElement.style.setProperty("--log-bg", mixHex(background, surface, 0.26));
+  document.documentElement.style.setProperty("--log-ink", text);
+  document.documentElement.style.setProperty("--scene-bg-1", mixHex(sceneColor, surface, 0.2));
+  document.documentElement.style.setProperty("--scene-bg-2", sceneColor);
+  document.documentElement.style.setProperty("--loader-overlay-bg", rgbaFromHex(background, 0.72));
+  document.documentElement.style.setProperty("--loader-track", rgbaFromHex(text, 0.08));
+  document.documentElement.style.colorScheme = colorLuminance(background) > 0.55 ? "light" : "dark";
+  if (scene) scene.background = new THREE.Color(sceneBackgroundColor());
+  if (renderer && scene && camera) render();
   localStorage.setItem(brandSettingsStorageKey, JSON.stringify(state.brandSettings));
   syncBrandSettingsUi();
   applyHeroSettings();
@@ -955,6 +1034,12 @@ function applyBrandSettings() {
 function syncBrandSettingsUi() {
   if (els.brandAccentColor) els.brandAccentColor.value = state.brandSettings.accentColor;
   if (els.brandAccentText) els.brandAccentText.value = state.brandSettings.accentColor;
+  if (els.brandBackgroundColor) els.brandBackgroundColor.value = state.brandSettings.backgroundColor;
+  if (els.brandSurfaceColor) els.brandSurfaceColor.value = state.brandSettings.surfaceColor;
+  if (els.brandTextColor) els.brandTextColor.value = state.brandSettings.textColor;
+  if (els.brandMutedColor) els.brandMutedColor.value = state.brandSettings.mutedColor;
+  if (els.brandBorderColor) els.brandBorderColor.value = state.brandSettings.borderColor;
+  if (els.brandSceneColor) els.brandSceneColor.value = state.brandSettings.sceneColor;
   if (els.heroTitleInput) els.heroTitleInput.value = state.brandSettings.heroTitle;
   if (els.heroTextInput) els.heroTextInput.value = state.brandSettings.heroText;
 }
@@ -969,6 +1054,12 @@ function syncBrandSettingsFromInputs() {
   state.brandSettings = normalizeBrandSettings({
     ...state.brandSettings,
     accentColor: els.brandAccentText?.value || els.brandAccentColor?.value || state.brandSettings.accentColor,
+    backgroundColor: els.brandBackgroundColor?.value || state.brandSettings.backgroundColor,
+    surfaceColor: els.brandSurfaceColor?.value || state.brandSettings.surfaceColor,
+    textColor: els.brandTextColor?.value || state.brandSettings.textColor,
+    mutedColor: els.brandMutedColor?.value || state.brandSettings.mutedColor,
+    borderColor: els.brandBorderColor?.value || state.brandSettings.borderColor,
+    sceneColor: els.brandSceneColor?.value || state.brandSettings.sceneColor,
     heroTitle: els.heroTitleInput?.value || state.brandSettings.heroTitle,
     heroText: els.heroTextInput?.value || state.brandSettings.heroText
   });
@@ -1015,16 +1106,21 @@ async function hydrateBrandSettings() {
   return false;
 }
 
-function setBrandAccent(value, options = {}) {
-  const accent = sanitizeAccentColor(value, "");
-  if (!accent) {
+function setBrandColor(key, value, options = {}) {
+  if (!Object.prototype.hasOwnProperty.call(defaultBrandSettings, key) || !key.endsWith("Color")) return false;
+  const color = sanitizeHexColor(value, "");
+  if (!color) {
     if (els.brandSettingsNote) els.brandSettingsNote.textContent = "Use a six digit hex color, for example #c96b34.";
     return false;
   }
-  state.brandSettings.accentColor = accent;
+  state.brandSettings[key] = color;
   applyBrandSettings();
-  if (els.brandSettingsNote && options.previewOnly) els.brandSettingsNote.textContent = "Previewing brand color. Save to publish it.";
+  if (els.brandSettingsNote && options.previewOnly) els.brandSettingsNote.textContent = "Previewing brand colors. Save to publish them.";
   return true;
+}
+
+function setBrandAccent(value, options = {}) {
+  return setBrandColor("accentColor", value, options);
 }
 
 async function saveBrandSettings() {
@@ -2618,11 +2714,17 @@ function renderStaticLicenseCodeList() {
         </div>
         <div class="license-code-meta">
           <span>Reusable</span>
-          <small>${escapeHtml(planLabel(type.plan))} · ${escapeHtml(type.duration === "lifetime" ? "Lifetime" : "Monthly")}</small>
+          <small>${escapeHtml(planLabel(type.plan))} · ${escapeHtml(licenseDurationLabel(type.duration))}</small>
         </div>
       </article>
     `;
   }).join("");
+}
+
+function licenseDurationLabel(duration) {
+  if (duration === "lifetime") return "Lifetime";
+  if (duration === "year") return "Yearly";
+  return "Monthly";
 }
 
 function renderLicenseCodeList() {

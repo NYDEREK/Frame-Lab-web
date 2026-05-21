@@ -41,6 +41,12 @@ const mimeTypes = {
 
 const defaultBrandSettings = {
   accentColor: "#c96b34",
+  backgroundColor: "#0c0d0d",
+  surfaceColor: "#141616",
+  textColor: "#f1eee9",
+  mutedColor: "#9a9690",
+  borderColor: "#292c2c",
+  sceneColor: "#070909",
   heroTitle: "Your next frame is 3D printed.",
   heroText: "Choose a collection, combine a front with temples, and prepare a clean production kit for additive manufacturing.",
   heroImage: ""
@@ -53,23 +59,36 @@ const licenseCodeTypes = {
   basic_month: { label: "Basic / 1 month", plan: "basic", duration: "month" },
   pro_month: { label: "Pro / 1 month", plan: "pro", duration: "month" },
   plus_month: { label: "Plus / 1 month", plan: "studio", duration: "month" },
+  basic_year: { label: "Basic / 1 year", plan: "basic", duration: "year" },
+  pro_year: { label: "Pro / 1 year", plan: "pro", duration: "year" },
+  plus_year: { label: "Plus / 1 year", plan: "studio", duration: "year" },
   basic_lifetime: { label: "Basic / lifetime", plan: "basic", duration: "lifetime" },
   pro_lifetime: { label: "Pro / lifetime", plan: "pro", duration: "lifetime" },
   plus_lifetime: { label: "Plus / lifetime", plan: "studio", duration: "lifetime" }
 };
 const staticLicenseCodes = [
-  { id: "static-basic", code: "1847-2294-6103", type: "basic_lifetime", label: "Basic reusable code" },
-  { id: "static-pro", code: "5729-6041-8832", type: "pro_lifetime", label: "Pro reusable code" },
-  { id: "static-plus", code: "9364-1558-2706", type: "plus_lifetime", label: "Plus reusable code" }
+  { id: "static-basic-month", code: "2184-0015-3029", type: "basic_month", label: "Basic monthly reusable code" },
+  { id: "static-pro-month", code: "4752-0050-6811", type: "pro_month", label: "Pro monthly reusable code" },
+  { id: "static-plus-month", code: "6901-9999-4473", type: "plus_month", label: "Plus monthly reusable code" },
+  { id: "static-basic-year", code: "3184-1815-3029", type: "basic_year", label: "Basic yearly reusable code" },
+  { id: "static-pro-year", code: "6752-1850-6811", type: "pro_year", label: "Pro yearly reusable code" },
+  { id: "static-plus-year", code: "8901-1899-4473", type: "plus_year", label: "Plus yearly reusable code" },
+  { id: "static-basic-lifetime", code: "1847-2294-6103", type: "basic_lifetime", label: "Basic lifetime reusable code" },
+  { id: "static-pro-lifetime", code: "5729-6041-8832", type: "pro_lifetime", label: "Pro lifetime reusable code" },
+  { id: "static-plus-lifetime", code: "9364-1558-2706", type: "plus_lifetime", label: "Plus lifetime reusable code" }
 ];
 
 function defaultDb() {
   return { users: [], sessions: [], collections: [], components: [], downloads: [], licenseCodes: [], settings: { ...defaultBrandSettings } };
 }
 
-function sanitizeAccentColor(value, fallback = defaultBrandSettings.accentColor) {
+function sanitizeHexColor(value, fallback) {
   const match = String(value || "").trim().match(/^#?([0-9a-f]{6})$/i);
   return match ? `#${match[1].toLowerCase()}` : fallback;
+}
+
+function sanitizeAccentColor(value, fallback = defaultBrandSettings.accentColor) {
+  return sanitizeHexColor(value, fallback);
 }
 
 function sanitizeSettings(settings = {}) {
@@ -78,6 +97,12 @@ function sanitizeSettings(settings = {}) {
     : "";
   return {
     accentColor: sanitizeAccentColor(settings.accentColor),
+    backgroundColor: sanitizeHexColor(settings.backgroundColor, defaultBrandSettings.backgroundColor),
+    surfaceColor: sanitizeHexColor(settings.surfaceColor, defaultBrandSettings.surfaceColor),
+    textColor: sanitizeHexColor(settings.textColor, defaultBrandSettings.textColor),
+    mutedColor: sanitizeHexColor(settings.mutedColor, defaultBrandSettings.mutedColor),
+    borderColor: sanitizeHexColor(settings.borderColor, defaultBrandSettings.borderColor),
+    sceneColor: sanitizeHexColor(settings.sceneColor, defaultBrandSettings.sceneColor),
     heroTitle: String(settings.heroTitle || defaultBrandSettings.heroTitle).trim().slice(0, 120) || defaultBrandSettings.heroTitle,
     heroText: String(settings.heroText || defaultBrandSettings.heroText).trim().slice(0, 320) || defaultBrandSettings.heroText,
     heroImage
@@ -246,8 +271,16 @@ function downloadQuotaForUser(user, db, now = new Date()) {
 }
 
 function addOneMonth(date = new Date()) {
+  return addMonths(date, 1);
+}
+
+function addOneYear(date = new Date()) {
+  return addMonths(date, 12);
+}
+
+function addMonths(date = new Date(), months = 1) {
   const next = new Date(date);
-  next.setMonth(next.getMonth() + 1);
+  next.setMonth(next.getMonth() + months);
   return next.toISOString();
 }
 
@@ -385,7 +418,7 @@ function applyLicenseCode(user, license) {
   if (hasLifetime && planRank[normalizePlan(user.plan)] >= planRank[details.plan]) {
     return { error: "This account already has equal or higher lifetime access." };
   }
-  if (details.duration === "month" && planRank[normalizePlan(user.plan)] > planRank[details.plan] && (hasFutureAccess || hasLifetime)) {
+  if (details.duration !== "lifetime" && planRank[normalizePlan(user.plan)] > planRank[details.plan] && (hasFutureAccess || hasLifetime)) {
     return { error: "This account already has a higher active plan." };
   }
 
@@ -397,9 +430,9 @@ function applyLicenseCode(user, license) {
     user.planEndsAt = null;
   } else {
     const extensionBase = previousPlan === details.plan && hasFutureAccess ? currentEnds : now;
-    user.subscriptionMode = "license_month";
+    user.subscriptionMode = details.duration === "year" ? "license_year" : "license_month";
     user.subscriptionStatus = "paid_once";
-    user.planEndsAt = addOneMonth(extensionBase);
+    user.planEndsAt = details.duration === "year" ? addOneYear(extensionBase) : addOneMonth(extensionBase);
   }
   user.updatedAt = new Date().toISOString();
   return { message: `${details.label} activated.`, consume: true };
