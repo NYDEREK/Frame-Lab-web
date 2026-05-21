@@ -168,6 +168,21 @@ small,
   gap: 0.85rem;
 }
 
+.brand-button {
+  appearance: none;
+  min-height: auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.brand-button:hover {
+  color: var(--accent-2);
+  transform: none;
+}
+
 .brand h1 {
   font-size: 1rem;
   font-weight: 850;
@@ -1269,6 +1284,13 @@ input[type="password"] {
   line-height: 1;
 }
 
+.studio-mode-label {
+  margin-top: 0.45rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 850;
+}
+
 .collection-section {
   max-width: 86rem;
   margin: 0 auto 2.6rem;
@@ -1464,6 +1486,18 @@ input[type="password"] {
   grid-template-columns: minmax(13rem, 1fr) minmax(9rem, 0.45fr) auto auto;
   gap: 0.65rem;
   align-items: end;
+}
+
+.hero-settings-grid {
+  display: grid;
+  grid-template-columns: minmax(16rem, 0.85fr) minmax(18rem, 1.2fr) auto auto;
+  gap: 0.65rem;
+  align-items: center;
+  margin-top: 0.75rem;
+}
+
+.hero-settings-grid input {
+  min-width: 0;
 }
 
 .accent-picker {
@@ -1811,6 +1845,7 @@ input[type="password"] {
 
   .studio-grid,
   .brand-settings-grid,
+  .hero-settings-grid,
   .license-admin-grid,
   .license-code-item,
   .license-redeem-row,

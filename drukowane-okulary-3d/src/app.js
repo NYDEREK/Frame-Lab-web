@@ -109,8 +109,13 @@ const translations = {
     variants: "Options",
     export: "Export",
     delete: "Delete",
-    moveUp: "Up",
-    moveDown: "Down",
+    moveLeft: "Left",
+    moveRight: "Right",
+    newCollection: "New collection",
+    editingCollection: "Editing",
+    heroTitlePlaceholder: "Hero title",
+    heroTextPlaceholder: "Hero text",
+    heroImageFile: "Hero image",
     parametersDetected: "params",
     param_head_width_label: "Head width",
     param_head_width_hint: "Overall fit width",
@@ -151,6 +156,13 @@ const defaultModelId = "frame001-sun-01";
 const ownerDeveloperEmail = "nyderek@framelab.dev";
 const adminEmails = new Set([ownerDeveloperEmail, "s.nyderek@proton.me"]);
 const defaultAccentColor = "#c96b34";
+const defaultHeroImage = "./assets/frame-lab-hero.png";
+const defaultBrandSettings = {
+  accentColor: defaultAccentColor,
+  heroTitle: "Your next frame is 3D printed.",
+  heroText: "Choose a collection, combine a front with temples, and prepare a clean production kit for additive manufacturing.",
+  heroImage: ""
+};
 const accountStorageKey = "framelab.account.v1";
 const sessionStorageKey = "framelab.sessionToken.v1";
 const accountProfilesStorageKey = "framelab.accounts.v1";
@@ -396,9 +408,7 @@ const state = {
     rightTemple: "",
     lens: ""
   },
-  brandSettings: {
-    accentColor: defaultAccentColor
-  },
+  brandSettings: structuredClone(defaultBrandSettings),
   system: {
     storage: { persistent: false, source: "unknown", message: "" }
   },
@@ -478,6 +488,10 @@ const els = {
   galleryGrid: document.querySelector("#galleryGrid"),
   sunGalleryGrid: document.querySelector("#sunGalleryGrid"),
   opticalGalleryGrid: document.querySelector("#opticalGalleryGrid"),
+  brandHome: document.querySelector("#brandHome"),
+  heroTitle: document.querySelector("#heroTitle"),
+  heroText: document.querySelector("#heroText"),
+  heroImage: document.querySelector("#heroImage"),
   galleryScadInput: document.querySelector("#galleryScadInput"),
   collectionTitle: document.querySelector("#collectionTitle"),
   collectionCategory: document.querySelector("#collectionCategory"),
@@ -494,10 +508,16 @@ const els = {
   openGallery: document.querySelector("#openGallery"),
   openStudio: document.querySelector("#openStudio"),
   openLicenses: document.querySelector("#openLicenses"),
+  studioModeLabel: document.querySelector("#studioModeLabel"),
+  clearStudioEdit: document.querySelector("#clearStudioEdit"),
   brandAccentColor: document.querySelector("#brandAccentColor"),
   brandAccentText: document.querySelector("#brandAccentText"),
   saveBrandSettings: document.querySelector("#saveBrandSettings"),
   resetBrandSettings: document.querySelector("#resetBrandSettings"),
+  heroTitleInput: document.querySelector("#heroTitleInput"),
+  heroTextInput: document.querySelector("#heroTextInput"),
+  heroImageInput: document.querySelector("#heroImageInput"),
+  resetHeroImage: document.querySelector("#resetHeroImage"),
   brandSettingsNote: document.querySelector("#brandSettingsNote"),
   storageStatusNote: document.querySelector("#storageStatusNote"),
   licenseCodeType: document.querySelector("#licenseCodeType"),
@@ -739,9 +759,9 @@ function bindUi() {
   els.cancelCrop.addEventListener("click", cancelImageCrop);
   els.openHome.addEventListener("click", (event) => {
     event.preventDefault();
-    setActiveSection("home");
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    goHome();
   });
+  els.brandHome?.addEventListener("click", goHome);
   els.openConfigurator.addEventListener("click", () => setActiveSection("configurator"));
   els.openGallery.addEventListener("click", (event) => {
     event.preventDefault();
@@ -754,6 +774,10 @@ function bindUi() {
     event.preventDefault();
     setActiveSection("studio");
   });
+  els.clearStudioEdit?.addEventListener("click", () => {
+    clearCollectionForm();
+    setActiveSection("studio");
+  });
   els.openLicenses.addEventListener("click", async (event) => {
     event.preventDefault();
     setActiveSection("licenses");
@@ -764,6 +788,23 @@ function bindUi() {
   });
   els.brandAccentText?.addEventListener("input", () => {
     setBrandAccent(els.brandAccentText.value, { previewOnly: true });
+  });
+  els.heroTitleInput?.addEventListener("input", () => {
+    state.brandSettings.heroTitle = els.heroTitleInput.value;
+    applyBrandSettings();
+    if (els.brandSettingsNote) els.brandSettingsNote.textContent = "Previewing hero text. Save to publish it.";
+  });
+  els.heroTextInput?.addEventListener("input", () => {
+    state.brandSettings.heroText = els.heroTextInput.value;
+    applyBrandSettings();
+    if (els.brandSettingsNote) els.brandSettingsNote.textContent = "Previewing hero text. Save to publish it.";
+  });
+  els.heroImageInput?.addEventListener("change", handleHeroImageSelect);
+  els.resetHeroImage?.addEventListener("click", () => {
+    state.brandSettings.heroImage = "";
+    applyBrandSettings();
+    if (els.heroImageInput) els.heroImageInput.value = "";
+    if (els.brandSettingsNote) els.brandSettingsNote.textContent = "Default hero image selected. Save to publish it.";
   });
   els.saveBrandSettings?.addEventListener("click", () => saveBrandSettings());
   els.resetBrandSettings?.addEventListener("click", () => resetBrandSettings());
@@ -847,6 +888,18 @@ function sanitizeAccentColor(value, fallback = defaultAccentColor) {
   return match ? `#${match[1].toLowerCase()}` : fallback;
 }
 
+function normalizeBrandSettings(settings = {}) {
+  const heroImage = typeof settings.heroImage === "string" && settings.heroImage.startsWith("data:image/")
+    ? settings.heroImage
+    : "";
+  return {
+    accentColor: sanitizeAccentColor(settings.accentColor),
+    heroTitle: String(settings.heroTitle || defaultBrandSettings.heroTitle).trim().slice(0, 120) || defaultBrandSettings.heroTitle,
+    heroText: String(settings.heroText || defaultBrandSettings.heroText).trim().slice(0, 320) || defaultBrandSettings.heroText,
+    heroImage
+  };
+}
+
 function hexToRgb(hex) {
   const clean = sanitizeAccentColor(hex).slice(1);
   return {
@@ -864,7 +917,8 @@ function mixHex(hex, target = "#ffffff", amount = 0.24) {
 }
 
 function applyBrandSettings() {
-  const accent = sanitizeAccentColor(state.brandSettings.accentColor);
+  state.brandSettings = normalizeBrandSettings(state.brandSettings);
+  const accent = state.brandSettings.accentColor;
   const accent2 = mixHex(accent, "#ffffff", 0.22);
   const rgb = hexToRgb(accent);
   state.brandSettings.accentColor = accent;
@@ -873,11 +927,30 @@ function applyBrandSettings() {
   document.documentElement.style.setProperty("--accent-soft", `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.15)`);
   localStorage.setItem(brandSettingsStorageKey, JSON.stringify(state.brandSettings));
   syncBrandSettingsUi();
+  applyHeroSettings();
 }
 
 function syncBrandSettingsUi() {
   if (els.brandAccentColor) els.brandAccentColor.value = state.brandSettings.accentColor;
   if (els.brandAccentText) els.brandAccentText.value = state.brandSettings.accentColor;
+  if (els.heroTitleInput) els.heroTitleInput.value = state.brandSettings.heroTitle;
+  if (els.heroTextInput) els.heroTextInput.value = state.brandSettings.heroText;
+}
+
+function applyHeroSettings() {
+  if (els.heroTitle) els.heroTitle.textContent = state.brandSettings.heroTitle;
+  if (els.heroText) els.heroText.textContent = state.brandSettings.heroText;
+  if (els.heroImage) els.heroImage.src = state.brandSettings.heroImage || defaultHeroImage;
+}
+
+function syncBrandSettingsFromInputs() {
+  state.brandSettings = normalizeBrandSettings({
+    ...state.brandSettings,
+    accentColor: els.brandAccentText?.value || els.brandAccentColor?.value || state.brandSettings.accentColor,
+    heroTitle: els.heroTitleInput?.value || state.brandSettings.heroTitle,
+    heroText: els.heroTextInput?.value || state.brandSettings.heroText
+  });
+  applyBrandSettings();
 }
 
 async function hydrateSystemStatus() {
@@ -909,8 +982,8 @@ function renderStorageStatus() {
 async function hydrateBrandSettings() {
   try {
     const payload = await apiRequest("/api/settings");
-    if (payload.settings?.accentColor) {
-      state.brandSettings.accentColor = sanitizeAccentColor(payload.settings.accentColor);
+    if (payload.settings) {
+      state.brandSettings = normalizeBrandSettings(payload.settings);
       applyBrandSettings();
       return true;
     }
@@ -937,13 +1010,14 @@ async function saveBrandSettings() {
     if (els.brandSettingsNote) els.brandSettingsNote.textContent = "Developer login is required to save brand settings.";
     return;
   }
-  if (!setBrandAccent(els.brandAccentText?.value || els.brandAccentColor?.value || state.brandSettings.accentColor)) return;
+  syncBrandSettingsFromInputs();
+  if (!setBrandAccent(state.brandSettings.accentColor)) return;
   try {
     const payload = await apiRequest("/api/settings", {
       method: "PUT",
       body: JSON.stringify({ settings: state.brandSettings })
     });
-    state.brandSettings.accentColor = sanitizeAccentColor(payload.settings?.accentColor);
+    state.brandSettings = normalizeBrandSettings(payload.settings);
     applyBrandSettings();
     if (els.brandSettingsNote) els.brandSettingsNote.textContent = "Brand settings saved.";
   } catch (error) {
@@ -952,7 +1026,7 @@ async function saveBrandSettings() {
 }
 
 async function resetBrandSettings() {
-  state.brandSettings.accentColor = defaultAccentColor;
+  state.brandSettings = structuredClone(defaultBrandSettings);
   applyBrandSettings();
   await saveBrandSettings();
 }
@@ -968,6 +1042,8 @@ function applyTranslations() {
     });
   });
   updateAccountUi();
+  applyHeroSettings();
+  syncStudioModeUi();
 }
 
 function buildControls() {
@@ -1631,7 +1707,7 @@ function renderUploadedAssembly() {
     });
     modelGroup.add(clone);
   });
-  normalizeObjectForScene(modelGroup);
+  centerObjectForViewerPivot(modelGroup);
   modelBasePosition.copy(modelGroup.position);
   applyViewerTransform();
   modelGroup.scale.setScalar(1);
@@ -1654,6 +1730,7 @@ function renderParametricPreview() {
   addTemple(-1, p, material);
   addTemple(1, p, material);
 
+  centerObjectForViewerPivot(modelGroup);
   modelBasePosition.copy(modelGroup.position);
   applyViewerTransform();
   modelGroup.scale.setScalar(1);
@@ -2019,6 +2096,23 @@ function scrollGalleryIntoView() {
   els.openGallery.classList.add("active");
   els.openStudio.classList.remove("active");
   els.openLicenses.classList.remove("active");
+}
+
+function goHome() {
+  setActiveSection("home");
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+async function handleHeroImageSelect() {
+  const file = els.heroImageInput?.files?.[0];
+  if (!file) return;
+  if (!file.type.startsWith("image/")) {
+    if (els.brandSettingsNote) els.brandSettingsNote.textContent = "Choose an image file for the hero.";
+    return;
+  }
+  state.brandSettings.heroImage = await readFileAsDataUrl(file);
+  applyBrandSettings();
+  if (els.brandSettingsNote) els.brandSettingsNote.textContent = "Previewing hero image. Save to publish it.";
 }
 
 function sessionToken() {
@@ -2605,8 +2699,8 @@ function renderGallery() {
         <div class="gallery-actions">
           <button type="button" class="accent" data-action="open">${t("open")}</button>
           ${isDeveloper() ? `<button type="button" data-action="edit">Edit</button>` : ""}
-          ${isDeveloper() ? `<button type="button" class="compact order-button" data-action="move-up">${t("moveUp")}</button>` : ""}
-          ${isDeveloper() ? `<button type="button" class="compact order-button" data-action="move-down">${t("moveDown")}</button>` : ""}
+          ${isDeveloper() ? `<button type="button" class="compact order-button" data-action="move-left">${t("moveLeft")}</button>` : ""}
+          ${isDeveloper() ? `<button type="button" class="compact order-button" data-action="move-right">${t("moveRight")}</button>` : ""}
           ${isDeveloper() && model.id !== defaultModelId ? `<button type="button" class="delete-button" data-action="delete">${t("delete")}</button>` : ""}
         </div>
       </div>
@@ -2654,12 +2748,12 @@ function handleGalleryClick(event) {
     startModelEdit(model);
     return;
   }
-  if (button.dataset.action === "move-up" || button.dataset.action === "move-down") {
+  if (button.dataset.action === "move-left" || button.dataset.action === "move-right") {
     if (!isDeveloper()) {
       log("Ordering is available only in developer mode.");
       return;
     }
-    moveModelInGallery(model.id, button.dataset.action === "move-up" ? -1 : 1);
+    moveModelInGallery(model.id, button.dataset.action === "move-left" ? -1 : 1);
     return;
   }
   if (button.dataset.action === "delete") {
@@ -2696,7 +2790,7 @@ function moveModelInGallery(modelId, direction) {
   normalizeGalleryOrder(model.category);
   persistModels();
   renderGallery();
-  log(`Moved ${model.name} ${direction < 0 ? "up" : "down"} in the gallery.`);
+  log(`Moved ${model.name} ${direction < 0 ? "left" : "right"} in the gallery.`);
 }
 
 function normalizeGalleryOrder(category) {
@@ -2813,14 +2907,14 @@ async function addCollectionFromStudio() {
     params,
     thumbnail,
     components: {
-      front: frontComponents.length ? frontComponents.map(componentSummary) : existingComponents.front,
+      front: frontComponents.length ? mergeComponentSummaries(existingComponents.front, frontComponents) : existingComponents.front,
       temples: existingComponents.temples,
-      leftTemples: leftTempleComponents.length ? leftTempleComponents.map(componentSummary) : existingComponents.leftTemples,
-      rightTemples: rightTempleComponents.length ? rightTempleComponents.map(componentSummary) : existingComponents.rightTemples,
-      lenses: lensComponents.length ? lensComponents.map(componentSummary) : existingComponents.lenses
+      leftTemples: leftTempleComponents.length ? mergeComponentSummaries(existingComponents.leftTemples, leftTempleComponents) : existingComponents.leftTemples,
+      rightTemples: rightTempleComponents.length ? mergeComponentSummaries(existingComponents.rightTemples, rightTempleComponents) : existingComponents.rightTemples,
+      lenses: lensComponents.length ? mergeComponentSummaries(existingComponents.lenses, lensComponents) : existingComponents.lenses
     },
     assembly,
-    order: existing?.order ?? nextOrder,
+    order: existing && existing.category === category ? existing.order : nextOrder,
     createdAt: existing?.createdAt || Date.now(),
     updatedAt: Date.now()
   });
@@ -2829,6 +2923,8 @@ async function addCollectionFromStudio() {
   } else {
     state.models.unshift(model);
   }
+  if (existing && existing.category !== category) normalizeGalleryOrder(existing.category);
+  normalizeGalleryOrder(category);
   persistModels({ syncBackend: false });
   await syncCollectionsToBackend({ announce: true }).catch((error) => log(error.message || "Could not save collection to backend."));
   selectModel(model.id, { logSelection: false, captureThumbnail: !thumbnail });
@@ -2837,6 +2933,10 @@ async function addCollectionFromStudio() {
   setActiveSection("home");
   requestAnimationFrame(() => scrollGalleryIntoView());
   log(`${existing ? "Updated" : "Added"} collection: ${model.name}.`);
+}
+
+function mergeComponentSummaries(existing = [], added = []) {
+  return uniqueComponentsById([...existing, ...added.map(componentSummary).filter(Boolean)]);
 }
 
 async function handleCollectionImageSelect() {
@@ -2930,6 +3030,7 @@ function syncComponentSideInput() {
 }
 
 function startModelEdit(model) {
+  selectModel(model.id, { logSelection: false, captureThumbnail: false });
   state.editingModelId = model.id;
   els.collectionTitle.value = model.name;
   els.collectionCategory.value = model.category === "optical" ? "optical" : "sun";
@@ -2942,8 +3043,16 @@ function startModelEdit(model) {
   els.collectionRightTempleInput.value = "";
   els.collectionLensInput.value = "";
   els.addCollection.textContent = "Save changes";
+  syncStudioModeUi();
   setActiveSection("studio");
   log(`Editing collection: ${model.name}.`);
+}
+
+function syncStudioModeUi() {
+  if (!els.studioModeLabel || !els.clearStudioEdit) return;
+  const model = state.editingModelId ? state.models.find((item) => item.id === state.editingModelId) : null;
+  els.studioModeLabel.textContent = model ? `${t("editingCollection")}: ${model.name}` : t("newCollection");
+  els.clearStudioEdit.hidden = !model;
 }
 
 function makeAutoCollectionThumbnail(title, params, category) {
@@ -2966,6 +3075,15 @@ function makeAutoCollectionThumbnail(title, params, category) {
     <text x="24" y="110" fill="#766b63" font-size="8" font-family="Inter,Arial" font-weight="700">${escapeHtml(title).slice(0, 26)}</text>
   </svg>`;
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+}
+
+function centerObjectForViewerPivot(object) {
+  const box = new THREE.Box3().setFromObject(object);
+  if (box.isEmpty()) return;
+  const center = box.getCenter(new THREE.Vector3()).sub(object.position);
+  object.children.forEach((child) => {
+    child.position.sub(center);
+  });
 }
 
 function normalizeObjectForScene(object) {
@@ -3025,6 +3143,7 @@ function clearCollectionForm() {
   els.collectionRightTempleInput.value = "";
   els.collectionLensInput.value = "";
   els.addCollection.textContent = t("addCollection");
+  syncStudioModeUi();
 }
 
 function attachComponentToCurrentModel(component) {
@@ -3594,9 +3713,9 @@ function loadSettings() {
   state.lang = "en";
   try {
     const storedBrand = JSON.parse(localStorage.getItem(brandSettingsStorageKey) || "null");
-    if (storedBrand?.accentColor) state.brandSettings.accentColor = sanitizeAccentColor(storedBrand.accentColor);
+    if (storedBrand) state.brandSettings = normalizeBrandSettings(storedBrand);
   } catch {
-    state.brandSettings.accentColor = defaultAccentColor;
+    state.brandSettings = structuredClone(defaultBrandSettings);
   }
   try {
     const hidden = JSON.parse(localStorage.getItem(hiddenComponentsStorageKey) || "[]");

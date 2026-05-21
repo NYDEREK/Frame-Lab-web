@@ -39,7 +39,12 @@ const mimeTypes = {
   ".stp": "model/step"
 };
 
-const defaultBrandSettings = { accentColor: "#c96b34" };
+const defaultBrandSettings = {
+  accentColor: "#c96b34",
+  heroTitle: "Your next frame is 3D printed.",
+  heroText: "Choose a collection, combine a front with temples, and prepare a clean production kit for additive manufacturing.",
+  heroImage: ""
+};
 const planRank = { free: 0, basic: 1, pro: 2, studio: 3 };
 const monthlyDownloadLimits = { free: 0, basic: 15, pro: 50, studio: null };
 const licenseCodeTypes = {
@@ -61,8 +66,14 @@ function sanitizeAccentColor(value, fallback = defaultBrandSettings.accentColor)
 }
 
 function sanitizeSettings(settings = {}) {
+  const heroImage = typeof settings.heroImage === "string" && settings.heroImage.startsWith("data:image/")
+    ? settings.heroImage.slice(0, 8_000_000)
+    : "";
   return {
-    accentColor: sanitizeAccentColor(settings.accentColor)
+    accentColor: sanitizeAccentColor(settings.accentColor),
+    heroTitle: String(settings.heroTitle || defaultBrandSettings.heroTitle).trim().slice(0, 120) || defaultBrandSettings.heroTitle,
+    heroText: String(settings.heroText || defaultBrandSettings.heroText).trim().slice(0, 320) || defaultBrandSettings.heroText,
+    heroImage
   };
 }
 

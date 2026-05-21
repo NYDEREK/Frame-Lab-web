@@ -4,6 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Frame Lab | 3D Printed Eyewear</title>
+    <link rel="icon" href="./assets/favicon.svg" type="image/svg+xml" />
     <script>
       if (window.location.protocol === "file:") {
         window.location.replace("http://127.0.0.1:4173/");
@@ -15,7 +16,7 @@
         document.documentElement.dataset.appError = event.reason?.message || String(event.reason || "promise");
       });
     </script>
-    <link rel="stylesheet" href="./styles.css?v=temple-sides-20260521-1" />
+    <link rel="stylesheet" href="./styles.css?v=studio-edit-20260521-1" />
     <script type="importmap">
       {
         "imports": {
@@ -218,12 +219,12 @@
 
       <header class="topbar">
         <div class="topbar-left">
-          <div class="brand">
+          <button id="brandHome" class="brand brand-button" type="button" aria-label="Frame Lab home">
             <div>
               <p class="eyebrow" data-i18n="brandKicker"></p>
               <h1>Frame Lab</h1>
             </div>
-          </div>
+          </button>
           <nav class="topbar-tabs" aria-label="Navigation" data-i18n-attr="aria-label:navLabel">
             <a id="openHome" class="nav-link active" href="#top" data-i18n="tabHome">Start</a>
             <a id="openGallery" class="nav-link" href="#galleryPanel" data-i18n="tabGallery">Collections</a>
@@ -242,11 +243,11 @@
         <span id="top" class="anchor-target"></span>
         <section class="hero-page">
           <figure class="hero-product" aria-hidden="true">
-            <img src="./assets/frame-lab-hero.png" alt="" />
+            <img id="heroImage" src="./assets/frame-lab-hero.png" alt="" />
           </figure>
           <div class="hero-copy">
-            <h2 data-i18n="heroTitle">Your next frame is 3D printed.</h2>
-            <p data-i18n="heroText">Choose a collection, combine a front with temples, and prepare a clean production kit for additive manufacturing.</p>
+            <h2 id="heroTitle" data-i18n="heroTitle">Your next frame is 3D printed.</h2>
+            <p id="heroText" data-i18n="heroText">Choose a collection, combine a front with temples, and prepare a clean production kit for additive manufacturing.</p>
             <div class="hero-actions">
               <button id="heroBrowse" type="button" class="accent" data-i18n="heroBrowse">View collections</button>
               <button id="heroEditor" type="button" class="ghost" data-i18n="heroEditor">Open editor</button>
@@ -331,7 +332,9 @@
           <div>
             <p class="eyebrow" data-i18n="studioKicker">Studio</p>
             <h2 data-i18n="studioHeading">Add a collection to the gallery</h2>
+            <p id="studioModeLabel" class="studio-mode-label">New collection</p>
           </div>
+          <button id="clearStudioEdit" type="button" class="ghost">New collection</button>
         </div>
         <section class="studio-card brand-settings-card">
           <div class="section-head">
@@ -348,6 +351,15 @@
             <input id="brandAccentText" type="text" value="#c96b34" aria-label="Accent color hex" />
             <button id="saveBrandSettings" type="button" class="accent">Save brand</button>
             <button id="resetBrandSettings" type="button">Reset</button>
+          </div>
+          <div class="hero-settings-grid">
+            <input id="heroTitleInput" type="text" data-i18n-attr="placeholder:heroTitlePlaceholder" placeholder="Hero title" />
+            <input id="heroTextInput" type="text" data-i18n-attr="placeholder:heroTextPlaceholder" placeholder="Hero text" />
+            <label class="file-button" for="heroImageInput">
+              <input id="heroImageInput" type="file" accept="image/*" />
+              <span data-i18n="heroImageFile">Hero image</span>
+            </label>
+            <button id="resetHeroImage" type="button">Default hero image</button>
           </div>
           <p id="brandSettingsNote" class="account-note"></p>
           <p id="storageStatusNote" class="account-note"></p>
@@ -454,6 +466,6 @@
       </section>
     </div>
 
-    <script type="module" src="./src/app.js?v=temple-sides-20260521-1"></script>
+    <script type="module" src="./src/app.js?v=studio-edit-20260521-1"></script>
   </body>
 </html>
