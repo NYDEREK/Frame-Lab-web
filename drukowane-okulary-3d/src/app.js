@@ -547,6 +547,8 @@ const els = {
   resetHeroImage: document.querySelector("#resetHeroImage"),
   brandSettingsNote: document.querySelector("#brandSettingsNote"),
   storageStatusNote: document.querySelector("#storageStatusNote"),
+  refreshStorageDebug: document.querySelector("#refreshStorageDebug"),
+  storageDebugPanel: document.querySelector("#storageDebugPanel"),
   licenseCodeType: document.querySelector("#licenseCodeType"),
   licenseCodeQuantity: document.querySelector("#licenseCodeQuantity"),
   generateLicenseCodes: document.querySelector("#generateLicenseCodes"),
@@ -855,6 +857,7 @@ function bindUi() {
   });
   els.saveBrandSettings?.addEventListener("click", () => saveBrandSettings());
   els.resetBrandSettings?.addEventListener("click", () => resetBrandSettings());
+  els.refreshStorageDebug?.addEventListener("click", () => loadStorageDebug());
   els.generateLicenseCodes.addEventListener("click", () => generateLicenseCodes());
   els.heroBrowse.addEventListener("click", scrollGalleryIntoView);
   els.heroEditor.addEventListener("click", () => setActiveSection("configurator"));
@@ -1084,12 +1087,65 @@ function renderStorageStatus() {
   if (!els.storageStatusNote) return;
   if (!isDeveloper()) {
     els.storageStatusNote.textContent = "";
+    if (els.storageDebugPanel) {
+      els.storageDebugPanel.hidden = true;
+      els.storageDebugPanel.textContent = "";
+    }
     return;
   }
   const storage = state.system.storage || {};
   els.storageStatusNote.textContent = storage.persistent
     ? `Persistent storage active: ${storage.source || "Railway volume"}. Accounts, colors and collections should survive deploys.`
     : `${storage.message || "Persistent storage is not configured."} Add a Railway Volume and set FRAME_LAB_DATA_DIR to its mount path, for example /data.`;
+}
+
+function formatStorageBytes(bytes) {
+  const size = Number(bytes) || 0;
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+  return `${(size / (1024 * 1024)).toFixed(2)} MB`;
+}
+
+function renderStorageDebug(payload) {
+  if (!els.storageDebugPanel) return;
+  const file = payload.file || {};
+  const counts = payload.counts || {};
+  const storage = payload.storage || {};
+  els.storageDebugPanel.hidden = false;
+  els.storageDebugPanel.textContent = [
+    `Persistent: ${storage.persistent ? "yes" : "no"} (${storage.source || "unknown"})`,
+    `Data dir: ${payload.dataDir || "-"}`,
+    `DB file: ${payload.dbPath || "-"}`,
+    `DB exists: ${file.exists ? "yes" : "no"}`,
+    `DB size: ${formatStorageBytes(file.bytes)}`,
+    `DB updated: ${file.updatedAt || "-"}`,
+    `Users: ${counts.users ?? 0}`,
+    `Sessions: ${counts.sessions ?? 0}`,
+    `Collections: ${counts.collections ?? 0}`,
+    `Components: ${counts.components ?? 0}`,
+    `Downloads: ${counts.downloads ?? 0}`,
+    `Generated codes: ${counts.licenseCodes ?? 0}`
+  ].join("\n");
+}
+
+async function loadStorageDebug(options = {}) {
+  if (!isDeveloper() || !sessionToken()) {
+    if (els.storageDebugPanel) {
+      els.storageDebugPanel.hidden = true;
+      els.storageDebugPanel.textContent = "";
+    }
+    return false;
+  }
+  try {
+    const payload = await apiRequest("/api/admin/storage-debug");
+    renderStorageDebug(payload);
+    return true;
+  } catch (error) {
+    if (!options.silent && els.storageStatusNote) {
+      els.storageStatusNote.textContent = error.message || "Could not load storage diagnostics.";
+    }
+    return false;
+  }
 }
 
 async function hydrateBrandSettings() {

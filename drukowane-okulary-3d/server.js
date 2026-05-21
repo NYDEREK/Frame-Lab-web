@@ -1,5 +1,5 @@
 import { createHash, randomBytes, randomInt, scryptSync, timingSafeEqual } from "node:crypto";
-import { createReadStream, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { createReadStream, existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -117,6 +117,43 @@ function storageStatus() {
     message: persistent
       ? "Persistent data directory is configured."
       : "Persistent data directory is not configured, so accounts and settings can reset after each deploy."
+  };
+}
+
+function storageDebug(db) {
+  let file = {
+    exists: false,
+    bytes: 0,
+    updatedAt: null
+  };
+  try {
+    const stat = statSync(dbPath);
+    file = {
+      exists: true,
+      bytes: stat.size,
+      updatedAt: stat.mtime.toISOString()
+    };
+  } catch {
+    file = {
+      exists: false,
+      bytes: 0,
+      updatedAt: null
+    };
+  }
+
+  return {
+    storage: storageStatus(),
+    dataDir,
+    dbPath,
+    file,
+    counts: {
+      users: Array.isArray(db.users) ? db.users.length : 0,
+      sessions: Array.isArray(db.sessions) ? db.sessions.length : 0,
+      collections: Array.isArray(db.collections) ? db.collections.length : 0,
+      components: Array.isArray(db.components) ? db.components.length : 0,
+      downloads: Array.isArray(db.downloads) ? db.downloads.length : 0,
+      licenseCodes: Array.isArray(db.licenseCodes) ? db.licenseCodes.length : 0
+    }
   };
 }
 
@@ -662,6 +699,12 @@ async function handleApi(req, res, pathname) {
 
   if (req.method === "GET" && pathname === "/api/system") {
     return sendJson(res, 200, { storage: storageStatus() });
+  }
+
+  if (req.method === "GET" && pathname === "/api/admin/storage-debug") {
+    const user = currentUser(req, db);
+    if (!user || user.role !== "developer") return sendJson(res, 403, { error: "Developer access is required." });
+    return sendJson(res, 200, storageDebug(db));
   }
 
   if (req.method === "POST" && pathname === "/api/subscription/cancel") {
