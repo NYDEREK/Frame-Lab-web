@@ -1094,8 +1094,9 @@ function renderStorageStatus() {
     return;
   }
   const storage = state.system.storage || {};
+  const warnings = Array.isArray(storage.warnings) && storage.warnings.length ? ` ${storage.warnings.join(" ")}` : "";
   els.storageStatusNote.textContent = storage.persistent
-    ? `Persistent storage active: ${storage.source || "Railway volume"}. Accounts, colors and collections should survive deploys.`
+    ? `Persistent storage active: ${storage.source || "Railway volume"}. Accounts, colors and collections should survive deploys.${warnings}`
     : `${storage.message || "Persistent storage is not configured."} Add a Railway Volume and set FRAME_LAB_DATA_DIR to its mount path, for example /data.`;
 }
 

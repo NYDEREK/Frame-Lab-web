@@ -1,18 +1,26 @@
 import { createHash, randomBytes, randomInt, scryptSync, timingSafeEqual } from "node:crypto";
 import { createReadStream, existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
-import { extname, join, normalize } from "node:path";
+import { extname, isAbsolute, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL(".", import.meta.url));
-const dataDirSource = process.env.FRAME_LAB_DATA_DIR
+const railwayDataPath = "/data";
+const railwayDataPathExists = existsSync(railwayDataPath);
+const configuredFrameLabDataDir = absoluteDataRoot(process.env.FRAME_LAB_DATA_DIR);
+const configuredRailwayVolumeMountPath = absoluteDataRoot(process.env.RAILWAY_VOLUME_MOUNT_PATH);
+const dataDirWarnings = [
+  dataRootWarning("FRAME_LAB_DATA_DIR", process.env.FRAME_LAB_DATA_DIR),
+  dataRootWarning("RAILWAY_VOLUME_MOUNT_PATH", process.env.RAILWAY_VOLUME_MOUNT_PATH)
+].filter(Boolean);
+const persistentDataRoot = configuredFrameLabDataDir || configuredRailwayVolumeMountPath || (railwayDataPathExists ? railwayDataPath : "");
+const dataDirSource = configuredFrameLabDataDir
   ? "FRAME_LAB_DATA_DIR"
-  : process.env.RAILWAY_VOLUME_MOUNT_PATH
+  : configuredRailwayVolumeMountPath
     ? "RAILWAY_VOLUME_MOUNT_PATH"
-    : existsSync("/data")
-      ? "/data"
+    : railwayDataPathExists
+      ? railwayDataPath
       : "";
-const persistentDataRoot = process.env.FRAME_LAB_DATA_DIR || process.env.RAILWAY_VOLUME_MOUNT_PATH || (existsSync("/data") ? "/data" : "");
 const dataDir = persistentDataRoot ? persistentDataRoot : join(root, "data");
 const dbPath = join(dataDir, "frame-lab-db.json");
 const port = Number(process.env.PORT || 4173);
@@ -38,6 +46,17 @@ const mimeTypes = {
   ".step": "model/step",
   ".stp": "model/step"
 };
+
+function absoluteDataRoot(value) {
+  const trimmed = String(value || "").trim();
+  return trimmed && isAbsolute(trimmed) ? trimmed : "";
+}
+
+function dataRootWarning(name, value) {
+  const trimmed = String(value || "").trim();
+  if (!trimmed || isAbsolute(trimmed)) return "";
+  return `${name} is set to "${trimmed}", but Railway volumes need an absolute path. Ignoring it and using ${railwayDataPath} when available.`;
+}
 
 const defaultBrandSettings = {
   accentColor: "#c96b34",
@@ -111,12 +130,14 @@ function sanitizeSettings(settings = {}) {
 
 function storageStatus() {
   const persistent = Boolean(persistentDataRoot);
+  const message = persistent
+    ? "Persistent data directory is configured."
+    : "Persistent data directory is not configured, so accounts and settings can reset after each deploy.";
   return {
     persistent,
     source: dataDirSource || "application filesystem",
-    message: persistent
-      ? "Persistent data directory is configured."
-      : "Persistent data directory is not configured, so accounts and settings can reset after each deploy."
+    message: dataDirWarnings.length ? `${message} ${dataDirWarnings.join(" ")}` : message,
+    warnings: dataDirWarnings
   };
 }
 
