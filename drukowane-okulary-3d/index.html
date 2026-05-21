@@ -332,9 +332,7 @@
           <div>
             <p class="eyebrow" data-i18n="studioKicker">Developer</p>
             <h2 data-i18n="studioHeading">Collection manager</h2>
-            <p id="studioModeLabel" class="studio-mode-label">New collection</p>
           </div>
-          <button id="clearStudioEdit" type="button" class="ghost">New collection</button>
         </div>
         <section class="studio-card developer-manager-card">
           <div class="section-head">
@@ -374,6 +372,20 @@
           <p id="brandSettingsNote" class="account-note"></p>
           <p id="storageStatusNote" class="account-note"></p>
         </section>
+      </section>
+
+      <section id="collectionEditorPanel" class="studio-panel collection-editor-panel" hidden>
+        <div class="studio-head">
+          <div>
+            <p class="eyebrow" data-i18n="frameEditorKicker">Frame editor</p>
+            <h2 id="collectionEditorHeading" data-i18n="frameEditorHeading">Frame workspace</h2>
+            <p id="studioModeLabel" class="studio-mode-label">New collection</p>
+          </div>
+          <div class="studio-head-actions">
+            <button id="backToDeveloper" type="button" class="ghost" data-i18n="backToDeveloper">Back to Developer</button>
+            <button id="clearStudioEdit" type="button" class="ghost">New collection</button>
+          </div>
+        </div>
         <section class="studio-card">
           <div class="studio-grid">
             <input id="collectionTitle" type="text" data-i18n-attr="placeholder:collectionTitlePlaceholder" placeholder="Collection title" />

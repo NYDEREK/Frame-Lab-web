@@ -77,6 +77,9 @@ const translations = {
     opticalMeta: "",
     studioKicker: "Developer",
     studioHeading: "Collection manager",
+    frameEditorKicker: "Frame editor",
+    frameEditorHeading: "Frame workspace",
+    backToDeveloper: "Back to Developer",
     collectionTitlePlaceholder: "Collection title",
     collectionDescriptionPlaceholder: "Short description",
     sunCategory: "Sunglasses",
@@ -424,6 +427,7 @@ const els = {
   homePage: document.querySelector("#homePage"),
   workspace: document.querySelector("#workspace"),
   studioPanel: document.querySelector("#developerPanel"),
+  collectionEditorPanel: document.querySelector("#collectionEditorPanel"),
   galleryPanel: document.querySelector("#galleryPanel"),
   canvas: document.querySelector("#scene"),
   controls: document.querySelector("#controls"),
@@ -508,8 +512,10 @@ const els = {
   openGallery: document.querySelector("#openGallery"),
   openStudio: document.querySelector("#openStudio"),
   openLicenses: document.querySelector("#openLicenses"),
+  collectionEditorHeading: document.querySelector("#collectionEditorHeading"),
   studioModeLabel: document.querySelector("#studioModeLabel"),
   clearStudioEdit: document.querySelector("#clearStudioEdit"),
+  backToDeveloper: document.querySelector("#backToDeveloper"),
   newDeveloperCollection: document.querySelector("#newDeveloperCollection"),
   developerCollectionList: document.querySelector("#developerCollectionList"),
   brandAccentColor: document.querySelector("#brandAccentColor"),
@@ -779,11 +785,14 @@ function bindUi() {
   });
   els.clearStudioEdit?.addEventListener("click", () => {
     clearCollectionForm();
+    setActiveSection("collection-editor");
+  });
+  els.backToDeveloper?.addEventListener("click", () => {
     setActiveSection("developer");
   });
   els.newDeveloperCollection?.addEventListener("click", () => {
     clearCollectionForm();
-    setActiveSection("developer");
+    setActiveSection("collection-editor");
   });
   els.openLicenses.addEventListener("click", async (event) => {
     event.preventDefault();
@@ -1529,6 +1538,10 @@ function componentToLibraryItem(component) {
 
 function renderComponentFileList() {
   if (!els.componentFileList) return;
+  if (!state.editingModelId && !els.collectionEditorPanel.hidden) {
+    els.componentFileList.innerHTML = `<div class="compatibility-note">Save the collection first, then add individual component options in this frame workspace.</div>`;
+    return;
+  }
   const components = componentsForActiveModel();
   if (!components.length) {
     els.componentFileList.innerHTML = `<div class="compatibility-note">${t("noComponents")}</div>`;
@@ -2084,17 +2097,20 @@ function scheduleModelPersist() {
 function setActiveSection(section) {
   if (section === "studio") section = "developer";
   if (section === "developer" && !isDeveloper()) section = "home";
+  if (section === "collection-editor" && !isDeveloper()) section = "home";
   if (section === "licenses" && !isDeveloper()) section = "home";
   const showEditor = section === "configurator";
   const showStudio = section === "developer";
+  const showCollectionEditor = section === "collection-editor";
   const showLicenses = section === "licenses";
-  els.homePage.hidden = showEditor || showStudio || showLicenses;
+  els.homePage.hidden = showEditor || showStudio || showCollectionEditor || showLicenses;
   els.workspace.hidden = !showEditor;
   els.studioPanel.hidden = !showStudio || !isDeveloper();
+  els.collectionEditorPanel.hidden = !showCollectionEditor || !isDeveloper();
   els.licensePanel.hidden = !showLicenses || !isDeveloper();
   els.openHome.classList.toggle("active", section === "home");
   els.openGallery.classList.toggle("active", false);
-  els.openStudio.classList.toggle("active", showStudio && isDeveloper());
+  els.openStudio.classList.toggle("active", (showStudio || showCollectionEditor) && isDeveloper());
   els.openLicenses.classList.toggle("active", showLicenses && isDeveloper());
   if (showEditor) {
     resize();
@@ -2262,6 +2278,7 @@ function updateAccountUi() {
   els.openStudio.hidden = !isDeveloper();
   els.openLicenses.hidden = !isDeveloper();
   els.studioPanel.hidden = els.studioPanel.hidden || !isDeveloper();
+  els.collectionEditorPanel.hidden = els.collectionEditorPanel.hidden || !isDeveloper();
   els.licensePanel.hidden = els.licensePanel.hidden || !isDeveloper();
   els.accountEmail.value = state.account.email;
   els.authForm.hidden = signedIn;
@@ -3002,11 +3019,13 @@ async function addCollectionFromStudio() {
   normalizeGalleryOrder(category);
   persistModels({ syncBackend: false });
   await syncCollectionsToBackend({ announce: true }).catch((error) => log(error.message || "Could not save collection to backend."));
+  state.editingModelId = model.id;
   selectModel(model.id, { logSelection: false, captureThumbnail: !thumbnail });
   renderGallery();
-  clearCollectionForm();
-  setActiveSection("home");
-  requestAnimationFrame(() => scrollGalleryIntoView());
+  clearCollectionUploadInputs();
+  els.addCollection.textContent = "Save changes";
+  syncStudioModeUi();
+  setActiveSection("collection-editor");
   log(`${existing ? "Updated" : "Added"} collection: ${model.name}.`);
 }
 
@@ -3119,7 +3138,7 @@ function startModelEdit(model) {
   els.collectionLensInput.value = "";
   els.addCollection.textContent = "Save changes";
   syncStudioModeUi();
-  setActiveSection("developer");
+  setActiveSection("collection-editor");
   log(`Editing collection: ${model.name}.`);
 }
 
@@ -3127,8 +3146,10 @@ function syncStudioModeUi() {
   if (!els.studioModeLabel || !els.clearStudioEdit) return;
   const model = state.editingModelId ? state.models.find((item) => item.id === state.editingModelId) : null;
   els.studioModeLabel.textContent = model ? `${t("editingCollection")}: ${model.name}` : t("newCollection");
+  if (els.collectionEditorHeading) els.collectionEditorHeading.textContent = model ? model.name : t("frameEditorHeading");
   els.clearStudioEdit.hidden = !model;
   renderDeveloperCollectionList();
+  renderComponentFileList();
 }
 
 function makeAutoCollectionThumbnail(title, params, category) {
@@ -3211,15 +3232,20 @@ function clearCollectionForm() {
   state.croppedCollectionImage = "";
   els.collectionTitle.value = "";
   els.collectionDescription.value = "";
+  els.collectionCategory.value = "sun";
   els.collectionAccess.value = "basic";
+  clearCollectionUploadInputs();
+  els.addCollection.textContent = t("addCollection");
+  syncStudioModeUi();
+}
+
+function clearCollectionUploadInputs() {
   els.galleryScadInput.value = "";
   els.collectionImageInput.value = "";
   els.collectionFrontInput.value = "";
   els.collectionLeftTempleInput.value = "";
   els.collectionRightTempleInput.value = "";
   els.collectionLensInput.value = "";
-  els.addCollection.textContent = t("addCollection");
-  syncStudioModeUi();
 }
 
 function attachComponentToCurrentModel(component) {
@@ -3247,6 +3273,10 @@ function attachComponentToCurrentModel(component) {
 }
 
 async function addComponentFile() {
+  if (!state.editingModelId) {
+    log("Save this collection first, then add individual component options.");
+    return;
+  }
   const file = els.componentFileInput.files?.[0];
   if (!file) {
     log("Choose a 3MF, STEP, or STP file.");

@@ -1278,6 +1278,13 @@ input[type="password"] {
   margin: 0 auto 1.2rem;
 }
 
+.studio-head-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.55rem;
+}
+
 .gallery-head h2,
 .studio-head h2 {
   font-size: clamp(2rem, 4vw, 4.4rem);
@@ -1815,6 +1822,7 @@ input[type="password"] {
   .topbar-left,
   .gallery-head,
   .studio-head,
+  .studio-head-actions,
   .collection-head {
     align-items: flex-start;
     flex-direction: column;
