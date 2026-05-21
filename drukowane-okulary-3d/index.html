@@ -386,6 +386,21 @@
             <button id="clearStudioEdit" type="button" class="ghost">New collection</button>
           </div>
         </div>
+        <section class="studio-card frame-editor-media-card">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Frame page</p>
+              <h3>Photo and component options</h3>
+            </div>
+          </div>
+          <div class="frame-editor-media-grid">
+            <figure class="frame-editor-photo">
+              <img id="frameEditorPhoto" alt="" />
+              <figcaption id="frameEditorPhotoCaption">Current frame photo</figcaption>
+            </figure>
+            <div id="frameEditorComponentGallery" class="frame-component-gallery"></div>
+          </div>
+        </section>
         <section class="studio-card">
           <div class="studio-grid">
             <input id="collectionTitle" type="text" data-i18n-attr="placeholder:collectionTitlePlaceholder" placeholder="Collection title" />
@@ -470,6 +485,22 @@
           </div>
         </div>
         <section class="studio-card license-admin-card">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Reusable table</p>
+              <h3>Static plan codes</h3>
+            </div>
+          </div>
+          <p class="account-note">These shared codes are fixed in the backend and never become redeemed. Use them for trusted testers or early access groups.</p>
+          <div id="staticLicenseCodeList" class="license-code-list static-license-code-list"></div>
+        </section>
+        <section class="studio-card license-admin-card">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Generator</p>
+              <h3>One-use activation codes</h3>
+            </div>
+          </div>
           <div class="license-admin-grid">
             <select id="licenseCodeType" class="component-select">
               <option value="basic_month">Basic / 1 month</option>

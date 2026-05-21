@@ -57,6 +57,11 @@ const licenseCodeTypes = {
   pro_lifetime: { label: "Pro / lifetime", plan: "pro", duration: "lifetime" },
   plus_lifetime: { label: "Plus / lifetime", plan: "studio", duration: "lifetime" }
 };
+const staticLicenseCodes = [
+  { id: "static-basic", code: "1847-2294-6103", type: "basic_lifetime", label: "Basic reusable code" },
+  { id: "static-pro", code: "5729-6041-8832", type: "pro_lifetime", label: "Pro reusable code" },
+  { id: "static-plus", code: "9364-1558-2706", type: "plus_lifetime", label: "Plus reusable code" }
+];
 
 function defaultDb() {
   return { users: [], sessions: [], collections: [], components: [], downloads: [], licenseCodes: [], settings: { ...defaultBrandSettings } };
@@ -256,7 +261,8 @@ function formatLicenseCode(code) {
 }
 
 function generateLicenseCode(db, reserved = new Set()) {
-  const used = new Set([...(db.licenseCodes || []).map((item) => normalizeLicenseCode(item.code)), ...reserved]);
+  const staticCodes = staticLicenseCodes.map((item) => normalizeLicenseCode(item.code));
+  const used = new Set([...(db.licenseCodes || []).map((item) => normalizeLicenseCode(item.code)), ...staticCodes, ...reserved]);
   let code = "";
   do {
     code = Array.from({ length: 12 }, () => randomInt(0, 10)).join("");
@@ -278,6 +284,20 @@ function publicLicenseCode(item) {
     createdAt: item.createdAt,
     redeemedAt: item.redeemedAt || null,
     redeemedByEmail: item.redeemedByEmail || ""
+  };
+}
+
+function publicStaticLicenseCode(item) {
+  const type = licenseCodeTypes[item.type] ? item.type : "plus_lifetime";
+  return {
+    id: item.id,
+    code: formatLicenseCode(item.code),
+    type,
+    label: item.label || licenseCodeTypes[type].label,
+    plan: licenseCodeTypes[type].plan,
+    duration: licenseCodeTypes[type].duration,
+    status: "reusable",
+    reusable: true
   };
 }
 
@@ -540,6 +560,12 @@ async function handleApi(req, res, pathname) {
     return sendJson(res, 200, { codes });
   }
 
+  if (req.method === "GET" && pathname === "/api/static-license-codes") {
+    const user = currentUser(req, db);
+    if (!user || user.role !== "developer") return sendJson(res, 403, { error: "Developer access is required." });
+    return sendJson(res, 200, { codes: staticLicenseCodes.map(publicStaticLicenseCode) });
+  }
+
   if (req.method === "POST" && pathname === "/api/license-codes") {
     const user = currentUser(req, db);
     if (!user || user.role !== "developer") return sendJson(res, 403, { error: "Developer access is required." });
@@ -566,6 +592,17 @@ async function handleApi(req, res, pathname) {
     const body = await readBody(req);
     const code = normalizeLicenseCode(body.code);
     if (code.length !== 12) return sendJson(res, 400, { error: "Enter a 12 digit activation code." });
+    const staticLicense = staticLicenseCodes.find((item) => normalizeLicenseCode(item.code) === code);
+    if (staticLicense) {
+      const result = applyLicenseCode(user, staticLicense);
+      if (result.error) return sendJson(res, 409, { error: result.error });
+      writeDb(db);
+      return sendJson(res, 200, {
+        user: publicUser(user),
+        code: publicStaticLicenseCode(staticLicense),
+        message: result.message
+      });
+    }
     const license = (db.licenseCodes || []).find((item) => normalizeLicenseCode(item.code) === code);
     if (!license) return sendJson(res, 404, { error: "Activation code not found." });
     if (license.status === "redeemed") return sendJson(res, 409, { error: "This activation code has already been used." });

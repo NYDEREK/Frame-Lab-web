@@ -400,6 +400,7 @@ const state = {
   downloads: [],
   downloadQuota: null,
   licenseCodes: [],
+  staticLicenseCodes: [],
   editingModelId: null,
   cropImage: null,
   croppedCollectionImage: "",
@@ -440,6 +441,9 @@ const els = {
   componentFileInput: document.querySelector("#componentFileInput"),
   addComponentFile: document.querySelector("#addComponentFile"),
   componentFileList: document.querySelector("#componentFileList"),
+  frameEditorPhoto: document.querySelector("#frameEditorPhoto"),
+  frameEditorPhotoCaption: document.querySelector("#frameEditorPhotoCaption"),
+  frameEditorComponentGallery: document.querySelector("#frameEditorComponentGallery"),
   accountPanel: document.querySelector("#accountPanel"),
   plansPanel: document.querySelector("#plansPanel"),
   licensePanel: document.querySelector("#licensePanel"),
@@ -533,6 +537,7 @@ const els = {
   generateLicenseCodes: document.querySelector("#generateLicenseCodes"),
   licenseAdminNote: document.querySelector("#licenseAdminNote"),
   licenseCodeList: document.querySelector("#licenseCodeList"),
+  staticLicenseCodeList: document.querySelector("#staticLicenseCodeList"),
   heroBrowse: document.querySelector("#heroBrowse"),
   heroEditor: document.querySelector("#heroEditor"),
   saveCurrentModel: document.querySelector("#saveCurrentModel"),
@@ -700,6 +705,7 @@ function bindUi() {
   els.opticalGalleryGrid.addEventListener("click", handleGalleryClick);
   els.developerCollectionList?.addEventListener("click", handleDeveloperCollectionListClick);
   els.componentFileList.addEventListener("click", handleComponentFileListClick);
+  els.frameEditorComponentGallery?.addEventListener("click", handleComponentFileListClick);
   els.addCollection.addEventListener("click", addCollectionFromStudio);
   els.collectionImageInput.addEventListener("change", handleCollectionImageSelect);
   els.componentFileInput.addEventListener("change", handleComponentFileSelect);
@@ -797,7 +803,7 @@ function bindUi() {
   els.openLicenses.addEventListener("click", async (event) => {
     event.preventDefault();
     setActiveSection("licenses");
-    await loadLicenseCodes();
+    await Promise.all([loadStaticLicenseCodes(), loadLicenseCodes()]);
   });
   els.brandAccentColor?.addEventListener("input", () => {
     setBrandAccent(els.brandAccentColor.value, { previewOnly: true });
@@ -1472,13 +1478,16 @@ function modelComponentIds(model = currentModelRecord()) {
   return new Set([...components.front, ...components.temples, ...components.leftTemples, ...components.rightTemples, ...components.lenses].map((item) => item.id));
 }
 
-function componentsForActiveModel() {
-  const model = currentModelRecord();
+function componentsForModel(model = currentModelRecord()) {
   const visible = visibleUploadedComponents();
   const linkedIds = modelComponentIds(model);
   if (linkedIds.size) return visible.filter((component) => linkedIds.has(component.id));
   if (model?.id === defaultModelId) return visible.filter((component) => component.source === "asset" || !component.collectionId);
   return visible.filter((component) => component.collectionId === model?.id);
+}
+
+function componentsForActiveModel() {
+  return componentsForModel(currentModelRecord());
 }
 
 function rebuildComponentLibrary() {
@@ -1564,6 +1573,70 @@ function renderComponentFileList() {
   `).join("");
 }
 
+function renderFrameEditorAssets() {
+  if (!els.frameEditorPhoto || !els.frameEditorComponentGallery) return;
+  const model = state.editingModelId ? state.models.find((item) => item.id === state.editingModelId) : null;
+  if (!model) {
+    els.frameEditorPhoto.removeAttribute("src");
+    els.frameEditorPhoto.alt = "";
+    els.frameEditorPhotoCaption.textContent = "Save the frame first to manage its photo and components here.";
+    els.frameEditorComponentGallery.innerHTML = `
+      <div class="frame-component-empty">
+        <strong>No frame selected.</strong>
+        <small>Create or save a frame collection, then this workspace will show only its own component options.</small>
+      </div>
+    `;
+    return;
+  }
+  const thumbnail = model.thumbnail || makeAutoCollectionThumbnail(model.name, model.params || defaultParams, model.category);
+  els.frameEditorPhoto.src = thumbnail;
+  els.frameEditorPhoto.alt = `${model.name} photo`;
+  els.frameEditorPhotoCaption.textContent = model.name;
+
+  const components = componentsForModel(model);
+  if (!components.length) {
+    els.frameEditorComponentGallery.innerHTML = `
+      <div class="frame-component-empty">
+        <strong>No component options yet.</strong>
+        <small>Add fronts, left temples, right temples, or lens files for this frame only.</small>
+      </div>
+    `;
+    return;
+  }
+  els.frameEditorComponentGallery.innerHTML = components.map((component) => {
+    const previewKey = component.kind === "front"
+      ? "front"
+      : component.kind === "lens"
+        ? "lens"
+        : normalizeTempleSide(component.templeSide) === "right" ? "rightTemple" : "leftTemple";
+    const color = component.materialColor || component.analysis?.materialColor || "";
+    return `
+      <article class="frame-component-card">
+        <canvas class="frame-component-preview" data-frame-component-preview="${previewKey}" data-component-id="${escapeHtml(component.id)}" aria-label="${escapeHtml(component.name)} preview"></canvas>
+        <div class="frame-component-copy">
+          <strong>${escapeHtml(component.name)}</strong>
+          <small>${escapeHtml(component.fileName)}</small>
+          <div class="frame-component-meta">
+            <span>${escapeHtml(componentTypeLabel(component.kind))}</span>
+            ${component.kind === "temple" ? `<span>${escapeHtml(templeSideLabel(component.templeSide))}</span>` : ""}
+            <span>${escapeHtml(component.size)} · ${escapeHtml(component.connector)}</span>
+            ${color ? `<span class="material-swatch compact-swatch" style="--swatch:${escapeHtml(color)}">${escapeHtml(color)}</span>` : ""}
+          </div>
+        </div>
+        ${isDeveloper() ? `<button type="button" class="compact delete-button" data-component-delete="${escapeHtml(component.id)}">Delete</button>` : ""}
+      </article>
+    `;
+  }).join("");
+
+  requestAnimationFrame(() => {
+    els.frameEditorComponentGallery.querySelectorAll("[data-frame-component-preview]").forEach((canvas) => {
+      const component = components.find((item) => item.id === canvas.dataset.componentId);
+      if (!component) return;
+      renderComponentPreviewCanvas(canvas, canvas.dataset.frameComponentPreview, componentToLibraryItem(component));
+    });
+  });
+}
+
 async function handleComponentFileListClick(event) {
   const button = event.target.closest("[data-component-delete]");
   if (!button) return;
@@ -1598,6 +1671,7 @@ async function deleteComponent(id) {
   updateGeneratedSource();
   render();
   syncActiveModel();
+  syncStudioModeUi();
   log(`Deleted component: ${component.name}.`);
 }
 
@@ -2178,7 +2252,7 @@ async function hydrateSessionFromBackend() {
     const payload = await apiRequest("/api/session");
     state.account = accountFromUser(payload.user);
     await Promise.all([loadDownloadQuota({ silent: true }), loadDownloadFolder({ silent: true })]);
-    if (isDeveloper()) await loadLicenseCodes({ silent: true });
+    if (isDeveloper()) await Promise.all([loadStaticLicenseCodes({ silent: true }), loadLicenseCodes({ silent: true })]);
     persistActiveAccount({ skipProfile: true });
     return true;
   } catch {
@@ -2315,6 +2389,7 @@ function updateAccountUi() {
   });
   renderStorageStatus();
   renderDownloadFolder();
+  renderStaticLicenseCodeList();
   renderLicenseCodeList();
   renderGallery();
 }
@@ -2448,7 +2523,7 @@ async function redeemLicenseCode() {
     els.licenseCodeInput.value = "";
     els.licenseCodeNote.textContent = payload.message || "Code activated.";
     await loadDownloadQuota({ silent: true });
-    if (isDeveloper()) await loadLicenseCodes({ silent: true });
+    if (isDeveloper()) await Promise.all([loadStaticLicenseCodes({ silent: true }), loadLicenseCodes({ silent: true })]);
     updateAccountUi();
     log(payload.message || "Activation code applied.");
   } catch (error) {
@@ -2477,6 +2552,25 @@ async function loadLicenseCodes(options = {}) {
   }
 }
 
+async function loadStaticLicenseCodes(options = {}) {
+  if (!isDeveloper() || !sessionToken()) {
+    state.staticLicenseCodes = [];
+    renderStaticLicenseCodeList();
+    return false;
+  }
+  try {
+    const payload = await apiRequest("/api/static-license-codes");
+    state.staticLicenseCodes = Array.isArray(payload.codes) ? payload.codes : [];
+    renderStaticLicenseCodeList();
+    return true;
+  } catch (error) {
+    state.staticLicenseCodes = [];
+    renderStaticLicenseCodeList();
+    if (!options.silent && els.licenseAdminNote) els.licenseAdminNote.textContent = error.message || "Could not load static codes.";
+    return false;
+  }
+}
+
 async function generateLicenseCodes() {
   if (!isDeveloper()) return;
   const type = licenseCodeTypes[els.licenseCodeType.value] ? els.licenseCodeType.value : "pro_month";
@@ -2497,6 +2591,38 @@ async function generateLicenseCodes() {
   } finally {
     els.generateLicenseCodes.disabled = false;
   }
+}
+
+function renderStaticLicenseCodeList() {
+  if (!els.staticLicenseCodeList) return;
+  if (!isDeveloper()) {
+    els.staticLicenseCodeList.innerHTML = "";
+    return;
+  }
+  if (!state.staticLicenseCodes.length) {
+    els.staticLicenseCodeList.innerHTML = `
+      <div class="download-empty">
+        <strong>No reusable codes configured.</strong>
+        <small>The backend should expose one fixed code for each plan.</small>
+      </div>
+    `;
+    return;
+  }
+  els.staticLicenseCodeList.innerHTML = state.staticLicenseCodes.map((item) => {
+    const type = licenseCodeTypes[item.type] || licenseCodeTypes.plus_lifetime;
+    return `
+      <article class="license-code-item reusable">
+        <div>
+          <code>${escapeHtml(item.code)}</code>
+          <small>${escapeHtml(item.label || type.label)} · fixed reusable access</small>
+        </div>
+        <div class="license-code-meta">
+          <span>Reusable</span>
+          <small>${escapeHtml(planLabel(type.plan))} · ${escapeHtml(type.duration === "lifetime" ? "Lifetime" : "Monthly")}</small>
+        </div>
+      </article>
+    `;
+  }).join("");
 }
 
 function renderLicenseCodeList() {
@@ -2607,6 +2733,7 @@ async function signOutAccount() {
   state.downloads = [];
   state.downloadQuota = null;
   state.licenseCodes = [];
+  state.staticLicenseCodes = [];
   persistActiveAccount();
   els.plansPanel.hidden = true;
   els.accountPanel.hidden = true;
@@ -3150,6 +3277,7 @@ function syncStudioModeUi() {
   els.clearStudioEdit.hidden = !model;
   renderDeveloperCollectionList();
   renderComponentFileList();
+  renderFrameEditorAssets();
 }
 
 function makeAutoCollectionThumbnail(title, params, category) {
@@ -3315,6 +3443,7 @@ async function addComponentFile() {
   render();
   renderGallery();
   syncActiveModel();
+  syncStudioModeUi();
   els.componentFileInput.value = "";
   els.componentName.value = "";
   log(`Added component: ${component.name} (${component.format.toUpperCase()}, ${component.size}, ${component.connector}).`);
