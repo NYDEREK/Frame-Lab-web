@@ -45,6 +45,8 @@ const defaultBrandSettings = {
   heroText: "Choose a collection, combine a front with temples, and prepare a clean production kit for additive manufacturing.",
   heroImage: ""
 };
+const maxRequestBodySize = 80_000_000;
+const maxComponentFileDataSize = 60_000_000;
 const planRank = { free: 0, basic: 1, pro: 2, studio: 3 };
 const monthlyDownloadLimits = { free: 0, basic: 15, pro: 50, studio: null };
 const licenseCodeTypes = {
@@ -57,7 +59,7 @@ const licenseCodeTypes = {
 };
 
 function defaultDb() {
-  return { users: [], sessions: [], collections: [], downloads: [], licenseCodes: [], settings: { ...defaultBrandSettings } };
+  return { users: [], sessions: [], collections: [], components: [], downloads: [], licenseCodes: [], settings: { ...defaultBrandSettings } };
 }
 
 function sanitizeAccentColor(value, fallback = defaultBrandSettings.accentColor) {
@@ -122,7 +124,7 @@ function readBody(req) {
     let body = "";
     req.on("data", (chunk) => {
       body += chunk;
-      if (body.length > 20_000_000) {
+      if (body.length > maxRequestBodySize) {
         req.destroy();
         reject(new Error("Request body too large"));
       }
@@ -299,6 +301,34 @@ function sanitizeCollection(model) {
   };
 }
 
+function sanitizeComponentRecord(component, options = {}) {
+  if (!component || typeof component !== "object") return null;
+  const kind = ["front", "temple", "lens"].includes(component.kind) ? component.kind : "front";
+  const formatRaw = String(component.format || "").toLowerCase();
+  const format = formatRaw === "stp" ? "step" : (["3mf", "step"].includes(formatRaw) ? formatRaw : "3mf");
+  const fileData = typeof component.fileData === "string" && component.fileData.startsWith("data:")
+    ? component.fileData.slice(0, maxComponentFileDataSize)
+    : "";
+  const sanitized = {
+    id: String(component.id || randomBytes(12).toString("hex")).slice(0, 120),
+    name: String(component.name || component.fileName || "Frame Lab component").slice(0, 160),
+    kind,
+    templeSide: kind === "temple" && ["left", "right", "universal"].includes(component.templeSide) ? component.templeSide : "",
+    size: ["S", "M", "L"].includes(component.size) ? component.size : "M",
+    connector: String(component.connector || "FL-H8").slice(0, 80),
+    format,
+    fileName: String(component.fileName || `component.${format}`).slice(0, 180),
+    byteSize: Math.max(0, Number(component.byteSize) || 0),
+    collectionId: String(component.collectionId || "").slice(0, 120),
+    source: "uploaded",
+    analysis: component.analysis && typeof component.analysis === "object" ? component.analysis : null,
+    materialColor: sanitizeAccentColor(component.materialColor || component.analysis?.materialColor || "", ""),
+    createdAt: Number(component.createdAt) || Date.now()
+  };
+  if (options.includeFileData !== false) sanitized.fileData = fileData;
+  return sanitized;
+}
+
 function sanitizeDownload(item, userId) {
   if (!item || typeof item !== "object") return null;
   const createdAt = item.createdAt ? new Date(item.createdAt) : new Date();
@@ -428,6 +458,36 @@ async function handleApi(req, res, pathname) {
     db.collections = collections.map(sanitizeCollection).filter(Boolean).slice(0, 100);
     writeDb(db);
     return sendJson(res, 200, { collections: db.collections, savedAt: new Date().toISOString() });
+  }
+
+  if (req.method === "GET" && pathname === "/api/components") {
+    const components = (db.components || [])
+      .map((component) => sanitizeComponentRecord(component))
+      .filter(Boolean);
+    return sendJson(res, 200, { components });
+  }
+
+  if (req.method === "PUT" && pathname === "/api/components") {
+    const user = currentUser(req, db);
+    if (!user || user.role !== "developer") return sendJson(res, 403, { error: "Developer access is required." });
+    const body = await readBody(req);
+    const incoming = Array.isArray(body.components) ? body.components : [body.component || body];
+    const sanitized = incoming.map(sanitizeComponentRecord).filter(Boolean);
+    if (!sanitized.length) return sendJson(res, 400, { error: "No component data received." });
+    const byId = new Map((db.components || []).map((component) => [String(component.id), component]));
+    sanitized.forEach((component) => byId.set(component.id, component));
+    db.components = [...byId.values()].slice(-500);
+    writeDb(db);
+    return sendJson(res, 200, { components: sanitized, savedAt: new Date().toISOString() });
+  }
+
+  if (req.method === "DELETE" && pathname.startsWith("/api/components/")) {
+    const user = currentUser(req, db);
+    if (!user || user.role !== "developer") return sendJson(res, 403, { error: "Developer access is required." });
+    const id = decodeURIComponent(pathname.split("/").pop() || "");
+    db.components = (db.components || []).filter((component) => String(component.id) !== id);
+    writeDb(db);
+    return sendJson(res, 200, { ok: true, id });
   }
 
   if (req.method === "GET" && pathname === "/api/downloads") {

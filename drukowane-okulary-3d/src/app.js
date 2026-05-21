@@ -36,13 +36,13 @@ const translations = {
     accountBasicNote: "Basic: 15 3MF downloads per month.",
     accountProNote: "Pro: 50 3MF downloads per month.",
     accountPlusNote: "Plus: unlimited 3MF downloads.",
-    accountDeveloperNote: "Developer: full access, Studio and collection deletion.",
+    accountDeveloperNote: "Developer: full access, collection management and deletion.",
     lockedModel: "Plan required to download",
     upgrade: "Plan",
     tabHome: "Start",
     tabConfigurator: "Editor",
     tabGallery: "Collections",
-    tabStudio: "Studio",
+    tabStudio: "Developer",
     heroKicker: "",
     heroTitle: "Your next frame is 3D printed.",
     heroText: "Choose a collection, combine a front with temples, and prepare a clean production kit for additive manufacturing.",
@@ -75,22 +75,22 @@ const translations = {
     sunMeta: "",
     opticalHeading: "Optical",
     opticalMeta: "",
-    studioKicker: "Studio",
-    studioHeading: "Add a collection to the gallery",
+    studioKicker: "Developer",
+    studioHeading: "Collection manager",
     collectionTitlePlaceholder: "Collection title",
     collectionDescriptionPlaceholder: "Short description",
     sunCategory: "Sunglasses",
     opticalCategory: "Optical",
     chooseImage: "Photo",
     addScad: ".scad file",
-    frontModelFile: "Front model",
+    frontModelFile: "Front variants",
     templeModelFile: "Temple models",
     leftTempleModelFile: "Left temples",
     rightTempleModelFile: "Right temples",
     lensModelFile: "Lens models",
     addCollection: "Add to gallery",
     componentImportKicker: "Components",
-    componentImportHeading: "Add Fusion file",
+    componentImportHeading: "Add option to selected collection",
     componentNamePlaceholder: "Component name",
     connectorPlaceholder: "Connector",
     templeComponent: "Temple",
@@ -102,7 +102,7 @@ const translations = {
     chooseCadFile: "Choose 3MF / STEP",
     addComponentFile: "Add component",
     noComponents: "No STEP/3MF files added yet.",
-    storedLocally: "Stored locally",
+    storedLocally: "Saved",
     activeModel: "Active model",
     scadFile: ".scad file",
     open: "Configure",
@@ -423,7 +423,7 @@ const state = {
 const els = {
   homePage: document.querySelector("#homePage"),
   workspace: document.querySelector("#workspace"),
-  studioPanel: document.querySelector("#studioPanel"),
+  studioPanel: document.querySelector("#developerPanel"),
   galleryPanel: document.querySelector("#galleryPanel"),
   canvas: document.querySelector("#scene"),
   controls: document.querySelector("#controls"),
@@ -510,6 +510,8 @@ const els = {
   openLicenses: document.querySelector("#openLicenses"),
   studioModeLabel: document.querySelector("#studioModeLabel"),
   clearStudioEdit: document.querySelector("#clearStudioEdit"),
+  newDeveloperCollection: document.querySelector("#newDeveloperCollection"),
+  developerCollectionList: document.querySelector("#developerCollectionList"),
   brandAccentColor: document.querySelector("#brandAccentColor"),
   brandAccentText: document.querySelector("#brandAccentText"),
   saveBrandSettings: document.querySelector("#saveBrandSettings"),
@@ -690,6 +692,7 @@ function bindUi() {
 
   els.sunGalleryGrid.addEventListener("click", handleGalleryClick);
   els.opticalGalleryGrid.addEventListener("click", handleGalleryClick);
+  els.developerCollectionList?.addEventListener("click", handleDeveloperCollectionListClick);
   els.componentFileList.addEventListener("click", handleComponentFileListClick);
   els.addCollection.addEventListener("click", addCollectionFromStudio);
   els.collectionImageInput.addEventListener("change", handleCollectionImageSelect);
@@ -772,11 +775,15 @@ function bindUi() {
   });
   els.openStudio.addEventListener("click", (event) => {
     event.preventDefault();
-    setActiveSection("studio");
+    setActiveSection("developer");
   });
   els.clearStudioEdit?.addEventListener("click", () => {
     clearCollectionForm();
-    setActiveSection("studio");
+    setActiveSection("developer");
+  });
+  els.newDeveloperCollection?.addEventListener("click", () => {
+    clearCollectionForm();
+    setActiveSection("developer");
   });
   els.openLicenses.addEventListener("click", async (event) => {
     event.preventDefault();
@@ -2011,12 +2018,16 @@ async function syncCollectionsToBackend(options = {}) {
     method: "PUT",
     body: JSON.stringify({ collections: state.models })
   });
-  if (options.announce) log("Studio changes saved to backend.");
+  if (options.announce) log("Developer changes saved to backend.");
   return true;
 }
 
 function currentModelRecord() {
   return state.models.find((model) => model.id === state.activeModelId);
+}
+
+function activeEditableModelRecord() {
+  return state.models.find((model) => model.id === state.editingModelId) || currentModelRecord();
 }
 
 function selectModel(id, options = {}) {
@@ -2071,10 +2082,11 @@ function scheduleModelPersist() {
 }
 
 function setActiveSection(section) {
-  if (section === "studio" && !isDeveloper()) section = "home";
+  if (section === "studio") section = "developer";
+  if (section === "developer" && !isDeveloper()) section = "home";
   if (section === "licenses" && !isDeveloper()) section = "home";
   const showEditor = section === "configurator";
-  const showStudio = section === "studio";
+  const showStudio = section === "developer";
   const showLicenses = section === "licenses";
   els.homePage.hidden = showEditor || showStudio || showLicenses;
   els.workspace.hidden = !showEditor;
@@ -2707,6 +2719,39 @@ function renderGallery() {
     `;
     (model.category === "optical" ? els.opticalGalleryGrid : els.sunGalleryGrid).append(card);
   });
+  renderDeveloperCollectionList();
+}
+
+function renderDeveloperCollectionList() {
+  if (!els.developerCollectionList) return;
+  if (!isDeveloper()) {
+    els.developerCollectionList.innerHTML = "";
+    return;
+  }
+  els.developerCollectionList.innerHTML = galleryModels().map((model) => {
+    const components = normalizeModelComponents(model.components) || { front: [], temples: [], leftTemples: [], rightTemples: [], lenses: [] };
+    const active = state.editingModelId === model.id;
+    const summary = [
+      `${components.front.length} front`,
+      `${components.leftTemples.length} left temple`,
+      `${components.rightTemples.length} right temple`,
+      `${components.lenses.length} lens`
+    ].join(" · ");
+    return `
+      <article class="developer-collection-row${active ? " active" : ""}" data-model-id="${escapeHtml(model.id)}">
+        <div class="developer-collection-copy">
+          <strong>${escapeHtml(model.name)}</strong>
+          <small>${escapeHtml(model.category === "optical" ? t("opticalHeading") : t("sunHeading"))} · ${escapeHtml(accessLabel(model.access))} · ${escapeHtml(summary)}</small>
+        </div>
+        <div class="developer-collection-actions">
+          <button type="button" class="compact${active ? " accent" : ""}" data-dev-action="edit">Edit</button>
+          <button type="button" class="compact order-button" data-dev-action="move-left">${t("moveLeft")}</button>
+          <button type="button" class="compact order-button" data-dev-action="move-right">${t("moveRight")}</button>
+          ${model.id !== defaultModelId ? `<button type="button" class="compact delete-button" data-dev-action="delete">${t("delete")}</button>` : ""}
+        </div>
+      </article>
+    `;
+  }).join("");
 }
 
 function galleryModels() {
@@ -2762,6 +2807,32 @@ function handleGalleryClick(event) {
       return;
     }
     state.models = state.models.filter((item) => item.id !== model.id);
+    if (state.activeModelId === model.id) selectModel(state.models[0]?.id || defaultModelId, { logSelection: false });
+    normalizeGalleryOrder(model.category);
+    persistModels();
+    renderGallery();
+    log(`Deleted model: ${model.name}.`);
+  }
+}
+
+function handleDeveloperCollectionListClick(event) {
+  const button = event.target.closest("button[data-dev-action]");
+  if (!button || !isDeveloper()) return;
+  const row = button.closest("[data-model-id]");
+  const model = state.models.find((item) => item.id === row?.dataset.modelId);
+  if (!model) return;
+  if (button.dataset.devAction === "edit") {
+    startModelEdit(model);
+    return;
+  }
+  if (button.dataset.devAction === "move-left" || button.dataset.devAction === "move-right") {
+    moveModelInGallery(model.id, button.dataset.devAction === "move-left" ? -1 : 1);
+    return;
+  }
+  if (button.dataset.devAction === "delete") {
+    if (model.id === defaultModelId) return;
+    state.models = state.models.filter((item) => item.id !== model.id);
+    if (state.editingModelId === model.id) clearCollectionForm();
     if (state.activeModelId === model.id) selectModel(state.models[0]?.id || defaultModelId, { logSelection: false });
     normalizeGalleryOrder(model.category);
     persistModels();
@@ -2845,7 +2916,7 @@ async function handleScadImport(event) {
 async function addCollectionFromStudio() {
   const scadFile = els.galleryScadInput.files?.[0];
   const imageFile = els.collectionImageInput.files?.[0];
-  const frontFile = els.collectionFrontInput.files?.[0];
+  const frontFiles = [...(els.collectionFrontInput.files || [])];
   const leftTempleFiles = [...(els.collectionLeftTempleInput.files || [])];
   const rightTempleFiles = [...(els.collectionRightTempleInput.files || [])];
   const lensFiles = [...(els.collectionLensInput.files || [])];
@@ -2858,9 +2929,13 @@ async function addCollectionFromStudio() {
   const thumbnail = imageFile
     ? state.croppedCollectionImage || await readFileAsDataUrl(imageFile)
     : existing?.thumbnail || makeAutoCollectionThumbnail(title, params, els.collectionCategory.value);
-  const frontComponents = frontFile
-    ? [await createComponentRecordFromFile(frontFile, "front", { collectionId: modelId, name: `${title} Front` })]
-    : [];
+  const frontComponents = [];
+  for (const [index, file] of frontFiles.entries()) {
+    frontComponents.push(await createComponentRecordFromFile(file, "front", {
+      collectionId: modelId,
+      name: `${title} Front ${index + 1}`
+    }));
+  }
   const leftTempleComponents = [];
   for (const [index, file] of leftTempleFiles.entries()) {
     leftTempleComponents.push(await createComponentRecordFromFile(file, "temple", {
@@ -3044,7 +3119,7 @@ function startModelEdit(model) {
   els.collectionLensInput.value = "";
   els.addCollection.textContent = "Save changes";
   syncStudioModeUi();
-  setActiveSection("studio");
+  setActiveSection("developer");
   log(`Editing collection: ${model.name}.`);
 }
 
@@ -3053,6 +3128,7 @@ function syncStudioModeUi() {
   const model = state.editingModelId ? state.models.find((item) => item.id === state.editingModelId) : null;
   els.studioModeLabel.textContent = model ? `${t("editingCollection")}: ${model.name}` : t("newCollection");
   els.clearStudioEdit.hidden = !model;
+  renderDeveloperCollectionList();
 }
 
 function makeAutoCollectionThumbnail(title, params, category) {
@@ -3147,22 +3223,22 @@ function clearCollectionForm() {
 }
 
 function attachComponentToCurrentModel(component) {
-  const model = currentModelRecord();
+  const model = activeEditableModelRecord();
   const summary = componentSummary(component);
   if (!model || !summary) return;
   const components = normalizeModelComponents(model.components) || { front: [], temples: [], leftTemples: [], rightTemples: [], lenses: [] };
   if (component.kind === "front") {
-    components.front = [summary];
+    components.front = uniqueComponentsById([...components.front, summary]);
   } else if (component.kind === "lens") {
-    components.lenses = [...components.lenses.filter((item) => item.id !== summary.id), summary];
+    components.lenses = uniqueComponentsById([...components.lenses, summary]);
   } else {
     const side = normalizeTempleSide(component.templeSide);
     if (side === "left") {
-      components.leftTemples = [...components.leftTemples.filter((item) => item.id !== summary.id), summary];
+      components.leftTemples = uniqueComponentsById([...components.leftTemples, summary]);
     } else if (side === "right") {
-      components.rightTemples = [...components.rightTemples.filter((item) => item.id !== summary.id), summary];
+      components.rightTemples = uniqueComponentsById([...components.rightTemples, summary]);
     } else {
-      components.temples = [...components.temples.filter((item) => item.id !== summary.id), summary];
+      components.temples = uniqueComponentsById([...components.temples, summary]);
     }
   }
   model.components = components;
@@ -3182,7 +3258,7 @@ async function addComponentFile() {
     return;
   }
   const component = await createComponentRecordFromFile(file, els.componentKind.value, {
-    collectionId: state.activeModelId,
+    collectionId: state.editingModelId || state.activeModelId,
     name: els.componentName.value.trim() || file.name.replace(/\.[^.]+$/, ""),
     size: els.componentSize.value,
     connector: els.componentConnector.value.trim() || "FL-H8",
@@ -3191,6 +3267,7 @@ async function addComponentFile() {
   state.uploadedComponents = [...await loadSeedComponentAssets(), ...await loadComponentRecords()]
     .filter((item) => !state.hiddenComponentIds.has(item.id));
   await hydrateUploadedComponentMeshes();
+  attachComponentToCurrentModel(component);
   rebuildComponentLibrary();
   if (component.kind === "front") {
     state.assembly.front = { modelId: component.id, size: component.size };
@@ -3201,7 +3278,6 @@ async function addComponentFile() {
     if (side === "left" || side === "universal") state.assembly.leftTemple = { modelId: component.id, size: component.size };
     if (side === "right" || side === "universal") state.assembly.rightTemple = { modelId: component.id, size: component.size };
   }
-  attachComponentToCurrentModel(component);
   applyAssemblyToParams();
   buildBuilderControls();
   buildControls();
@@ -4000,6 +4076,14 @@ function openComponentDb() {
 }
 
 async function loadComponentRecords() {
+  const [local, remote] = await Promise.all([
+    loadLocalComponentRecords().catch(() => []),
+    loadBackendComponentRecords().catch(() => [])
+  ]);
+  return [...new Map([...local, ...remote].map((component) => [component.id, component])).values()];
+}
+
+async function loadLocalComponentRecords() {
   const db = await openComponentDb();
   return new Promise((resolve, reject) => {
     const request = db.transaction(componentStoreName, "readonly").objectStore(componentStoreName).getAll();
@@ -4008,7 +4092,30 @@ async function loadComponentRecords() {
   });
 }
 
+async function loadBackendComponentRecords() {
+  const payload = await apiRequest("/api/components");
+  const components = Array.isArray(payload.components) ? payload.components : [];
+  return components.map(componentRecordFromBackend).filter(Boolean);
+}
+
+function componentRecordFromBackend(record) {
+  if (!record || typeof record !== "object") return null;
+  const component = { ...record, source: "uploaded" };
+  if (record.fileData) {
+    component.fileBlob = dataUrlToFile(record.fileData, record.fileName || `component.${record.format || "3mf"}`);
+  }
+  delete component.fileData;
+  return component;
+}
+
 async function getComponentRecord(id) {
+  const local = await getLocalComponentRecord(id).catch(() => null);
+  if (local) return local;
+  const remote = await loadBackendComponentRecords().catch(() => []);
+  return remote.find((component) => component.id === id) || null;
+}
+
+async function getLocalComponentRecord(id) {
   const db = await openComponentDb();
   return new Promise((resolve, reject) => {
     const request = db.transaction(componentStoreName, "readonly").objectStore(componentStoreName).get(id);
@@ -4018,6 +4125,13 @@ async function getComponentRecord(id) {
 }
 
 async function saveComponentRecord(component, file) {
+  await Promise.allSettled([
+    saveLocalComponentRecord(component, file),
+    saveComponentRecordToBackend(component, file)
+  ]);
+}
+
+async function saveLocalComponentRecord(component, file) {
   const db = await openComponentDb();
   return new Promise((resolve, reject) => {
     const tx = db.transaction(componentStoreName, "readwrite");
@@ -4028,6 +4142,29 @@ async function saveComponentRecord(component, file) {
 }
 
 async function deleteComponentRecord(id) {
+  await Promise.allSettled([
+    deleteLocalComponentRecord(id),
+    deleteComponentRecordFromBackend(id)
+  ]);
+}
+
+async function saveComponentRecordToBackend(component, file) {
+  if (!isDeveloper() || !sessionToken()) return false;
+  const fileData = await readFileAsDataUrl(file);
+  await apiRequest("/api/components", {
+    method: "PUT",
+    body: JSON.stringify({ component: { ...component, fileData } })
+  });
+  return true;
+}
+
+async function deleteComponentRecordFromBackend(id) {
+  if (!isDeveloper() || !sessionToken()) return false;
+  await apiRequest(`/api/components/${encodeURIComponent(id)}`, { method: "DELETE" });
+  return true;
+}
+
+async function deleteLocalComponentRecord(id) {
   const db = await openComponentDb();
   return new Promise((resolve, reject) => {
     const tx = db.transaction(componentStoreName, "readwrite");
@@ -4035,6 +4172,20 @@ async function deleteComponentRecord(id) {
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
   });
+}
+
+function dataUrlToFile(dataUrl, fileName) {
+  const [header, payload] = String(dataUrl || "").split(",");
+  if (!header || !payload) return null;
+  const mime = header.match(/^data:([^;]+)/)?.[1] || "application/octet-stream";
+  const binary = atob(payload);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+  try {
+    return new File([bytes], fileName, { type: mime });
+  } catch {
+    return new Blob([bytes], { type: mime });
+  }
 }
 
 function slugify(value) {

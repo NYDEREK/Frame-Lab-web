@@ -16,7 +16,7 @@
         document.documentElement.dataset.appError = event.reason?.message || String(event.reason || "promise");
       });
     </script>
-    <link rel="stylesheet" href="./styles.css?v=studio-edit-20260521-1" />
+    <link rel="stylesheet" href="./styles.css?v=developer-components-20260521-2" />
     <script type="importmap">
       {
         "imports": {
@@ -228,7 +228,7 @@
           <nav class="topbar-tabs" aria-label="Navigation" data-i18n-attr="aria-label:navLabel">
             <a id="openHome" class="nav-link active" href="#top" data-i18n="tabHome">Start</a>
             <a id="openGallery" class="nav-link" href="#galleryPanel" data-i18n="tabGallery">Collections</a>
-            <a id="openStudio" class="nav-link nav-admin" href="#studioPanel" data-i18n="tabStudio" hidden>Studio</a>
+            <a id="openStudio" class="nav-link nav-admin" href="#developerPanel" data-i18n="tabStudio" hidden>Developer</a>
             <a id="openLicenses" class="nav-link nav-admin" href="#licensePanel" hidden>Codes</a>
           </nav>
         </div>
@@ -327,15 +327,25 @@
         </aside>
       </main>
 
-      <section id="studioPanel" class="studio-panel" hidden>
+      <section id="developerPanel" class="studio-panel developer-panel" hidden>
         <div class="studio-head">
           <div>
-            <p class="eyebrow" data-i18n="studioKicker">Studio</p>
-            <h2 data-i18n="studioHeading">Add a collection to the gallery</h2>
+            <p class="eyebrow" data-i18n="studioKicker">Developer</p>
+            <h2 data-i18n="studioHeading">Collection manager</h2>
             <p id="studioModeLabel" class="studio-mode-label">New collection</p>
           </div>
           <button id="clearStudioEdit" type="button" class="ghost">New collection</button>
         </div>
+        <section class="studio-card developer-manager-card">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Collections</p>
+              <h3>Frame posts</h3>
+            </div>
+            <button id="newDeveloperCollection" type="button" class="compact ghost">New collection</button>
+          </div>
+          <div id="developerCollectionList" class="developer-collection-list"></div>
+        </section>
         <section class="studio-card brand-settings-card">
           <div class="section-head">
             <div>
@@ -386,8 +396,8 @@
               <span data-i18n="addScad">Plik .scad</span>
             </label>
             <label class="file-button" for="collectionFrontInput">
-              <input id="collectionFrontInput" type="file" accept=".3mf,.step,.stp" />
-              <span data-i18n="frontModelFile">Front model</span>
+              <input id="collectionFrontInput" type="file" accept=".3mf,.step,.stp" multiple />
+              <span data-i18n="frontModelFile">Front variants</span>
             </label>
             <label class="file-button" for="collectionLeftTempleInput">
               <input id="collectionLeftTempleInput" type="file" accept=".3mf,.step,.stp" multiple />
@@ -409,7 +419,7 @@
           <div class="section-head">
             <div>
               <p class="eyebrow" data-i18n="componentImportKicker">Komponenty</p>
-              <h3 data-i18n="componentImportHeading">Add a single component</h3>
+              <h3 data-i18n="componentImportHeading">Add option to selected collection</h3>
             </div>
           </div>
           <div class="component-import-grid">
@@ -466,6 +476,6 @@
       </section>
     </div>
 
-    <script type="module" src="./src/app.js?v=studio-edit-20260521-1"></script>
+    <script type="module" src="./src/app.js?v=developer-components-20260521-2"></script>
   </body>
 </html>
