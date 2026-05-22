@@ -677,6 +677,7 @@ function bindUi() {
     const colorInput = event.target.closest("[data-component-color]");
     if (colorInput) {
       state.componentColors[colorInput.dataset.componentColor] = colorInput.value;
+      colorInput.closest(".component-color")?.style.setProperty("--component-color", colorInput.value);
       render();
       return;
     }
@@ -1311,8 +1312,10 @@ function componentCardTemplate(part) {
           <strong>${escapeHtml(part.label)}</strong>
           <small>${escapeHtml(selectedModel.name)} · ${selection.size}</small>
         </div>
-        <label class="component-color" title="Element color">
-          <input type="color" value="${escapeHtml(color)}" data-component-color="${part.key}" />
+        <label class="component-color" style="--component-color:${escapeHtml(color)}" title="${escapeHtml(part.label)} color">
+          <input type="color" value="${escapeHtml(color)}" data-component-color="${part.key}" aria-label="${escapeHtml(part.label)} color" />
+          <span class="component-color-chip" aria-hidden="true"></span>
+          <span class="component-color-corner" aria-hidden="true"></span>
         </label>
       </div>
       <details class="component-options" ${part.key === "front" ? "open" : ""}>
