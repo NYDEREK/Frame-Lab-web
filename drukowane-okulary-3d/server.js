@@ -1,4 +1,4 @@
-import { createHash, randomBytes, randomInt, scryptSync, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, randomBytes, randomInt, scryptSync, timingSafeEqual } from "node:crypto";
 import { createReadStream, existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { extname, isAbsolute, join, normalize } from "node:path";
@@ -207,6 +207,24 @@ function sendJson(res, status, payload) {
   res.end(body);
 }
 
+function sendHtml(res, status, body) {
+  res.writeHead(status, {
+    "Content-Type": "text/html; charset=utf-8",
+    "Content-Length": Buffer.byteLength(body),
+    "Cache-Control": "no-store"
+  });
+  res.end(body);
+}
+
+function escapeHtml(value) {
+  return String(value || "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
 function readBody(req) {
   return new Promise((resolve, reject) => {
     let body = "";
@@ -281,6 +299,170 @@ function userRole(email) {
 function planForUser(email, requested = "free") {
   if (adminEmails.has(String(email).toLowerCase())) return "studio";
   return Object.prototype.hasOwnProperty.call(planRank, requested) ? requested : "free";
+}
+
+function requestOrigin(req) {
+  const proto = String(req.headers["x-forwarded-proto"] || "http").split(",")[0].trim() || "http";
+  const host = String(req.headers["x-forwarded-host"] || req.headers.host || "").split(",")[0].trim();
+  return host ? `${proto}://${host}` : `http://localhost:${port}`;
+}
+
+function googleRedirectUri(req) {
+  return String(process.env.GOOGLE_REDIRECT_URI || "").trim() || `${requestOrigin(req)}/api/auth/oauth/google/callback`;
+}
+
+function oauthStateSecret() {
+  return String(process.env.GOOGLE_OAUTH_STATE_SECRET || process.env.SESSION_SECRET || process.env.GOOGLE_CLIENT_SECRET || "frame-lab-dev-oauth-state");
+}
+
+function signOauthState(body) {
+  return createHmac("sha256", oauthStateSecret()).update(body).digest("base64url");
+}
+
+function createOauthState(provider) {
+  const body = Buffer.from(JSON.stringify({
+    provider,
+    createdAt: Date.now(),
+    nonce: randomBytes(12).toString("hex")
+  })).toString("base64url");
+  return `${body}.${signOauthState(body)}`;
+}
+
+function verifyOauthState(state, provider) {
+  const [body, signature] = String(state || "").split(".");
+  if (!body || !signature) return false;
+  const expected = signOauthState(body);
+  const signatureBuffer = Buffer.from(signature);
+  const expectedBuffer = Buffer.from(expected);
+  if (signatureBuffer.length !== expectedBuffer.length || !timingSafeEqual(signatureBuffer, expectedBuffer)) return false;
+  try {
+    const payload = JSON.parse(Buffer.from(body, "base64url").toString("utf8"));
+    return payload.provider === provider && Date.now() - Number(payload.createdAt) < 10 * 60 * 1000;
+  } catch {
+    return false;
+  }
+}
+
+function googleOauthConfig(req) {
+  const clientId = String(process.env.GOOGLE_CLIENT_ID || "").trim();
+  const clientSecret = String(process.env.GOOGLE_CLIENT_SECRET || "").trim();
+  return {
+    clientId,
+    clientSecret,
+    redirectUri: googleRedirectUri(req),
+    configured: Boolean(clientId && clientSecret)
+  };
+}
+
+async function exchangeGoogleCode(code, config) {
+  const response = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      code,
+      client_id: config.clientId,
+      client_secret: config.clientSecret,
+      redirect_uri: config.redirectUri,
+      grant_type: "authorization_code"
+    })
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload.error_description || payload.error || "Google token exchange failed.");
+  return payload;
+}
+
+async function fetchGoogleProfile(accessToken) {
+  const response = await fetch("https://openidconnect.googleapis.com/v1/userinfo", {
+    headers: { Authorization: `Bearer ${accessToken}` }
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload.error_description || payload.error || "Could not read Google profile.");
+  return payload;
+}
+
+function namePartsFromGoogleProfile(profile) {
+  const fullName = String(profile.name || "").trim();
+  return {
+    firstName: String(profile.given_name || fullName.split(/\s+/)[0] || "Frame").trim().slice(0, 80),
+    lastName: String(profile.family_name || fullName.split(/\s+/).slice(1).join(" ") || "Lab").trim().slice(0, 80)
+  };
+}
+
+function upsertGoogleUser(db, profile) {
+  const email = String(profile.email || "").trim().toLowerCase();
+  if (!email) throw new Error("Google account did not return an email address.");
+  if (profile.email_verified === false || profile.email_verified === "false") throw new Error("Google email is not verified.");
+  const names = namePartsFromGoogleProfile(profile);
+  let user = db.users.find((item) => item.email === email);
+  if (user) {
+    user.googleSub = String(profile.sub || user.googleSub || "");
+    user.authProviders = Array.from(new Set([...(Array.isArray(user.authProviders) ? user.authProviders : []), "google"]));
+    user.firstName = user.firstName || names.firstName;
+    user.lastName = user.lastName || names.lastName;
+    user.role = userRole(email);
+    user.plan = planForUser(email, user.plan);
+    user.updatedAt = new Date().toISOString();
+    return user;
+  }
+  user = {
+    id: randomBytes(12).toString("hex"),
+    email,
+    firstName: names.firstName,
+    lastName: names.lastName,
+    passwordHash: "",
+    googleSub: String(profile.sub || ""),
+    authProviders: ["google"],
+    role: userRole(email),
+    plan: planForUser(email, "free"),
+    subscriptionStatus: "none",
+    subscriptionMode: "free",
+    planEndsAt: null,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  };
+  db.users.push(user);
+  return user;
+}
+
+function sendOauthSuccess(res, token) {
+  sendHtml(res, 200, `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Frame Lab login</title>
+</head>
+<body>
+  <script>
+    localStorage.setItem("framelab.sessionToken.v1", ${JSON.stringify(token)});
+    window.location.replace("/");
+  </script>
+  <p>Signing you in to Frame Lab...</p>
+</body>
+</html>`);
+}
+
+function sendOauthError(res, message) {
+  sendHtml(res, 400, `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Frame Lab login failed</title>
+  <style>
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; font-family: Inter, system-ui, sans-serif; background: #0c0d0d; color: #f1eee9; }
+    main { width: min(32rem, calc(100vw - 2rem)); padding: 2rem; border: 1px solid #292c2c; border-radius: 12px; background: #141616; }
+    a { color: #e96d25; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Google login failed</h1>
+    <p>${escapeHtml(message)}</p>
+    <a href="/">Back to Frame Lab</a>
+  </main>
+</body>
+</html>`);
 }
 
 function normalizePlan(plan, fallback = "free") {
@@ -496,7 +678,8 @@ function applyLicenseCode(user, license) {
   return { message: `${details.label} activated.`, consume: true };
 }
 
-async function handleApi(req, res, pathname) {
+async function handleApi(req, res, url) {
+  const pathname = url.pathname;
   const db = readDb();
 
   if (req.method === "POST" && pathname === "/api/auth/email") {
@@ -742,6 +925,45 @@ async function handleApi(req, res, pathname) {
     return sendJson(res, 200, { user: publicUser(user), message: "Subscription will end at the current period end." });
   }
 
+  if (req.method === "GET" && pathname === "/api/auth/oauth/google") {
+    const config = googleOauthConfig(req);
+    if (!config.configured) {
+      return sendJson(res, 501, {
+        error: "Google OAuth credentials are not configured yet.",
+        required: ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"],
+        redirectUri: config.redirectUri
+      });
+    }
+    const params = new URLSearchParams({
+      client_id: config.clientId,
+      redirect_uri: config.redirectUri,
+      response_type: "code",
+      scope: "openid email profile",
+      state: createOauthState("google"),
+      prompt: "select_account"
+    });
+    return sendJson(res, 200, { url: `https://accounts.google.com/o/oauth2/v2/auth?${params}`, redirectUri: config.redirectUri });
+  }
+
+  if (req.method === "GET" && pathname === "/api/auth/oauth/google/callback") {
+    const config = googleOauthConfig(req);
+    if (!config.configured) return sendOauthError(res, "Google OAuth credentials are not configured.");
+    if (url.searchParams.get("error")) return sendOauthError(res, url.searchParams.get("error_description") || url.searchParams.get("error"));
+    const code = url.searchParams.get("code");
+    const state = url.searchParams.get("state");
+    if (!code || !verifyOauthState(state, "google")) return sendOauthError(res, "Google returned an invalid login state. Try again.");
+    try {
+      const tokenPayload = await exchangeGoogleCode(code, config);
+      const profile = await fetchGoogleProfile(tokenPayload.access_token);
+      const user = upsertGoogleUser(db, profile);
+      const sessionToken = createSession(db, user.id);
+      writeDb(db);
+      return sendOauthSuccess(res, sessionToken);
+    } catch (error) {
+      return sendOauthError(res, error.message || "Could not complete Google login.");
+    }
+  }
+
   if (req.method === "GET" && pathname.startsWith("/api/auth/oauth/")) {
     const provider = pathname.split("/").pop();
     return sendJson(res, 501, {
@@ -773,7 +995,7 @@ function serveStatic(req, res, pathname) {
 createServer(async (req, res) => {
   try {
     const url = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`);
-    if (url.pathname.startsWith("/api/")) return await handleApi(req, res, url.pathname);
+    if (url.pathname.startsWith("/api/")) return await handleApi(req, res, url);
     return serveStatic(req, res, url.pathname);
   } catch (error) {
     return sendJson(res, 500, { error: error.message || "Server error" });
