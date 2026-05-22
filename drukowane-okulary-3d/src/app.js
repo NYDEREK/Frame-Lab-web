@@ -592,6 +592,7 @@ let triangleCount = 0;
 let persistTimer = null;
 let backendPersistTimer = null;
 let cameraZoomScale = 1;
+let viewerFitRadius = 100;
 let componentPreviewRenderers = [];
 let sharedComponentPreviewRenderer = null;
 
@@ -652,6 +653,7 @@ function setupScene() {
 
   modelGroup = new THREE.Group();
   modelGroup.position.y = 8;
+  modelGroup.rotation.order = "YXZ";
   scene.add(modelGroup);
 
   window.addEventListener("resize", resize);
@@ -874,6 +876,8 @@ function bindUi() {
   els.viewSide?.addEventListener("click", () => setView("side"));
 
   els.canvas.addEventListener("pointerdown", (event) => {
+    event.preventDefault();
+    const rect = els.canvas.getBoundingClientRect();
     dragState = {
       mode: event.shiftKey || event.button === 1 || event.button === 2 ? "pan" : "rotate",
       x: event.clientX,
@@ -881,28 +885,34 @@ function bindUi() {
       rx: state.viewerRotation.x,
       ry: state.viewerRotation.y,
       px: state.viewerPan.x,
-      py: state.viewerPan.y
+      py: state.viewerPan.y,
+      rotateSpeed: Math.PI / Math.max(420, Math.min(rect.width, rect.height)),
+      panSpeed: viewerPanSpeed(rect.height)
     };
+    els.canvas.classList.add(dragState.mode === "pan" ? "is-panning" : "is-rotating");
     els.canvas.setPointerCapture(event.pointerId);
   });
   els.canvas.addEventListener("pointermove", (event) => {
     if (!dragState) return;
+    event.preventDefault();
     const dx = event.clientX - dragState.x;
     const dy = event.clientY - dragState.y;
     if (dragState.mode === "pan") {
-      state.viewerPan.x = dragState.px + dx * 0.12;
-      state.viewerPan.y = dragState.py - dy * 0.12;
+      state.viewerPan.x = dragState.px + dx * dragState.panSpeed;
+      state.viewerPan.y = dragState.py - dy * dragState.panSpeed;
     } else {
-      state.viewerRotation.y = dragState.ry + dx * 0.0065;
-      state.viewerRotation.x = THREE.MathUtils.clamp(dragState.rx + dy * 0.005, -1.35, 1.35);
+      state.viewerRotation.y = dragState.ry + dx * dragState.rotateSpeed;
+      state.viewerRotation.x = THREE.MathUtils.clamp(dragState.rx + dy * dragState.rotateSpeed * 0.82, -1.48, 1.48);
     }
     applyViewerTransform();
   });
   els.canvas.addEventListener("pointerup", () => {
     dragState = null;
+    els.canvas.classList.remove("is-rotating", "is-panning");
   });
   els.canvas.addEventListener("pointercancel", () => {
     dragState = null;
+    els.canvas.classList.remove("is-rotating", "is-panning");
   });
   els.canvas.addEventListener("dblclick", resetViewerPose);
   els.canvas.addEventListener("contextmenu", (event) => event.preventDefault());
@@ -2102,7 +2112,9 @@ function renderMeshObject(object) {
     addTriangles(child.geometry);
   });
   modelGroup.add(clone);
-  modelGroup.rotation.set(-0.1, 0.25, 0);
+  centerObjectForViewerPivot(modelGroup);
+  modelBasePosition.copy(modelGroup.position);
+  applyViewerTransform();
 }
 
 function roundedRectShape(width, height, radius) {
@@ -4145,14 +4157,20 @@ function setView(view) {
 
 function handleCanvasWheel(event) {
   event.preventDefault();
-  const direction = event.deltaY > 0 ? 1.06 : 0.94;
-  cameraZoomScale = THREE.MathUtils.clamp(cameraZoomScale * direction, 0.42, 2.6);
+  const direction = Math.exp(THREE.MathUtils.clamp(event.deltaY, -220, 220) * 0.0015);
+  cameraZoomScale = THREE.MathUtils.clamp(cameraZoomScale * direction, 0.35, 3.4);
   fitCameraToObject(modelGroup);
 }
 
 function applyViewerTransform() {
+  modelGroup.rotation.order = "YXZ";
   modelGroup.rotation.set(state.viewerRotation.x, state.viewerRotation.y, state.viewerRotation.z);
   modelGroup.position.set(modelBasePosition.x + state.viewerPan.x, modelBasePosition.y + state.viewerPan.y, modelBasePosition.z);
+}
+
+function viewerPanSpeed(canvasHeight = els.canvas?.clientHeight || 720) {
+  const base = Math.max(0.045, viewerFitRadius / Math.max(440, canvasHeight));
+  return base * Math.max(0.65, Math.min(1.35, cameraZoomScale));
 }
 
 function resetViewerPose() {
@@ -4187,6 +4205,7 @@ function fitCameraToObject(object) {
   const box = new THREE.Box3().setFromObject(object);
   if (box.isEmpty()) return;
   const sphere = box.getBoundingSphere(new THREE.Sphere());
+  viewerFitRadius = Math.max(1, sphere.radius);
   const distance = Math.max(95, sphere.radius * 1.85) * cameraZoomScale;
   const panelShift = sphere.radius * 0.32;
   const target = new THREE.Vector3(sphere.center.x + panelShift, sphere.center.y, sphere.center.z);

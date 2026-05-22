@@ -883,6 +883,14 @@ small,
   cursor: grabbing;
 }
 
+#scene.is-panning {
+  cursor: move;
+}
+
+#scene.is-rotating {
+  cursor: grabbing;
+}
+
 .config-panel {
   position: absolute;
   top: 1rem;
