@@ -160,6 +160,8 @@ const ownerDeveloperEmail = "nyderek@framelab.dev";
 const adminEmails = new Set([ownerDeveloperEmail, "s.nyderek@proton.me"]);
 const defaultAccentColor = "#c96b34";
 const defaultHeroImage = "./assets/frame-lab-hero.png";
+const defaultPrintGuideImage = "./assets/print-guide-honeycomb.svg";
+const defaultColorSlots = ["#ff741f", "#2d2b27", "#f1eee9", "#0f1010", "#8f8b82"];
 const defaultContentSettings = {
   plans: [
     {
@@ -198,7 +200,8 @@ const defaultContentSettings = {
   },
   printGuide: {
     heading: "How to print it",
-    intro: "Use PETG, PA-CF or a tough PLA blend for first tests. Print fronts flat, temples on their side, and validate hinge clearance before installing lenses."
+    intro: "Use any stiff filament for the frame. For lenses, cut the exported lens template from 1 mm clear acrylic, or print lens inserts with honeycomb infill and 0 top and bottom shell layers.",
+    image: defaultPrintGuideImage
   },
   roadmap: {
     heading: "Roadmap",
@@ -217,7 +220,7 @@ const defaultContentSettings = {
     items: [
       { question: "Can I configure before I unlock a plan?", answer: "Yes. All frames can be configured first; downloads unlock after activating a code." },
       { question: "What files do I receive?", answer: "The export is a clean 3MF production file for the selected front, temples, lenses and colors." },
-      { question: "Can I add new frame variants later?", answer: "Yes. Developer tools can add new fronts, left temples, right temples and lens options to each frame post." }
+      { question: "How should I make the lenses?", answer: "Use the lens template to cut 1 mm clear acrylic, or print honeycomb lens inserts for a printed texture effect." }
     ]
   }
 };
@@ -239,6 +242,7 @@ const sessionStorageKey = "framelab.sessionToken.v1";
 const accountProfilesStorageKey = "framelab.accounts.v1";
 const hiddenComponentsStorageKey = "framelab.hiddenComponents.v1";
 const brandSettingsStorageKey = "framelab.brandSettings.v1";
+const colorSlotsStorageKey = "framelab.colorSlots.v1";
 const planRank = { free: 0, basic: 1, pro: 2, studio: 3 };
 const licenseCodeTypes = {
   basic_month: { label: "Basic / 1 month", plan: "basic", duration: "month" },
@@ -484,6 +488,7 @@ const state = {
     rightTemple: "",
     lens: ""
   },
+  colorSlots: [...defaultColorSlots],
   brandSettings: structuredClone(defaultBrandSettings),
   system: {
     storage: { persistent: false, source: "unknown", message: "" }
@@ -628,6 +633,8 @@ const els = {
 	  sizeGuideRows: document.querySelector("#sizeGuideRows"),
 	  printGuideHeading: document.querySelector("#printGuideHeading"),
 	  printGuideIntro: document.querySelector("#printGuideIntro"),
+	  printGuideFigure: document.querySelector("#printGuideFigure"),
+	  printGuideImage: document.querySelector("#printGuideImage"),
 	  roadmapHeading: document.querySelector("#roadmapHeading"),
 	  roadmapItems: document.querySelector("#roadmapItems"),
 	  licenseInfoHeading: document.querySelector("#licenseInfoHeading"),
@@ -680,6 +687,9 @@ let persistTimer = null;
 let backendPersistTimer = null;
 let cameraZoomScale = 1;
 let viewerFitRadius = 100;
+const cameraTarget = new THREE.Vector3(0, 0, 0);
+let cameraBaseDistance = 250;
+let cameraBaseHeight = 0;
 let componentPreviewRenderers = [];
 let sharedComponentPreviewRenderer = null;
 
@@ -761,6 +771,17 @@ function bindUi() {
   });
 
   els.builderControls.addEventListener("change", (event) => {
+    const slotInput = event.target.closest("[data-color-slot-edit]");
+    if (slotInput) {
+      const index = Number(slotInput.dataset.colorSlotEdit);
+      state.colorSlots[index] = sanitizeHexColor(slotInput.value, state.colorSlots[index] || defaultAccentColor);
+      state.colorSlots = normalizeColorSlots(state.colorSlots);
+      persistColorSlots();
+      buildBuilderControls();
+      render();
+      return;
+    }
+
     const colorInput = event.target.closest("[data-component-color]");
     if (colorInput) {
       state.componentColors[colorInput.dataset.componentColor] = colorInput.value;
@@ -782,6 +803,30 @@ function bindUi() {
   });
 
   els.builderControls.addEventListener("click", (event) => {
+    const colorSlot = event.target.closest("[data-apply-color-slot]");
+    if (colorSlot) {
+      const key = colorSlot.dataset.applyColorSlot;
+      state.componentColors[key] = sanitizeHexColor(colorSlot.dataset.color, state.componentColors[key] || defaultAccentColor);
+      buildBuilderControls();
+      render();
+      syncActiveModel({ persist: false });
+      scheduleModelPersist();
+      return;
+    }
+
+    if (event.target.closest("[data-apply-color-all]")) {
+      const color = state.colorSlots[0] || defaultAccentColor;
+      state.componentColors.front = color;
+      state.componentColors.leftTemple = color;
+      state.componentColors.rightTemple = color;
+      state.componentColors.lens = color;
+      buildBuilderControls();
+      render();
+      syncActiveModel({ persist: false });
+      scheduleModelPersist();
+      return;
+    }
+
     const option = event.target.closest("[data-component-option]");
     if (option) {
       state.assembly[option.dataset.componentOption].modelId = option.dataset.modelId;
@@ -959,6 +1004,22 @@ function bindUi() {
     if (els.heroImageInput) els.heroImageInput.value = "";
     if (els.brandSettingsNote) els.brandSettingsNote.textContent = "Default hero image selected. Save to publish it.";
   });
+  els.pageContentEditor?.addEventListener("change", (event) => {
+    const imageInput = event.target.closest("[data-print-guide-image]");
+    if (imageInput) handlePrintGuideImageSelect(imageInput.files?.[0]);
+  });
+  els.pageContentEditor?.addEventListener("click", (event) => {
+    if (!event.target.closest("[data-clear-print-guide-image]")) return;
+    state.brandSettings.content = normalizeContentSettings({
+      ...state.brandSettings.content,
+      printGuide: {
+        ...state.brandSettings.content.printGuide,
+        image: ""
+      }
+    });
+    applyBrandSettings();
+    if (els.brandSettingsNote) els.brandSettingsNote.textContent = "Print guide image cleared. Save to publish it.";
+  });
   els.saveBrandSettings?.addEventListener("click", () => saveBrandSettings());
   els.resetBrandSettings?.addEventListener("click", () => resetBrandSettings());
   els.refreshStorageDebug?.addEventListener("click", () => loadStorageDebug());
@@ -1055,9 +1116,41 @@ function sanitizeAccentColor(value, fallback = defaultAccentColor) {
   return sanitizeHexColor(value, fallback);
 }
 
+function normalizeColorSlots(slots) {
+  const source = Array.isArray(slots) && slots.length ? slots : defaultColorSlots;
+  return source
+    .slice(0, 6)
+    .map((color, index) => sanitizeHexColor(color, defaultColorSlots[index] || defaultAccentColor));
+}
+
 function cleanText(value, fallback = "", limit = 500) {
   const text = String(value ?? fallback).trim();
   return (text || fallback).slice(0, limit);
+}
+
+function sanitizeContentImage(value, fallback = "") {
+  if (value === undefined || value === null) return fallback;
+  const image = String(value || "").trim();
+  if (!image) return "";
+  if (image.startsWith("data:image/") || image.startsWith("./assets/")) return image;
+  return fallback;
+}
+
+function cleanPrintGuideIntro(value, fallback) {
+  const intro = cleanText(value, fallback, 500);
+  return /^Use PETG, PA-CF or a tough PLA blend/i.test(intro) ? fallback : intro;
+}
+
+function normalizeFaqItem(item = {}, fallback = {}) {
+  const question = cleanText(item.question, fallback.question || "Question", 120);
+  const answer = cleanText(item.answer, fallback.answer || "", 360);
+  const developerOnlyCopy = /developer tools|add new fronts|frame variants/i.test(`${question} ${answer}`);
+  return developerOnlyCopy
+    ? {
+        question: fallback.question || defaultContentSettings.faq.items[2].question,
+        answer: fallback.answer || defaultContentSettings.faq.items[2].answer
+      }
+    : { question, answer };
 }
 
 function normalizePlanContent(item = {}, fallback = {}) {
@@ -1106,7 +1199,8 @@ function normalizeContentSettings(content = {}) {
     },
     printGuide: {
       heading: cleanText(content.printGuide?.heading, defaults.printGuide.heading, 80),
-      intro: cleanText(content.printGuide?.intro, defaults.printGuide.intro, 500)
+      intro: cleanPrintGuideIntro(content.printGuide?.intro, defaults.printGuide.intro),
+      image: sanitizeContentImage(content.printGuide?.image, defaults.printGuide.image)
     },
     roadmap: {
       heading: cleanText(content.roadmap?.heading, defaults.roadmap.heading, 80),
@@ -1126,10 +1220,7 @@ function normalizeContentSettings(content = {}) {
       heading: cleanText(content.faq?.heading, defaults.faq.heading, 80),
       items: (Array.isArray(content.faq?.items) ? content.faq.items : defaults.faq.items)
         .slice(0, 10)
-        .map((item, index) => ({
-          question: cleanText(item.question, defaults.faq.items[index]?.question || "Question", 120),
-          answer: cleanText(item.answer, defaults.faq.items[index]?.answer || "", 360)
-        }))
+        .map((item, index) => normalizeFaqItem(item, defaults.faq.items[index] || defaults.faq.items[2]))
     }
   };
 }
@@ -1291,6 +1382,11 @@ function renderMarketingContent() {
   }
   if (els.printGuideHeading) els.printGuideHeading.textContent = content.printGuide.heading;
   if (els.printGuideIntro) els.printGuideIntro.textContent = content.printGuide.intro;
+  if (els.printGuideFigure && els.printGuideImage) {
+    const image = sanitizeContentImage(content.printGuide.image, "");
+    els.printGuideFigure.hidden = !image;
+    if (image) els.printGuideImage.src = image;
+  }
   if (els.roadmapHeading) els.roadmapHeading.textContent = content.roadmap.heading;
   if (els.roadmapItems) {
     els.roadmapItems.innerHTML = content.roadmap.items.map((item) => `
@@ -1357,6 +1453,14 @@ function renderContentEditors() {
         <legend>How to print it</legend>
         <input data-content-field="printGuide.heading" type="text" value="${escapeAttr(content.printGuide.heading)}" />
         <textarea data-content-field="printGuide.intro" rows="4">${escapeHtml(content.printGuide.intro)}</textarea>
+        <div class="content-file-actions">
+          <label class="file-button">
+            <input data-print-guide-image type="file" accept="image/*" />
+            <span>Print guide image</span>
+          </label>
+          <button type="button" data-clear-print-guide-image>Clear image</button>
+          <small>${content.printGuide.image ? "Image attached" : "No image selected"}</small>
+        </div>
       </fieldset>
       <fieldset class="content-editor-card wide">
         <legend>Roadmap</legend>
@@ -1645,9 +1749,29 @@ function buildBuilderControls() {
     { key: "rightTemple", label: t("rightTempleComponent"), items: templeItemsForKey("rightTemple") },
     { key: "lens", label: t("lensComponent"), items: componentLibrary.lenses, optional: true }
   ];
-  els.builderControls.innerHTML = parts.map((part) => componentCardTemplate(part)).join("");
+  els.builderControls.innerHTML = `${colorSlotPaletteTemplate()}${parts.map((part) => componentCardTemplate(part)).join("")}`;
   renderComponentPreviews(parts);
   renderComponentFileList();
+}
+
+function colorSlotPaletteTemplate() {
+  const slots = normalizeColorSlots(state.colorSlots);
+  return `
+    <article class="color-slots-panel">
+      <div class="color-slots-head">
+        <strong>Color slots</strong>
+        <button type="button" class="compact" data-apply-color-all>Apply to all</button>
+      </div>
+      <div class="color-slots-grid">
+        ${slots.map((color, index) => `
+          <label class="color-slot-editor" style="--slot-color:${escapeHtml(color)}" title="Color slot ${index + 1}">
+            <input type="color" value="${escapeHtml(color)}" data-color-slot-edit="${index}" aria-label="Color slot ${index + 1}" />
+            <span aria-hidden="true"></span>
+          </label>
+        `).join("")}
+      </div>
+    </article>
+  `;
 }
 
 function componentCardTemplate(part) {
@@ -1706,6 +1830,11 @@ function componentCardTemplate(part) {
           <span class="component-color-chip" aria-hidden="true"></span>
           <span class="component-color-corner" aria-hidden="true"></span>
         </label>
+      </div>
+      <div class="component-color-slots" aria-label="${escapeHtml(part.label)} color slots">
+        ${state.colorSlots.map((slotColor, index) => `
+          <button type="button" class="color-slot-button" style="--slot-color:${escapeHtml(slotColor)}" data-apply-color-slot="${part.key}" data-color="${escapeHtml(slotColor)}" title="Apply color slot ${index + 1}"></button>
+        `).join("")}
       </div>
       <details class="component-options" ${part.key === "front" ? "open" : ""}>
         <summary>${t("variants")} (${part.items.length})</summary>
@@ -2308,6 +2437,10 @@ function persistHiddenComponents() {
   localStorage.setItem(hiddenComponentsStorageKey, JSON.stringify([...state.hiddenComponentIds]));
 }
 
+function persistColorSlots() {
+  localStorage.setItem(colorSlotsStorageKey, JSON.stringify(normalizeColorSlots(state.colorSlots)));
+}
+
 function render() {
   modelGroup.clear();
   modelGroup.position.set(0, 8, 0);
@@ -2546,18 +2679,22 @@ function createDefaultModel() {
 }
 
 async function loadStoredModels() {
+  const remote = await fetchBackendCollections();
+  if (remote.length) {
+    const canonical = mergeSeedCollections(remote);
+    localStorage.setItem(modelStorageKey, JSON.stringify(canonical));
+    return canonical;
+  }
   try {
     const parsed = JSON.parse(localStorage.getItem(modelStorageKey) || "[]");
     const stored = Array.isArray(parsed)
       ? parsed.map(normalizeStoredModel).filter((model) => model && !legacyModelIds.has(model.id))
       : [];
-    const remote = await fetchBackendCollections();
-    const merged = mergeSeedCollections(mergeModelCollections(stored, remote));
+    const merged = mergeSeedCollections(stored);
     localStorage.setItem(modelStorageKey, JSON.stringify(merged));
     return merged;
   } catch {
-    const remote = await fetchBackendCollections();
-    return mergeSeedCollections(remote);
+    return mergeSeedCollections([]);
   }
 }
 
@@ -2786,6 +2923,23 @@ async function handleHeroImageSelect() {
   state.brandSettings.heroImage = await readFileAsDataUrl(file);
   applyBrandSettings();
   if (els.brandSettingsNote) els.brandSettingsNote.textContent = "Previewing hero image. Save to publish it.";
+}
+
+async function handlePrintGuideImageSelect(file) {
+  if (!file) return;
+  if (!file.type.startsWith("image/")) {
+    if (els.brandSettingsNote) els.brandSettingsNote.textContent = "Choose an image file for the print guide.";
+    return;
+  }
+  state.brandSettings.content = normalizeContentSettings({
+    ...state.brandSettings.content,
+    printGuide: {
+      ...state.brandSettings.content.printGuide,
+      image: await readFileAsDataUrl(file)
+    }
+  });
+  applyBrandSettings();
+  if (els.brandSettingsNote) els.brandSettingsNote.textContent = "Previewing print guide image. Save to publish it.";
 }
 
 function sessionToken() {
@@ -4463,6 +4617,7 @@ function buildAssemblyManifest(selectedFiles) {
     parameters: state.params,
     lens: currentLensConfig(),
     colors: { ...state.componentColors },
+    colorSlots: normalizeColorSlots(state.colorSlots),
     selectedFiles
   };
 }
@@ -4620,6 +4775,11 @@ function loadSettings() {
     state.hiddenComponentIds = new Set();
   }
   try {
+    state.colorSlots = normalizeColorSlots(JSON.parse(localStorage.getItem(colorSlotsStorageKey) || "null"));
+  } catch {
+    state.colorSlots = [...defaultColorSlots];
+  }
+  try {
     const storedAccount = JSON.parse(localStorage.getItem(accountStorageKey) || "null");
     if (storedAccount && typeof storedAccount === "object") {
       const email = String(storedAccount.email || "").toLowerCase();
@@ -4652,7 +4812,7 @@ function handleCanvasWheel(event) {
   event.preventDefault();
   const direction = Math.exp(THREE.MathUtils.clamp(event.deltaY, -220, 220) * 0.0015);
   cameraZoomScale = THREE.MathUtils.clamp(cameraZoomScale * direction, 0.35, 3.4);
-  fitCameraToObject(modelGroup);
+  updateCameraFromZoom();
 }
 
 function applyViewerTransform() {
@@ -4703,13 +4863,20 @@ function fitCameraToObject(object) {
   if (box.isEmpty()) return;
   const sphere = box.getBoundingSphere(new THREE.Sphere());
   viewerFitRadius = Math.max(1, sphere.radius);
-  const distance = Math.max(95, sphere.radius * 1.85) * cameraZoomScale;
+  cameraBaseDistance = Math.max(95, sphere.radius * 1.85);
+  cameraBaseHeight = sphere.radius * 0.32;
   const panelShift = sphere.radius * 0.32;
-  const target = new THREE.Vector3(sphere.center.x + panelShift, sphere.center.y, sphere.center.z);
-  camera.position.set(target.x, target.y + sphere.radius * 0.32, target.z + distance);
-  camera.lookAt(target);
-  camera.near = Math.max(0.1, distance / 100);
-  camera.far = distance * 8;
+  cameraTarget.set(sphere.center.x + panelShift, sphere.center.y, sphere.center.z);
+  updateCameraFromZoom();
+}
+
+function updateCameraFromZoom() {
+  if (!camera) return;
+  camera.position.set(cameraTarget.x, cameraTarget.y + cameraBaseHeight, cameraTarget.z + cameraBaseDistance);
+  camera.lookAt(cameraTarget);
+  camera.zoom = 1 / cameraZoomScale;
+  camera.near = Math.max(0.1, cameraBaseDistance / 100);
+  camera.far = cameraBaseDistance * 8;
   camera.updateProjectionMatrix();
 }
 
@@ -4912,11 +5079,9 @@ function openComponentDb() {
 }
 
 async function loadComponentRecords() {
-  const [local, remote] = await Promise.all([
-    loadLocalComponentRecords().catch(() => []),
-    loadBackendComponentRecords().catch(() => [])
-  ]);
-  return [...new Map([...local, ...remote].map((component) => [component.id, component])).values()];
+  const remote = await loadBackendComponentRecords().catch(() => []);
+  if (remote.length) return remote;
+  return loadLocalComponentRecords().catch(() => []);
 }
 
 async function loadLocalComponentRecords() {

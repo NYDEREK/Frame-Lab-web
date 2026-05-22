@@ -100,7 +100,8 @@ const defaultContentSettings = {
   },
   printGuide: {
     heading: "How to print it",
-    intro: "Use PETG, PA-CF or a tough PLA blend for first tests. Print fronts flat, temples on their side, and validate hinge clearance before installing lenses."
+    intro: "Use any stiff filament for the frame. For lenses, cut the exported lens template from 1 mm clear acrylic, or print lens inserts with honeycomb infill and 0 top and bottom shell layers.",
+    image: "./assets/print-guide-honeycomb.svg"
   },
   roadmap: {
     heading: "Roadmap",
@@ -119,7 +120,7 @@ const defaultContentSettings = {
     items: [
       { question: "Can I configure before I unlock a plan?", answer: "Yes. All frames can be configured first; downloads unlock after activating a code." },
       { question: "What files do I receive?", answer: "The export is a clean 3MF production file for the selected front, temples, lenses and colors." },
-      { question: "Can I add new frame variants later?", answer: "Yes. Developer tools can add new fronts, left temples, right temples and lens options to each frame post." }
+      { question: "How should I make the lenses?", answer: "Use the lens template to cut 1 mm clear acrylic, or print honeycomb lens inserts for a printed texture effect." }
     ]
   }
 };
@@ -182,6 +183,19 @@ function cleanText(value, fallback = "", limit = 500) {
   return (text || fallback).slice(0, limit);
 }
 
+function sanitizeContentImage(value, fallback = "") {
+  if (value === undefined || value === null) return fallback;
+  const image = String(value || "").trim();
+  if (!image) return "";
+  if ((image.startsWith("data:image/") || image.startsWith("./assets/")) && image.length < 5_000_000) return image;
+  return fallback;
+}
+
+function cleanPrintGuideIntro(value, fallback) {
+  const intro = cleanText(value, fallback, 500);
+  return /^Use PETG, PA-CF or a tough PLA blend/i.test(intro) ? fallback : intro;
+}
+
 function sanitizePlanContent(item = {}, fallback = {}) {
   const plan = ["basic", "pro", "studio"].includes(item.plan) ? item.plan : fallback.plan;
   return {
@@ -215,6 +229,18 @@ function sanitizeSizeRow(row = {}, fallback = {}) {
   };
 }
 
+function sanitizeFaqItem(item = {}, fallback = {}) {
+  const question = cleanText(item.question, fallback.question || "Question", 120);
+  const answer = cleanText(item.answer, fallback.answer || "", 360);
+  const developerOnlyCopy = /developer tools|add new fronts|frame variants/i.test(`${question} ${answer}`);
+  return developerOnlyCopy
+    ? {
+        question: fallback.question || defaultContentSettings.faq.items[2].question,
+        answer: fallback.answer || defaultContentSettings.faq.items[2].answer
+      }
+    : { question, answer };
+}
+
 function sanitizeContentSettings(content = {}) {
   const defaults = cloneJson(defaultContentSettings);
   const planById = new Map((Array.isArray(content.plans) ? content.plans : []).map((item) => [item.plan, item]));
@@ -228,7 +254,8 @@ function sanitizeContentSettings(content = {}) {
     },
     printGuide: {
       heading: cleanText(content.printGuide?.heading, defaults.printGuide.heading, 80),
-      intro: cleanText(content.printGuide?.intro, defaults.printGuide.intro, 500)
+      intro: cleanPrintGuideIntro(content.printGuide?.intro, defaults.printGuide.intro),
+      image: sanitizeContentImage(content.printGuide?.image, defaults.printGuide.image)
     },
     roadmap: {
       heading: cleanText(content.roadmap?.heading, defaults.roadmap.heading, 80),
@@ -248,10 +275,7 @@ function sanitizeContentSettings(content = {}) {
       heading: cleanText(content.faq?.heading, defaults.faq.heading, 80),
       items: (Array.isArray(content.faq?.items) ? content.faq.items : defaults.faq.items)
         .slice(0, 10)
-        .map((item, index) => ({
-          question: cleanText(item.question, defaults.faq.items[index]?.question || "Question", 120),
-          answer: cleanText(item.answer, defaults.faq.items[index]?.answer || "", 360)
-        }))
+        .map((item, index) => sanitizeFaqItem(item, defaults.faq.items[index] || defaults.faq.items[2]))
     }
   };
 }

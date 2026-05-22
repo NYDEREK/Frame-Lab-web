@@ -16,7 +16,7 @@
         document.documentElement.dataset.appError = event.reason?.message || String(event.reason || "promise");
       });
     </script>
-    <link rel="stylesheet" href="./styles.css?v=sun-content-20260522-1" />
+    <link rel="stylesheet" href="./styles.css?v=sun-fixes-20260523-1" />
     <script type="importmap">
       {
         "imports": {
@@ -293,6 +293,9 @@
             <h2 id="printGuideHeading">How to print it</h2>
             <p id="printGuideIntro"></p>
           </div>
+          <figure id="printGuideFigure" class="print-guide-figure" hidden>
+            <img id="printGuideImage" alt="Honeycomb lens slicer preview" />
+          </figure>
         </section>
         <section id="roadmapPanel" class="content-section roadmap-panel">
           <div class="content-section-copy">
@@ -600,6 +603,6 @@
       </section>
     </div>
 
-    <script type="module" src="./src/app.js?v=sun-content-20260522-1"></script>
+    <script type="module" src="./src/app.js?v=sun-fixes-20260523-1"></script>
   </body>
 </html>
