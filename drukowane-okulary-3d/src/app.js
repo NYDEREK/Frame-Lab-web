@@ -901,8 +901,8 @@ function bindUi() {
       state.viewerPan.x = dragState.px + dx * dragState.panSpeed;
       state.viewerPan.y = dragState.py - dy * dragState.panSpeed;
     } else {
-      state.viewerRotation.y = dragState.ry + dx * dragState.rotateSpeed;
-      state.viewerRotation.x = THREE.MathUtils.clamp(dragState.rx + dy * dragState.rotateSpeed * 0.82, -1.48, 1.48);
+      state.viewerRotation.y = normalizeOrbitAngle(dragState.ry + dx * dragState.rotateSpeed);
+      state.viewerRotation.x = normalizeOrbitAngle(dragState.rx + dy * dragState.rotateSpeed * 0.82);
     }
     applyViewerTransform();
   });
@@ -4166,6 +4166,10 @@ function applyViewerTransform() {
   modelGroup.rotation.order = "YXZ";
   modelGroup.rotation.set(state.viewerRotation.x, state.viewerRotation.y, state.viewerRotation.z);
   modelGroup.position.set(modelBasePosition.x + state.viewerPan.x, modelBasePosition.y + state.viewerPan.y, modelBasePosition.z);
+}
+
+function normalizeOrbitAngle(angle) {
+  return THREE.MathUtils.euclideanModulo(angle + Math.PI, Math.PI * 2) - Math.PI;
 }
 
 function viewerPanSpeed(canvasHeight = els.canvas?.clientHeight || 720) {
