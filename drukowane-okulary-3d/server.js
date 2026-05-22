@@ -58,6 +58,72 @@ function dataRootWarning(name, value) {
   return `${name} is set to "${trimmed}", but Railway volumes need an absolute path. Ignoring it and using ${railwayDataPath} when available.`;
 }
 
+function cloneJson(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+const defaultContentSettings = {
+  plans: [
+    {
+      plan: "basic",
+      name: "Basic",
+      price: "$20",
+      period: "/ month",
+      exports: "15 3MF downloads per month",
+      description: "Full configurator access for personal prints and fit tests."
+    },
+    {
+      plan: "pro",
+      name: "Pro",
+      price: "$45",
+      period: "/ month",
+      exports: "50 3MF downloads per month",
+      description: "More exports for active makers preparing several variants."
+    },
+    {
+      plan: "studio",
+      name: "Plus",
+      price: "$60",
+      period: "/ month",
+      exports: "Unlimited 3MF downloads",
+      description: "Unlimited production exports for heavy use and early studio access."
+    }
+  ],
+  sizes: {
+    heading: "Sizes",
+    intro: "Pick the size from your face width, nose bridge and preferred temple length. The recommendation is a starting point for 3D printed test fits.",
+    rows: [
+      { size: "S", label: "Narrow", headMin: 125, headMax: 137, frameWidth: "126-134 mm", lensWidth: "49-52 mm", bridgeMin: 14, bridgeMax: 17, templeMin: 130, templeMax: 140, note: "Slim faces and smaller nose bridges." },
+      { size: "M", label: "Regular", headMin: 138, headMax: 149, frameWidth: "135-144 mm", lensWidth: "52-55 mm", bridgeMin: 17, bridgeMax: 20, templeMin: 140, templeMax: 150, note: "Most adult fits and balanced sunglasses proportions." },
+      { size: "L", label: "Wide", headMin: 150, headMax: 162, frameWidth: "145-155 mm", lensWidth: "55-59 mm", bridgeMin: 20, bridgeMax: 23, templeMin: 150, templeMax: 160, note: "Wider heads, stronger wrap and longer temples." }
+    ]
+  },
+  printGuide: {
+    heading: "How to print it",
+    intro: "Use PETG, PA-CF or a tough PLA blend for first tests. Print fronts flat, temples on their side, and validate hinge clearance before installing lenses."
+  },
+  roadmap: {
+    heading: "Roadmap",
+    items: [
+      { title: "Crowdfunding release", status: "Next", description: "Backer codes, stable exports and first production-ready sunglasses." },
+      { title: "Lens library", status: "Planned", description: "Printable lens placeholders and templates for cutting transparent sheet lenses." },
+      { title: "Fit calibration", status: "Planned", description: "Guided measurements with size recommendations stored in each account." }
+    ]
+  },
+  license: {
+    heading: "License",
+    body: "Backer access codes unlock downloads according to the selected tier. Personal use is included by default; commercial use can be reserved for a higher tier if needed."
+  },
+  faq: {
+    heading: "FAQ",
+    items: [
+      { question: "Can I configure before I unlock a plan?", answer: "Yes. All frames can be configured first; downloads unlock after activating a code." },
+      { question: "What files do I receive?", answer: "The export is a clean 3MF production file for the selected front, temples, lenses and colors." },
+      { question: "Can I add new frame variants later?", answer: "Yes. Developer tools can add new fronts, left temples, right temples and lens options to each frame post." }
+    ]
+  }
+};
+
 const defaultBrandSettings = {
   accentColor: "#c96b34",
   backgroundColor: "#0c0d0d",
@@ -68,7 +134,8 @@ const defaultBrandSettings = {
   sceneColor: "#070909",
   heroTitle: "Your next frame is 3D printed.",
   heroText: "Choose a collection, combine a front with temples, and prepare a clean production kit for additive manufacturing.",
-  heroImage: ""
+  heroImage: "",
+  content: cloneJson(defaultContentSettings)
 };
 const maxRequestBodySize = 80_000_000;
 const maxComponentFileDataSize = 60_000_000;
@@ -110,6 +177,85 @@ function sanitizeAccentColor(value, fallback = defaultBrandSettings.accentColor)
   return sanitizeHexColor(value, fallback);
 }
 
+function cleanText(value, fallback = "", limit = 500) {
+  const text = String(value ?? fallback).trim();
+  return (text || fallback).slice(0, limit);
+}
+
+function sanitizePlanContent(item = {}, fallback = {}) {
+  const plan = ["basic", "pro", "studio"].includes(item.plan) ? item.plan : fallback.plan;
+  return {
+    plan,
+    name: cleanText(item.name, fallback.name, 40),
+    price: cleanText(item.price, fallback.price, 24),
+    period: cleanText(item.period, fallback.period, 32),
+    exports: cleanText(item.exports, fallback.exports, 90),
+    description: cleanText(item.description, fallback.description, 180)
+  };
+}
+
+function sanitizeSizeRow(row = {}, fallback = {}) {
+  const numberValue = (value, defaultValue, min = 0, max = 300) => {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) return defaultValue;
+    return Math.min(max, Math.max(min, Math.round(numeric)));
+  };
+  return {
+    size: ["S", "M", "L"].includes(row.size) ? row.size : fallback.size,
+    label: cleanText(row.label, fallback.label, 48),
+    headMin: numberValue(row.headMin, fallback.headMin, 90, 220),
+    headMax: numberValue(row.headMax, fallback.headMax, 90, 220),
+    frameWidth: cleanText(row.frameWidth, fallback.frameWidth, 48),
+    lensWidth: cleanText(row.lensWidth, fallback.lensWidth, 48),
+    bridgeMin: numberValue(row.bridgeMin, fallback.bridgeMin, 8, 34),
+    bridgeMax: numberValue(row.bridgeMax, fallback.bridgeMax, 8, 34),
+    templeMin: numberValue(row.templeMin, fallback.templeMin, 100, 190),
+    templeMax: numberValue(row.templeMax, fallback.templeMax, 100, 190),
+    note: cleanText(row.note, fallback.note, 160)
+  };
+}
+
+function sanitizeContentSettings(content = {}) {
+  const defaults = cloneJson(defaultContentSettings);
+  const planById = new Map((Array.isArray(content.plans) ? content.plans : []).map((item) => [item.plan, item]));
+  const sizeById = new Map((Array.isArray(content.sizes?.rows) ? content.sizes.rows : []).map((item) => [item.size, item]));
+  return {
+    plans: defaults.plans.map((fallback) => sanitizePlanContent(planById.get(fallback.plan), fallback)),
+    sizes: {
+      heading: cleanText(content.sizes?.heading, defaults.sizes.heading, 80),
+      intro: cleanText(content.sizes?.intro, defaults.sizes.intro, 320),
+      rows: defaults.sizes.rows.map((fallback) => sanitizeSizeRow(sizeById.get(fallback.size), fallback))
+    },
+    printGuide: {
+      heading: cleanText(content.printGuide?.heading, defaults.printGuide.heading, 80),
+      intro: cleanText(content.printGuide?.intro, defaults.printGuide.intro, 500)
+    },
+    roadmap: {
+      heading: cleanText(content.roadmap?.heading, defaults.roadmap.heading, 80),
+      items: (Array.isArray(content.roadmap?.items) ? content.roadmap.items : defaults.roadmap.items)
+        .slice(0, 8)
+        .map((item, index) => ({
+          title: cleanText(item.title, defaults.roadmap.items[index]?.title || "Roadmap item", 90),
+          status: cleanText(item.status, defaults.roadmap.items[index]?.status || "Planned", 40),
+          description: cleanText(item.description, defaults.roadmap.items[index]?.description || "", 220)
+        }))
+    },
+    license: {
+      heading: cleanText(content.license?.heading, defaults.license.heading, 80),
+      body: cleanText(content.license?.body, defaults.license.body, 800)
+    },
+    faq: {
+      heading: cleanText(content.faq?.heading, defaults.faq.heading, 80),
+      items: (Array.isArray(content.faq?.items) ? content.faq.items : defaults.faq.items)
+        .slice(0, 10)
+        .map((item, index) => ({
+          question: cleanText(item.question, defaults.faq.items[index]?.question || "Question", 120),
+          answer: cleanText(item.answer, defaults.faq.items[index]?.answer || "", 360)
+        }))
+    }
+  };
+}
+
 function sanitizeSettings(settings = {}) {
   const heroImage = typeof settings.heroImage === "string" && settings.heroImage.startsWith("data:image/")
     ? settings.heroImage.slice(0, 8_000_000)
@@ -124,7 +270,21 @@ function sanitizeSettings(settings = {}) {
     sceneColor: sanitizeHexColor(settings.sceneColor, defaultBrandSettings.sceneColor),
     heroTitle: String(settings.heroTitle || defaultBrandSettings.heroTitle).trim().slice(0, 120) || defaultBrandSettings.heroTitle,
     heroText: String(settings.heroText || defaultBrandSettings.heroText).trim().slice(0, 320) || defaultBrandSettings.heroText,
-    heroImage
+    heroImage,
+    content: sanitizeContentSettings(settings.content)
+  };
+}
+
+function sanitizeMeasurements(measurements = {}) {
+  const numeric = (value, min, max) => {
+    const number = Number(value);
+    return Number.isFinite(number) ? Math.min(max, Math.max(min, Math.round(number))) : null;
+  };
+  return {
+    headWidth: numeric(measurements.headWidth, 90, 220),
+    bridgeWidth: numeric(measurements.bridgeWidth, 8, 34),
+    templeLength: numeric(measurements.templeLength, 100, 190),
+    updatedAt: measurements.updatedAt || null
   };
 }
 
@@ -270,6 +430,7 @@ function publicUser(user) {
     subscriptionStatus: user.subscriptionStatus || "none",
     subscriptionMode: user.subscriptionMode || "free",
     planEndsAt: user.planEndsAt || null,
+    measurements: sanitizeMeasurements(user.measurements || {}),
     createdAt: user.createdAt,
     updatedAt: user.updatedAt
   };
@@ -417,6 +578,7 @@ function upsertGoogleUser(db, profile) {
     subscriptionStatus: "none",
     subscriptionMode: "free",
     planEndsAt: null,
+    measurements: sanitizeMeasurements({}),
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()
   };
@@ -711,6 +873,7 @@ async function handleApi(req, res, url) {
         subscriptionStatus: "none",
         subscriptionMode: "free",
         planEndsAt: null,
+        measurements: sanitizeMeasurements({}),
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
       };
@@ -724,6 +887,16 @@ async function handleApi(req, res, url) {
   if (req.method === "GET" && pathname === "/api/session") {
     const user = currentUser(req, db);
     if (!user) return sendJson(res, 401, { error: "No active session." });
+    return sendJson(res, 200, { user: publicUser(user) });
+  }
+
+  if (req.method === "PUT" && pathname === "/api/account/measurements") {
+    const user = currentUser(req, db);
+    if (!user) return sendJson(res, 401, { error: "Login is required." });
+    const body = await readBody(req);
+    user.measurements = sanitizeMeasurements({ ...(body.measurements || body), updatedAt: new Date().toISOString() });
+    user.updatedAt = new Date().toISOString();
+    writeDb(db);
     return sendJson(res, 200, { user: publicUser(user) });
   }
 

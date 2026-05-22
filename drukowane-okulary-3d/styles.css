@@ -524,9 +524,23 @@ small,
 }
 
 .download-folder,
-.license-activate {
+.license-activate,
+.fit-profile-card {
   display: grid;
   gap: 0.75rem;
+}
+
+.fit-input-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.55rem;
+}
+
+.fit-actions {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.75rem;
+  align-items: center;
 }
 
 .license-redeem-row {
@@ -1528,6 +1542,161 @@ input[type="password"] {
   color: #b9a8ff;
 }
 
+.content-section {
+  max-width: 86rem;
+  margin: 0 auto;
+  padding: clamp(2.2rem, 5vw, 4.5rem) clamp(1rem, 3vw, 3rem);
+  border-top: 1px solid var(--line);
+  scroll-margin-top: 5.5rem;
+}
+
+.content-section-copy {
+  max-width: 46rem;
+  display: grid;
+  gap: 0.75rem;
+  margin-bottom: 1.2rem;
+}
+
+.content-section-copy h2 {
+  font-size: clamp(2rem, 4.2vw, 4.2rem);
+  line-height: 1;
+}
+
+.content-section-copy p:not(.eyebrow) {
+  color: var(--muted);
+  font-size: clamp(1rem, 1.35vw, 1.15rem);
+  font-weight: 650;
+  line-height: 1.55;
+}
+
+.size-guide-grid,
+.roadmap-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.85rem;
+}
+
+.size-card,
+.roadmap-item,
+.faq-item {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.size-card {
+  display: grid;
+  gap: 0.85rem;
+  padding: 1rem;
+}
+
+.size-card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.size-card-head strong {
+  color: var(--accent-2);
+  font-size: 2.3rem;
+  line-height: 1;
+}
+
+.size-card-head span {
+  color: var(--muted);
+  font-weight: 850;
+}
+
+.size-card dl {
+  display: grid;
+  gap: 0.45rem;
+  margin: 0;
+}
+
+.size-card dl div {
+  display: grid;
+  grid-template-columns: minmax(6rem, 0.9fr) minmax(0, 1fr);
+  gap: 0.65rem;
+}
+
+.size-card dt {
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.size-card dd {
+  margin: 0;
+  font-weight: 850;
+}
+
+.size-card p,
+.roadmap-item p,
+.faq-item p {
+  color: var(--muted);
+  font-size: 0.88rem;
+  font-weight: 680;
+  line-height: 1.45;
+}
+
+.print-guide-panel,
+.license-info-panel {
+  display: grid;
+  min-height: 20rem;
+  align-items: center;
+}
+
+.print-guide-panel .content-section-copy,
+.license-info-panel .content-section-copy {
+  max-width: 58rem;
+}
+
+.roadmap-item {
+  display: grid;
+  gap: 0.55rem;
+  padding: 1rem;
+}
+
+.roadmap-item span {
+  width: fit-content;
+  padding: 0.16rem 0.5rem;
+  border: 1px solid color-mix(in srgb, var(--accent) 42%, var(--line));
+  border-radius: 999px;
+  color: var(--accent-2);
+  background: var(--accent-soft);
+  font-size: 0.7rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.faq-list {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.faq-item {
+  padding: 0.85rem 1rem;
+}
+
+.faq-item summary {
+  cursor: pointer;
+  font-weight: 850;
+}
+
+.faq-item p {
+  margin-top: 0.65rem;
+}
+
+.guide-link-button {
+  width: 100%;
+  justify-content: center;
+  border-color: color-mix(in srgb, var(--accent) 32%, var(--line));
+  background: var(--accent-soft);
+  color: var(--accent-2);
+}
+
 .delete-button {
   color: #9d2f11;
 }
@@ -1626,6 +1795,61 @@ input[type="password"] {
   grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
   gap: 0.65rem;
   align-items: end;
+}
+
+.content-settings-card {
+  display: grid;
+  gap: 1rem;
+}
+
+.plan-content-editor,
+.page-content-editor {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.plan-content-editor {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.content-editor-card {
+  min-width: 0;
+  display: grid;
+  gap: 0.55rem;
+  margin: 0;
+  padding: 0.85rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--subtle-bg);
+}
+
+.content-editor-card.wide {
+  grid-column: 1 / -1;
+}
+
+.content-editor-card legend {
+  padding: 0 0.35rem;
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.content-editor-card textarea {
+  min-height: 5rem;
+  resize: vertical;
+}
+
+.size-editor-grid {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.size-editor-row {
+  display: grid;
+  grid-template-columns: 2rem minmax(6rem, 0.8fr) repeat(2, minmax(4.2rem, 0.45fr)) minmax(7rem, 0.8fr) minmax(7rem, 0.8fr) repeat(4, minmax(4.2rem, 0.45fr)) minmax(10rem, 1.2fr);
+  gap: 0.45rem;
+  align-items: center;
 }
 
 .hero-settings-grid {
@@ -2030,6 +2254,28 @@ input[type="password"] {
     overflow: auto;
   }
 
+  .size-guide-grid,
+  .roadmap-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .plan-content-editor {
+    grid-template-columns: 1fr;
+  }
+
+  .fit-input-grid,
+  .fit-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .size-editor-row {
+    grid-template-columns: 2rem repeat(2, minmax(0, 1fr));
+  }
+
+  .size-editor-row input {
+    min-width: 0;
+  }
+
   .auth-copy {
     min-height: 18rem;
   }
@@ -2049,9 +2295,20 @@ input[type="password"] {
   .topbar-tabs {
     width: 100%;
     flex: 1 1 auto;
+    overflow-x: auto;
+    padding-bottom: 0.2rem;
   }
 
   .pricing-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .size-card dl div {
+    grid-template-columns: 1fr;
+    gap: 0.15rem;
+  }
+
+  .size-editor-row {
     grid-template-columns: 1fr;
   }
 

@@ -160,6 +160,67 @@ const ownerDeveloperEmail = "nyderek@framelab.dev";
 const adminEmails = new Set([ownerDeveloperEmail, "s.nyderek@proton.me"]);
 const defaultAccentColor = "#c96b34";
 const defaultHeroImage = "./assets/frame-lab-hero.png";
+const defaultContentSettings = {
+  plans: [
+    {
+      plan: "basic",
+      name: "Basic",
+      price: "$20",
+      period: "/ month",
+      exports: "15 3MF downloads per month",
+      description: "Full configurator access for personal prints and fit tests."
+    },
+    {
+      plan: "pro",
+      name: "Pro",
+      price: "$45",
+      period: "/ month",
+      exports: "50 3MF downloads per month",
+      description: "More exports for active makers preparing several variants."
+    },
+    {
+      plan: "studio",
+      name: "Plus",
+      price: "$60",
+      period: "/ month",
+      exports: "Unlimited 3MF downloads",
+      description: "Unlimited production exports for heavy use and early studio access."
+    }
+  ],
+  sizes: {
+    heading: "Sizes",
+    intro: "Pick the size from your face width, nose bridge and preferred temple length. The recommendation is a starting point for 3D printed test fits.",
+    rows: [
+      { size: "S", label: "Narrow", headMin: 125, headMax: 137, frameWidth: "126-134 mm", lensWidth: "49-52 mm", bridgeMin: 14, bridgeMax: 17, templeMin: 130, templeMax: 140, note: "Slim faces and smaller nose bridges." },
+      { size: "M", label: "Regular", headMin: 138, headMax: 149, frameWidth: "135-144 mm", lensWidth: "52-55 mm", bridgeMin: 17, bridgeMax: 20, templeMin: 140, templeMax: 150, note: "Most adult fits and balanced sunglasses proportions." },
+      { size: "L", label: "Wide", headMin: 150, headMax: 162, frameWidth: "145-155 mm", lensWidth: "55-59 mm", bridgeMin: 20, bridgeMax: 23, templeMin: 150, templeMax: 160, note: "Wider heads, stronger wrap and longer temples." }
+    ]
+  },
+  printGuide: {
+    heading: "How to print it",
+    intro: "Use PETG, PA-CF or a tough PLA blend for first tests. Print fronts flat, temples on their side, and validate hinge clearance before installing lenses."
+  },
+  roadmap: {
+    heading: "Roadmap",
+    items: [
+      { title: "Crowdfunding release", status: "Next", description: "Backer codes, stable exports and first production-ready sunglasses." },
+      { title: "Lens library", status: "Planned", description: "Printable lens placeholders and templates for cutting transparent sheet lenses." },
+      { title: "Fit calibration", status: "Planned", description: "Guided measurements with size recommendations stored in each account." }
+    ]
+  },
+  license: {
+    heading: "License",
+    body: "Backer access codes unlock downloads according to the selected tier. Personal use is included by default; commercial use can be reserved for a higher tier if needed."
+  },
+  faq: {
+    heading: "FAQ",
+    items: [
+      { question: "Can I configure before I unlock a plan?", answer: "Yes. All frames can be configured first; downloads unlock after activating a code." },
+      { question: "What files do I receive?", answer: "The export is a clean 3MF production file for the selected front, temples, lenses and colors." },
+      { question: "Can I add new frame variants later?", answer: "Yes. Developer tools can add new fronts, left temples, right temples and lens options to each frame post." }
+    ]
+  }
+};
 const defaultBrandSettings = {
   accentColor: defaultAccentColor,
   backgroundColor: "#0c0d0d",
@@ -170,7 +231,8 @@ const defaultBrandSettings = {
   sceneColor: "#070909",
   heroTitle: "Your next frame is 3D printed.",
   heroText: "Choose a collection, combine a front with temples, and prepare a clean production kit for additive manufacturing.",
-  heroImage: ""
+  heroImage: "",
+  content: structuredClone(defaultContentSettings)
 };
 const accountStorageKey = "framelab.account.v1";
 const sessionStorageKey = "framelab.sessionToken.v1";
@@ -398,11 +460,12 @@ const state = {
     firstName: "",
     lastName: "",
     plan: "free",
-    role: "visitor",
-    subscriptionMode: "free",
-    subscriptionStatus: "none",
-    planEndsAt: null
-  },
+	    role: "visitor",
+	    subscriptionMode: "free",
+	    subscriptionStatus: "none",
+	    planEndsAt: null,
+	    measurements: { headWidth: null, bridgeWidth: null, templeLength: null }
+	  },
   pendingPlan: "basic",
   authMode: "login",
   lensMode: "none",
@@ -475,18 +538,24 @@ const els = {
   profileEmail: document.querySelector("#profileEmail"),
   profileName: document.querySelector("#profileName"),
   profileRole: document.querySelector("#profileRole"),
-  profilePlan: document.querySelector("#profilePlan"),
-  profileStatus: document.querySelector("#profileStatus"),
-  profileExports: document.querySelector("#profileExports"),
-  downloadFolder: document.querySelector("#downloadFolder"),
+	  profilePlan: document.querySelector("#profilePlan"),
+	  profileStatus: document.querySelector("#profileStatus"),
+	  profileExports: document.querySelector("#profileExports"),
+	  accountHeadWidth: document.querySelector("#accountHeadWidth"),
+	  accountBridgeWidth: document.querySelector("#accountBridgeWidth"),
+	  accountTempleLength: document.querySelector("#accountTempleLength"),
+	  saveFitProfile: document.querySelector("#saveFitProfile"),
+	  fitRecommendation: document.querySelector("#fitRecommendation"),
+	  downloadFolder: document.querySelector("#downloadFolder"),
   licenseCodeInput: document.querySelector("#licenseCodeInput"),
   redeemLicenseCode: document.querySelector("#redeemLicenseCode"),
   licenseCodeNote: document.querySelector("#licenseCodeNote"),
   profileOpenPlans: document.querySelector("#profileOpenPlans"),
   profileSignOut: document.querySelector("#profileSignOut"),
   cancelSubscription: document.querySelector("#cancelSubscription"),
-  closeProfilePanel: document.querySelector("#closeProfilePanel"),
-  cropPanel: document.querySelector("#cropPanel"),
+	  closeProfilePanel: document.querySelector("#closeProfilePanel"),
+	  pricingGrid: document.querySelector("#pricingGrid"),
+	  cropPanel: document.querySelector("#cropPanel"),
   cropCanvas: document.querySelector("#cropCanvas"),
   cropZoom: document.querySelector("#cropZoom"),
   cropX: document.querySelector("#cropX"),
@@ -519,10 +588,14 @@ const els = {
   collectionRightTempleInput: document.querySelector("#collectionRightTempleInput"),
   collectionLensInput: document.querySelector("#collectionLensInput"),
   addCollection: document.querySelector("#addCollection"),
-  openHome: document.querySelector("#openHome"),
-  openConfigurator: document.querySelector("#openConfigurator"),
-  openGallery: document.querySelector("#openGallery"),
-  openStudio: document.querySelector("#openStudio"),
+	  openHome: document.querySelector("#openHome"),
+	  openConfigurator: document.querySelector("#openConfigurator"),
+	  openGallery: document.querySelector("#openGallery"),
+	  openSizes: document.querySelector("#openSizes"),
+	  openPrintGuide: document.querySelector("#openPrintGuide"),
+	  openLicenseInfo: document.querySelector("#openLicenseInfo"),
+	  openFaq: document.querySelector("#openFaq"),
+	  openStudio: document.querySelector("#openStudio"),
   openLicenses: document.querySelector("#openLicenses"),
   collectionEditorHeading: document.querySelector("#collectionEditorHeading"),
   studioModeLabel: document.querySelector("#studioModeLabel"),
@@ -545,9 +618,23 @@ const els = {
   heroImageInput: document.querySelector("#heroImageInput"),
   resetHeroImage: document.querySelector("#resetHeroImage"),
   brandSettingsNote: document.querySelector("#brandSettingsNote"),
-  storageStatusNote: document.querySelector("#storageStatusNote"),
-  refreshStorageDebug: document.querySelector("#refreshStorageDebug"),
-  storageDebugPanel: document.querySelector("#storageDebugPanel"),
+	  storageStatusNote: document.querySelector("#storageStatusNote"),
+	  refreshStorageDebug: document.querySelector("#refreshStorageDebug"),
+	  storageDebugPanel: document.querySelector("#storageDebugPanel"),
+	  planContentEditor: document.querySelector("#planContentEditor"),
+	  pageContentEditor: document.querySelector("#pageContentEditor"),
+	  sizeGuideHeading: document.querySelector("#sizeGuideHeading"),
+	  sizeGuideIntro: document.querySelector("#sizeGuideIntro"),
+	  sizeGuideRows: document.querySelector("#sizeGuideRows"),
+	  printGuideHeading: document.querySelector("#printGuideHeading"),
+	  printGuideIntro: document.querySelector("#printGuideIntro"),
+	  roadmapHeading: document.querySelector("#roadmapHeading"),
+	  roadmapItems: document.querySelector("#roadmapItems"),
+	  licenseInfoHeading: document.querySelector("#licenseInfoHeading"),
+	  licenseInfoBody: document.querySelector("#licenseInfoBody"),
+	  faqHeading: document.querySelector("#faqHeading"),
+	  faqItems: document.querySelector("#faqItems"),
+	  printGuideButton: document.querySelector("#printGuideButton"),
   licenseCodeType: document.querySelector("#licenseCodeType"),
   licenseCodeQuantity: document.querySelector("#licenseCodeQuantity"),
   generateLicenseCodes: document.querySelector("#generateLicenseCodes"),
@@ -721,7 +808,7 @@ function bindUi() {
   });
 
   els.sunGalleryGrid.addEventListener("click", handleGalleryClick);
-  els.opticalGalleryGrid.addEventListener("click", handleGalleryClick);
+  els.opticalGalleryGrid?.addEventListener("click", handleGalleryClick);
   els.developerCollectionList?.addEventListener("click", handleDeveloperCollectionListClick);
   els.componentFileList.addEventListener("click", handleComponentFileListClick);
   els.frameEditorComponentGallery?.addEventListener("click", handleComponentFileListClick);
@@ -771,6 +858,7 @@ function bindUi() {
   els.signOutAccount.addEventListener("click", () => signOutAccount());
   els.profileSignOut.addEventListener("click", () => signOutAccount());
   els.cancelSubscription.addEventListener("click", () => cancelSubscription());
+  els.saveFitProfile?.addEventListener("click", () => saveFitProfile());
   els.googleLogin.addEventListener("click", () => startOauth("google"));
   els.profileOpenPlans.addEventListener("click", () => {
     els.accountPanel.hidden = true;
@@ -787,6 +875,10 @@ function bindUi() {
       openLicenseActivation(button.dataset.planPick);
     });
   });
+  els.pricingGrid?.addEventListener("click", (event) => {
+    const button = event.target.closest("button[data-plan-pick]");
+    if (button) openLicenseActivation(button.dataset.planPick);
+  });
   [els.cropZoom, els.cropX, els.cropY].forEach((input) => input.addEventListener("input", drawImageCrop));
   els.applyCrop.addEventListener("click", applyImageCrop);
   els.cancelCrop.addEventListener("click", cancelImageCrop);
@@ -802,6 +894,17 @@ function bindUi() {
     renderGallery();
     setActiveSection("home");
     scrollGalleryIntoView();
+  });
+  [
+    [els.openSizes, "#sizeGuidePanel"],
+    [els.openPrintGuide, "#printGuidePanel"],
+    [els.openLicenseInfo, "#licenseInfoPanel"],
+    [els.openFaq, "#faqPanel"]
+  ].forEach(([link, target]) => {
+    link?.addEventListener("click", (event) => {
+      event.preventDefault();
+      scrollHomeSection(target);
+    });
   });
   els.openStudio.addEventListener("click", (event) => {
     event.preventDefault();
@@ -862,6 +965,7 @@ function bindUi() {
   els.generateLicenseCodes.addEventListener("click", () => generateLicenseCodes());
   els.heroBrowse.addEventListener("click", scrollGalleryIntoView);
   els.heroEditor.addEventListener("click", () => setActiveSection("configurator"));
+  els.printGuideButton?.addEventListener("click", () => scrollHomeSection("#printGuidePanel"));
   els.saveCurrentModel.addEventListener("click", saveCurrentModel);
   els.resetParams.addEventListener("click", resetParams);
   els.exportScad.addEventListener("click", exportScad);
@@ -951,6 +1055,85 @@ function sanitizeAccentColor(value, fallback = defaultAccentColor) {
   return sanitizeHexColor(value, fallback);
 }
 
+function cleanText(value, fallback = "", limit = 500) {
+  const text = String(value ?? fallback).trim();
+  return (text || fallback).slice(0, limit);
+}
+
+function normalizePlanContent(item = {}, fallback = {}) {
+  const plan = ["basic", "pro", "studio"].includes(item.plan) ? item.plan : fallback.plan;
+  return {
+    plan,
+    name: cleanText(item.name, fallback.name, 40),
+    price: cleanText(item.price, fallback.price, 24),
+    period: cleanText(item.period, fallback.period, 32),
+    exports: cleanText(item.exports, fallback.exports, 90),
+    description: cleanText(item.description, fallback.description, 180)
+  };
+}
+
+function normalizeSizeRow(row = {}, fallback = {}) {
+  const numberValue = (value, defaultValue, min = 0, max = 300) => {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) return defaultValue;
+    return Math.min(max, Math.max(min, Math.round(numeric)));
+  };
+  return {
+    size: ["S", "M", "L"].includes(row.size) ? row.size : fallback.size,
+    label: cleanText(row.label, fallback.label, 48),
+    headMin: numberValue(row.headMin, fallback.headMin, 90, 220),
+    headMax: numberValue(row.headMax, fallback.headMax, 90, 220),
+    frameWidth: cleanText(row.frameWidth, fallback.frameWidth, 48),
+    lensWidth: cleanText(row.lensWidth, fallback.lensWidth, 48),
+    bridgeMin: numberValue(row.bridgeMin, fallback.bridgeMin, 8, 34),
+    bridgeMax: numberValue(row.bridgeMax, fallback.bridgeMax, 8, 34),
+    templeMin: numberValue(row.templeMin, fallback.templeMin, 100, 190),
+    templeMax: numberValue(row.templeMax, fallback.templeMax, 100, 190),
+    note: cleanText(row.note, fallback.note, 160)
+  };
+}
+
+function normalizeContentSettings(content = {}) {
+  const defaults = structuredClone(defaultContentSettings);
+  const planById = new Map((Array.isArray(content.plans) ? content.plans : []).map((item) => [item.plan, item]));
+  const sizeById = new Map((Array.isArray(content.sizes?.rows) ? content.sizes.rows : []).map((item) => [item.size, item]));
+  return {
+    plans: defaults.plans.map((fallback) => normalizePlanContent(planById.get(fallback.plan), fallback)),
+    sizes: {
+      heading: cleanText(content.sizes?.heading, defaults.sizes.heading, 80),
+      intro: cleanText(content.sizes?.intro, defaults.sizes.intro, 320),
+      rows: defaults.sizes.rows.map((fallback) => normalizeSizeRow(sizeById.get(fallback.size), fallback))
+    },
+    printGuide: {
+      heading: cleanText(content.printGuide?.heading, defaults.printGuide.heading, 80),
+      intro: cleanText(content.printGuide?.intro, defaults.printGuide.intro, 500)
+    },
+    roadmap: {
+      heading: cleanText(content.roadmap?.heading, defaults.roadmap.heading, 80),
+      items: (Array.isArray(content.roadmap?.items) ? content.roadmap.items : defaults.roadmap.items)
+        .slice(0, 8)
+        .map((item, index) => ({
+          title: cleanText(item.title, defaults.roadmap.items[index]?.title || "Roadmap item", 90),
+          status: cleanText(item.status, defaults.roadmap.items[index]?.status || "Planned", 40),
+          description: cleanText(item.description, defaults.roadmap.items[index]?.description || "", 220)
+        }))
+    },
+    license: {
+      heading: cleanText(content.license?.heading, defaults.license.heading, 80),
+      body: cleanText(content.license?.body, defaults.license.body, 800)
+    },
+    faq: {
+      heading: cleanText(content.faq?.heading, defaults.faq.heading, 80),
+      items: (Array.isArray(content.faq?.items) ? content.faq.items : defaults.faq.items)
+        .slice(0, 10)
+        .map((item, index) => ({
+          question: cleanText(item.question, defaults.faq.items[index]?.question || "Question", 120),
+          answer: cleanText(item.answer, defaults.faq.items[index]?.answer || "", 360)
+        }))
+    }
+  };
+}
+
 function normalizeBrandSettings(settings = {}) {
   const heroImage = typeof settings.heroImage === "string" && settings.heroImage.startsWith("data:image/")
     ? settings.heroImage
@@ -965,7 +1148,8 @@ function normalizeBrandSettings(settings = {}) {
     sceneColor: sanitizeHexColor(settings.sceneColor, defaultBrandSettings.sceneColor),
     heroTitle: String(settings.heroTitle || defaultBrandSettings.heroTitle).trim().slice(0, 120) || defaultBrandSettings.heroTitle,
     heroText: String(settings.heroText || defaultBrandSettings.heroText).trim().slice(0, 320) || defaultBrandSettings.heroText,
-    heroImage
+    heroImage,
+    content: normalizeContentSettings(settings.content)
   };
 }
 
@@ -1037,11 +1221,14 @@ function applyBrandSettings() {
   document.documentElement.style.setProperty("--loader-track", rgbaFromHex(text, 0.08));
   document.documentElement.style.colorScheme = colorLuminance(background) > 0.55 ? "light" : "dark";
   if (scene) scene.background = new THREE.Color(sceneBackgroundColor());
-  if (renderer && scene && camera) render();
-  localStorage.setItem(brandSettingsStorageKey, JSON.stringify(state.brandSettings));
-  syncBrandSettingsUi();
-  applyHeroSettings();
-}
+	  if (renderer && scene && camera) render();
+	  localStorage.setItem(brandSettingsStorageKey, JSON.stringify(state.brandSettings));
+	  syncBrandSettingsUi();
+	  applyHeroSettings();
+	  renderPlanCards();
+	  renderMarketingContent();
+	  renderFitRecommendation();
+	}
 
 function syncBrandSettingsUi() {
   if (els.brandAccentColor) els.brandAccentColor.value = state.brandSettings.accentColor;
@@ -1051,32 +1238,234 @@ function syncBrandSettingsUi() {
   if (els.brandTextColor) els.brandTextColor.value = state.brandSettings.textColor;
   if (els.brandMutedColor) els.brandMutedColor.value = state.brandSettings.mutedColor;
   if (els.brandBorderColor) els.brandBorderColor.value = state.brandSettings.borderColor;
-  if (els.brandSceneColor) els.brandSceneColor.value = state.brandSettings.sceneColor;
-  if (els.heroTitleInput) els.heroTitleInput.value = state.brandSettings.heroTitle;
-  if (els.heroTextInput) els.heroTextInput.value = state.brandSettings.heroText;
-}
+	  if (els.brandSceneColor) els.brandSceneColor.value = state.brandSettings.sceneColor;
+	  if (els.heroTitleInput) els.heroTitleInput.value = state.brandSettings.heroTitle;
+	  if (els.heroTextInput) els.heroTextInput.value = state.brandSettings.heroText;
+	  renderContentEditors();
+	}
 
-function applyHeroSettings() {
+	function applyHeroSettings() {
   if (els.heroTitle) els.heroTitle.textContent = state.brandSettings.heroTitle;
   if (els.heroText) els.heroText.textContent = state.brandSettings.heroText;
-  if (els.heroImage) els.heroImage.src = state.brandSettings.heroImage || defaultHeroImage;
+	  if (els.heroImage) els.heroImage.src = state.brandSettings.heroImage || defaultHeroImage;
+	}
+
+function renderPlanCards() {
+  if (!els.pricingGrid) return;
+  const plans = normalizeContentSettings(state.brandSettings.content).plans;
+  els.pricingGrid.innerHTML = plans.map((plan) => {
+    const featured = plan.plan === "pro";
+    const active = state.account.plan === plan.plan;
+    return `
+      <article class="pricing-card${featured ? " featured" : ""}">
+        <span>${escapeHtml(plan.name)}</span>
+        <div class="price-line"><strong>${escapeHtml(plan.price)}</strong><small>${escapeHtml(plan.period)}</small></div>
+        <small>${escapeHtml(plan.exports)}. ${escapeHtml(plan.description)}</small>
+        <button type="button" class="${featured && !active ? "accent" : ""}" data-plan-pick="${escapeHtml(plan.plan)}">${active ? "Current plan" : "Enter code"}</button>
+      </article>
+    `;
+  }).join("");
 }
 
-function syncBrandSettingsFromInputs() {
-  state.brandSettings = normalizeBrandSettings({
-    ...state.brandSettings,
+function renderMarketingContent() {
+  const content = normalizeContentSettings(state.brandSettings.content);
+  if (els.sizeGuideHeading) els.sizeGuideHeading.textContent = content.sizes.heading;
+  if (els.sizeGuideIntro) els.sizeGuideIntro.textContent = content.sizes.intro;
+  if (els.sizeGuideRows) {
+    els.sizeGuideRows.innerHTML = content.sizes.rows.map((row) => `
+      <article class="size-card">
+        <div class="size-card-head">
+          <strong>${escapeHtml(row.size)}</strong>
+          <span>${escapeHtml(row.label)}</span>
+        </div>
+        <dl>
+          <div><dt>Face width</dt><dd>${row.headMin}-${row.headMax} mm</dd></div>
+          <div><dt>Frame width</dt><dd>${escapeHtml(row.frameWidth)}</dd></div>
+          <div><dt>Lens width</dt><dd>${escapeHtml(row.lensWidth)}</dd></div>
+          <div><dt>Bridge</dt><dd>${row.bridgeMin}-${row.bridgeMax} mm</dd></div>
+          <div><dt>Temple</dt><dd>${row.templeMin}-${row.templeMax} mm</dd></div>
+        </dl>
+        <p>${escapeHtml(row.note)}</p>
+      </article>
+    `).join("");
+  }
+  if (els.printGuideHeading) els.printGuideHeading.textContent = content.printGuide.heading;
+  if (els.printGuideIntro) els.printGuideIntro.textContent = content.printGuide.intro;
+  if (els.roadmapHeading) els.roadmapHeading.textContent = content.roadmap.heading;
+  if (els.roadmapItems) {
+    els.roadmapItems.innerHTML = content.roadmap.items.map((item) => `
+      <article class="roadmap-item">
+        <span>${escapeHtml(item.status)}</span>
+        <strong>${escapeHtml(item.title)}</strong>
+        <p>${escapeHtml(item.description)}</p>
+      </article>
+    `).join("");
+  }
+  if (els.licenseInfoHeading) els.licenseInfoHeading.textContent = content.license.heading;
+  if (els.licenseInfoBody) els.licenseInfoBody.textContent = content.license.body;
+  if (els.faqHeading) els.faqHeading.textContent = content.faq.heading;
+  if (els.faqItems) {
+    els.faqItems.innerHTML = content.faq.items.map((item) => `
+      <details class="faq-item">
+        <summary>${escapeHtml(item.question)}</summary>
+        <p>${escapeHtml(item.answer)}</p>
+      </details>
+    `).join("");
+  }
+}
+
+function renderContentEditors() {
+  if (!isDeveloper()) return;
+  const content = normalizeContentSettings(state.brandSettings.content);
+  if (els.planContentEditor) {
+    els.planContentEditor.innerHTML = content.plans.map((plan) => `
+      <fieldset class="content-editor-card" data-plan-editor="${escapeHtml(plan.plan)}">
+        <legend>${escapeHtml(plan.name)} plan</legend>
+        <input data-plan-field="name" type="text" value="${escapeAttr(plan.name)}" placeholder="Plan name" />
+        <input data-plan-field="price" type="text" value="${escapeAttr(plan.price)}" placeholder="$20" />
+        <input data-plan-field="period" type="text" value="${escapeAttr(plan.period)}" placeholder="/ month" />
+        <input data-plan-field="exports" type="text" value="${escapeAttr(plan.exports)}" placeholder="15 3MF downloads per month" />
+        <textarea data-plan-field="description" rows="3" placeholder="Plan description">${escapeHtml(plan.description)}</textarea>
+      </fieldset>
+    `).join("");
+  }
+  if (els.pageContentEditor) {
+    els.pageContentEditor.innerHTML = `
+      <fieldset class="content-editor-card wide">
+        <legend>Sizes</legend>
+        <input data-content-field="sizes.heading" type="text" value="${escapeAttr(content.sizes.heading)}" placeholder="Sizes" />
+        <textarea data-content-field="sizes.intro" rows="3">${escapeHtml(content.sizes.intro)}</textarea>
+        <div class="size-editor-grid">
+          ${content.sizes.rows.map((row) => `
+            <div class="size-editor-row" data-size-editor="${escapeHtml(row.size)}">
+              <strong>${escapeHtml(row.size)}</strong>
+              <input data-size-field="label" type="text" value="${escapeAttr(row.label)}" aria-label="${escapeAttr(row.size)} label" />
+              <input data-size-field="headMin" type="number" value="${row.headMin}" aria-label="${escapeAttr(row.size)} head min" />
+              <input data-size-field="headMax" type="number" value="${row.headMax}" aria-label="${escapeAttr(row.size)} head max" />
+              <input data-size-field="frameWidth" type="text" value="${escapeAttr(row.frameWidth)}" aria-label="${escapeAttr(row.size)} frame width" />
+              <input data-size-field="lensWidth" type="text" value="${escapeAttr(row.lensWidth)}" aria-label="${escapeAttr(row.size)} lens width" />
+              <input data-size-field="bridgeMin" type="number" value="${row.bridgeMin}" aria-label="${escapeAttr(row.size)} bridge min" />
+              <input data-size-field="bridgeMax" type="number" value="${row.bridgeMax}" aria-label="${escapeAttr(row.size)} bridge max" />
+              <input data-size-field="templeMin" type="number" value="${row.templeMin}" aria-label="${escapeAttr(row.size)} temple min" />
+              <input data-size-field="templeMax" type="number" value="${row.templeMax}" aria-label="${escapeAttr(row.size)} temple max" />
+              <input data-size-field="note" type="text" value="${escapeAttr(row.note)}" aria-label="${escapeAttr(row.size)} note" />
+            </div>
+          `).join("")}
+        </div>
+      </fieldset>
+      <fieldset class="content-editor-card wide">
+        <legend>How to print it</legend>
+        <input data-content-field="printGuide.heading" type="text" value="${escapeAttr(content.printGuide.heading)}" />
+        <textarea data-content-field="printGuide.intro" rows="4">${escapeHtml(content.printGuide.intro)}</textarea>
+      </fieldset>
+      <fieldset class="content-editor-card wide">
+        <legend>Roadmap</legend>
+        <input data-content-field="roadmap.heading" type="text" value="${escapeAttr(content.roadmap.heading)}" />
+        <textarea data-list-field="roadmap.items" rows="5">${escapeHtml(serializeRoadmapItems(content.roadmap.items))}</textarea>
+      </fieldset>
+      <fieldset class="content-editor-card wide">
+        <legend>License</legend>
+        <input data-content-field="license.heading" type="text" value="${escapeAttr(content.license.heading)}" />
+        <textarea data-content-field="license.body" rows="4">${escapeHtml(content.license.body)}</textarea>
+      </fieldset>
+      <fieldset class="content-editor-card wide">
+        <legend>FAQ</legend>
+        <input data-content-field="faq.heading" type="text" value="${escapeAttr(content.faq.heading)}" />
+        <textarea data-list-field="faq.items" rows="6">${escapeHtml(serializeFaqItems(content.faq.items))}</textarea>
+      </fieldset>
+    `;
+  }
+}
+
+function serializeRoadmapItems(items = []) {
+  return items.map((item) => `${item.title} | ${item.status} | ${item.description}`).join("\n");
+}
+
+function serializeFaqItems(items = []) {
+  return items.map((item) => `${item.question} | ${item.answer}`).join("\n");
+}
+
+function readContentSettingsFromEditor() {
+  const base = normalizeContentSettings(state.brandSettings.content);
+  const planById = new Map(base.plans.map((plan) => [plan.plan, { ...plan }]));
+  els.planContentEditor?.querySelectorAll("[data-plan-editor]").forEach((card) => {
+    const planId = card.dataset.planEditor;
+    const current = planById.get(planId);
+    if (!current) return;
+    card.querySelectorAll("[data-plan-field]").forEach((field) => {
+      current[field.dataset.planField] = field.value;
+    });
+  });
+  const content = {
+    ...base,
+    plans: [...planById.values()]
+  };
+  els.pageContentEditor?.querySelectorAll("[data-content-field]").forEach((field) => {
+    setContentPath(content, field.dataset.contentField, field.value);
+  });
+  const sizeById = new Map(content.sizes.rows.map((row) => [row.size, { ...row }]));
+  els.pageContentEditor?.querySelectorAll("[data-size-editor]").forEach((rowEl) => {
+    const sizeId = rowEl.dataset.sizeEditor;
+    const row = sizeById.get(sizeId);
+    if (!row) return;
+    rowEl.querySelectorAll("[data-size-field]").forEach((field) => {
+      row[field.dataset.sizeField] = field.value;
+    });
+  });
+  content.sizes.rows = content.sizes.rows.map((row) => sizeById.get(row.size) || row);
+  const roadmapField = els.pageContentEditor?.querySelector('[data-list-field="roadmap.items"]');
+  if (roadmapField) content.roadmap.items = parseRoadmapItems(roadmapField.value);
+  const faqField = els.pageContentEditor?.querySelector('[data-list-field="faq.items"]');
+  if (faqField) content.faq.items = parseFaqItems(faqField.value);
+  return normalizeContentSettings(content);
+}
+
+function setContentPath(target, path, value) {
+  const [section, field] = String(path || "").split(".");
+  if (!section || !field || !target[section]) return;
+  target[section][field] = value;
+}
+
+function parseRoadmapItems(value) {
+  return String(value || "")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .slice(0, 8)
+    .map((line) => {
+      const [title = "", status = "Planned", description = ""] = line.split("|").map((part) => part.trim());
+      return { title, status, description };
+    });
+}
+
+function parseFaqItems(value) {
+  return String(value || "")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .slice(0, 10)
+    .map((line) => {
+      const [question = "", answer = ""] = line.split("|").map((part) => part.trim());
+      return { question, answer };
+    });
+}
+
+	function syncBrandSettingsFromInputs() {
+	  state.brandSettings = normalizeBrandSettings({
+	    ...state.brandSettings,
     accentColor: els.brandAccentText?.value || els.brandAccentColor?.value || state.brandSettings.accentColor,
     backgroundColor: els.brandBackgroundColor?.value || state.brandSettings.backgroundColor,
     surfaceColor: els.brandSurfaceColor?.value || state.brandSettings.surfaceColor,
     textColor: els.brandTextColor?.value || state.brandSettings.textColor,
     mutedColor: els.brandMutedColor?.value || state.brandSettings.mutedColor,
-    borderColor: els.brandBorderColor?.value || state.brandSettings.borderColor,
-    sceneColor: els.brandSceneColor?.value || state.brandSettings.sceneColor,
-    heroTitle: els.heroTitleInput?.value || state.brandSettings.heroTitle,
-    heroText: els.heroTextInput?.value || state.brandSettings.heroText
-  });
-  applyBrandSettings();
-}
+	    borderColor: els.brandBorderColor?.value || state.brandSettings.borderColor,
+	    sceneColor: els.brandSceneColor?.value || state.brandSettings.sceneColor,
+	    heroTitle: els.heroTitleInput?.value || state.brandSettings.heroTitle,
+	    heroText: els.heroTextInput?.value || state.brandSettings.heroText,
+	    content: readContentSettingsFromEditor()
+	  });
+	  applyBrandSettings();
+	}
 
 async function hydrateSystemStatus() {
   try {
@@ -2348,6 +2737,7 @@ function setActiveSection(section) {
   els.studioPanel.hidden = !showStudio || !isDeveloper();
   els.collectionEditorPanel.hidden = !showCollectionEditor || !isDeveloper();
   els.licensePanel.hidden = !showLicenses || !isDeveloper();
+  document.querySelectorAll(".topbar-tabs .nav-link").forEach((link) => link.classList.remove("active"));
   els.openHome.classList.toggle("active", section === "home");
   els.openGallery.classList.toggle("active", false);
   els.openStudio.classList.toggle("active", (showStudio || showCollectionEditor) && isDeveloper());
@@ -2359,11 +2749,26 @@ function setActiveSection(section) {
 }
 
 function scrollGalleryIntoView() {
-  els.galleryPanel.scrollIntoView({ behavior: "smooth", block: "start" });
-  els.openHome.classList.remove("active");
+  scrollToPageTarget(els.galleryPanel);
+  document.querySelectorAll(".topbar-tabs .nav-link").forEach((link) => link.classList.remove("active"));
   els.openGallery.classList.add("active");
-  els.openStudio.classList.remove("active");
-  els.openLicenses.classList.remove("active");
+}
+
+function scrollHomeSection(selector) {
+  setActiveSection("home");
+  requestAnimationFrame(() => {
+    scrollToPageTarget(document.querySelector(selector));
+  });
+  document.querySelectorAll(".topbar-tabs .nav-link").forEach((link) => {
+    link.classList.toggle("active", link.getAttribute("href") === selector);
+  });
+}
+
+function scrollToPageTarget(target) {
+  if (!target) return;
+  const topbarOffset = (els.topbar?.offsetHeight || 72) + 10;
+  const top = Math.max(0, target.getBoundingClientRect().top + window.scrollY - topbarOffset);
+  window.scrollTo({ top, behavior: "smooth" });
 }
 
 function goHome() {
@@ -2399,7 +2804,7 @@ async function apiRequest(path, options = {}) {
 }
 
 function accountFromUser(user) {
-  if (!user) return { email: "", firstName: "", lastName: "", plan: "free", role: "visitor", subscriptionMode: "free", subscriptionStatus: "none", planEndsAt: null };
+  if (!user) return { email: "", firstName: "", lastName: "", plan: "free", role: "visitor", subscriptionMode: "free", subscriptionStatus: "none", planEndsAt: null, measurements: sanitizeMeasurements({}) };
   return {
     email: String(user.email || "").toLowerCase(),
     firstName: String(user.firstName || ""),
@@ -2408,7 +2813,21 @@ function accountFromUser(user) {
     role: user.role === "developer" ? "developer" : "customer",
     subscriptionMode: user.subscriptionMode || "free",
     subscriptionStatus: user.subscriptionStatus || "none",
-    planEndsAt: user.planEndsAt || null
+    planEndsAt: user.planEndsAt || null,
+    measurements: sanitizeMeasurements(user.measurements || {})
+  };
+}
+
+function sanitizeMeasurements(measurements = {}) {
+  const numeric = (value, min, max) => {
+    const number = Number(value);
+    return Number.isFinite(number) ? Math.min(max, Math.max(min, Math.round(number))) : null;
+  };
+  return {
+    headWidth: numeric(measurements.headWidth, 90, 220),
+    bridgeWidth: numeric(measurements.bridgeWidth, 8, 34),
+    templeLength: numeric(measurements.templeLength, 100, 190),
+    updatedAt: measurements.updatedAt || null
   };
 }
 
@@ -2532,6 +2951,7 @@ function updateAccountUi() {
     els.profilePlan.textContent = planLabel(state.account.plan);
     els.profileStatus.textContent = subscriptionStatusLabel();
     if (els.profileExports) els.profileExports.textContent = downloadQuotaLabel();
+    syncFitProfileUi();
     els.cancelSubscription.hidden = isDeveloper() || state.account.subscriptionMode !== "subscription";
     els.cancelSubscription.disabled = state.account.subscriptionStatus !== "active";
   }
@@ -2548,7 +2968,8 @@ function updateAccountUi() {
         : state.account.plan === "basic"
           ? t("accountBasicNote")
           : t("accountFreeNote");
-  els.planPickButtons.forEach((button) => {
+  renderPlanCards();
+  document.querySelectorAll("button[data-plan-pick]").forEach((button) => {
     const picked = button.dataset.planPick === state.account.plan;
     button.textContent = picked ? "Current plan" : "Enter code";
     button.classList.toggle("accent", !picked && button.dataset.planPick === "pro");
@@ -2557,6 +2978,7 @@ function updateAccountUi() {
   renderDownloadFolder();
   renderStaticLicenseCodeList();
   renderLicenseCodeList();
+  renderContentEditors();
   renderGallery();
 }
 
@@ -2616,6 +3038,71 @@ function downloadQuotaLabel() {
   if (!state.downloadQuota) return "Loading";
   if (state.downloadQuota.limit === null) return "Unlimited";
   return `${state.downloadQuota.used} / ${state.downloadQuota.limit} this month`;
+}
+
+function syncFitProfileUi() {
+  const measurements = sanitizeMeasurements(state.account.measurements || {});
+  if (els.accountHeadWidth) els.accountHeadWidth.value = measurements.headWidth || "";
+  if (els.accountBridgeWidth) els.accountBridgeWidth.value = measurements.bridgeWidth || "";
+  if (els.accountTempleLength) els.accountTempleLength.value = measurements.templeLength || "";
+  renderFitRecommendation();
+}
+
+function recommendedSize(measurements = state.account.measurements) {
+  const fit = sanitizeMeasurements(measurements || {});
+  const rows = normalizeContentSettings(state.brandSettings.content).sizes.rows;
+  if (!fit.headWidth && !fit.bridgeWidth && !fit.templeLength) return null;
+  const scoreValue = (value, min, max) => {
+    if (!Number.isFinite(Number(value))) return 0;
+    if (value >= min && value <= max) return 3;
+    const distance = value < min ? min - value : value - max;
+    if (distance <= 3) return 1.4;
+    if (distance <= 7) return 0.5;
+    return -1;
+  };
+  const ranked = rows.map((row) => ({
+    row,
+    score:
+      scoreValue(fit.headWidth, row.headMin, row.headMax) * 1.25 +
+      scoreValue(fit.bridgeWidth, row.bridgeMin, row.bridgeMax) +
+      scoreValue(fit.templeLength, row.templeMin, row.templeMax)
+  })).sort((a, b) => b.score - a.score);
+  return ranked[0]?.row || null;
+}
+
+function renderFitRecommendation() {
+  if (!els.fitRecommendation) return;
+  const suggestion = recommendedSize();
+  els.fitRecommendation.textContent = suggestion
+    ? `Recommended size: ${suggestion.size} (${suggestion.label}).`
+    : "Add your measurements to get a size recommendation.";
+}
+
+async function saveFitProfile() {
+  if (state.account.role === "visitor" || !sessionToken()) {
+    els.accountNote.textContent = "Login first to save your fit profile.";
+    return;
+  }
+  const measurements = sanitizeMeasurements({
+    headWidth: els.accountHeadWidth?.value,
+    bridgeWidth: els.accountBridgeWidth?.value,
+    templeLength: els.accountTempleLength?.value
+  });
+  try {
+    els.saveFitProfile.disabled = true;
+    const payload = await apiRequest("/api/account/measurements", {
+      method: "PUT",
+      body: JSON.stringify({ measurements })
+    });
+    state.account = accountFromUser(payload.user);
+    persistActiveAccount();
+    syncFitProfileUi();
+    log("Fit profile saved.");
+  } catch (error) {
+    if (els.fitRecommendation) els.fitRecommendation.textContent = error.message || "Could not save fit profile.";
+  } finally {
+    els.saveFitProfile.disabled = false;
+  }
 }
 
 function downloadDateLabel(value) {
@@ -2980,6 +3467,7 @@ function upsertAccountProfile(account) {
     subscriptionMode: account.subscriptionMode || existing.subscriptionMode || "free",
     subscriptionStatus: account.subscriptionStatus || existing.subscriptionStatus || "none",
     planEndsAt: account.planEndsAt || existing.planEndsAt || null,
+    measurements: sanitizeMeasurements(account.measurements || existing.measurements || {}),
     createdAt: existing.createdAt || Date.now(),
     updatedAt: Date.now()
   };
@@ -2993,7 +3481,8 @@ function upsertAccountProfile(account) {
     plan: profile.plan,
     subscriptionMode: profile.subscriptionMode,
     subscriptionStatus: profile.subscriptionStatus,
-    planEndsAt: profile.planEndsAt
+    planEndsAt: profile.planEndsAt,
+    measurements: sanitizeMeasurements(profile.measurements || {})
   };
 }
 
@@ -3003,9 +3492,9 @@ function persistActiveAccount(options = {}) {
 }
 
 function renderGallery() {
-  if (!els.sunGalleryGrid || !els.opticalGalleryGrid) return;
+  if (!els.sunGalleryGrid) return;
   els.sunGalleryGrid.innerHTML = "";
-  els.opticalGalleryGrid.innerHTML = "";
+  if (els.opticalGalleryGrid) els.opticalGalleryGrid.innerHTML = "";
   galleryModels().forEach((model, index) => {
     const card = document.createElement("article");
     card.className = `gallery-card${model.id === state.activeModelId ? " active" : ""}`;
@@ -3033,7 +3522,7 @@ function renderGallery() {
         </div>
       </div>
     `;
-    (model.category === "optical" ? els.opticalGalleryGrid : els.sunGalleryGrid).append(card);
+    els.sunGalleryGrid.append(card);
   });
   renderDeveloperCollectionList();
 }
@@ -3071,7 +3560,7 @@ function renderDeveloperCollectionList() {
 }
 
 function galleryModels() {
-  return [...state.models].sort((a, b) => {
+  return state.models.filter((model) => model.category === "sun").sort((a, b) => {
     const categoryOrder = categoryRank(a.category) - categoryRank(b.category);
     if (categoryOrder) return categoryOrder;
     const order = Number(a.order || 0) - Number(b.order || 0);
@@ -4143,6 +4632,7 @@ function loadSettings() {
       state.account.subscriptionMode = profile?.subscriptionMode || storedAccount.subscriptionMode || "free";
       state.account.subscriptionStatus = profile?.subscriptionStatus || storedAccount.subscriptionStatus || "none";
       state.account.planEndsAt = profile?.planEndsAt || storedAccount.planEndsAt || null;
+      state.account.measurements = sanitizeMeasurements(profile?.measurements || storedAccount.measurements || {});
     }
   } catch {
     state.account = accountFromUser(null);
@@ -4384,6 +4874,10 @@ function escapeHtml(value) {
     "\"": "&quot;",
     "'": "&#39;"
   })[char]);
+}
+
+function escapeAttr(value) {
+  return escapeHtml(value);
 }
 
 function downloadText(name, content, type) {

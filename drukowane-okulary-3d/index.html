@@ -16,7 +16,7 @@
         document.documentElement.dataset.appError = event.reason?.message || String(event.reason || "promise");
       });
     </script>
-    <link rel="stylesheet" href="./styles.css?v=developer-components-20260521-2" />
+    <link rel="stylesheet" href="./styles.css?v=sun-content-20260522-1" />
     <script type="importmap">
       {
         "imports": {
@@ -119,6 +119,32 @@
                 <dd id="profileExports">Ready</dd>
               </div>
             </dl>
+            <section class="fit-profile-card" aria-label="Fit profile">
+              <div class="section-head compact-head">
+                <div>
+                  <p class="eyebrow">Fit</p>
+                  <h3>Your measurements</h3>
+                </div>
+              </div>
+              <div class="fit-input-grid">
+                <label class="auth-field">
+                  <span>Face width</span>
+                  <input id="accountHeadWidth" type="number" min="90" max="220" inputmode="decimal" placeholder="145" />
+                </label>
+                <label class="auth-field">
+                  <span>Bridge</span>
+                  <input id="accountBridgeWidth" type="number" min="8" max="34" inputmode="decimal" placeholder="18" />
+                </label>
+                <label class="auth-field">
+                  <span>Temple</span>
+                  <input id="accountTempleLength" type="number" min="100" max="190" inputmode="decimal" placeholder="145" />
+                </label>
+              </div>
+              <div class="fit-actions">
+                <button id="saveFitProfile" type="button" class="accent">Save fit</button>
+                <p id="fitRecommendation" class="account-note"></p>
+              </div>
+            </section>
             <section class="license-activate" aria-label="Activation code">
               <div class="section-head compact-head">
                 <div>
@@ -160,26 +186,7 @@
             </div>
             <button id="closePlansPanel" type="button" class="compact ghost">Close</button>
           </div>
-          <div class="pricing-grid">
-            <article class="pricing-card">
-              <span>Basic</span>
-              <div class="price-line"><strong>$20</strong><small>/ month</small></div>
-              <small>15 3MF downloads per month. Activated with a 12-digit code.</small>
-              <button type="button" data-plan-pick="basic">Enter code</button>
-            </article>
-            <article class="pricing-card featured">
-              <span>Pro</span>
-              <div class="price-line"><strong>$45</strong><small>/ month</small></div>
-              <small>50 3MF downloads per month. Activated with a 12-digit code.</small>
-              <button type="button" class="accent" data-plan-pick="pro">Enter code</button>
-            </article>
-            <article class="pricing-card">
-              <span>Plus</span>
-              <div class="price-line"><strong>$60</strong><small>/ month</small></div>
-              <small>Unlimited 3MF downloads. Activated with a 12-digit code.</small>
-              <button type="button" data-plan-pick="studio">Enter code</button>
-            </article>
-          </div>
+          <div id="pricingGrid" class="pricing-grid"></div>
         </div>
       </section>
 
@@ -227,6 +234,10 @@
           <nav class="topbar-tabs" aria-label="Navigation" data-i18n-attr="aria-label:navLabel">
             <a id="openHome" class="nav-link active" href="#top" data-i18n="tabHome">Start</a>
             <a id="openGallery" class="nav-link" href="#galleryPanel" data-i18n="tabGallery">Collections</a>
+            <a id="openSizes" class="nav-link" href="#sizeGuidePanel">Sizes</a>
+            <a id="openPrintGuide" class="nav-link" href="#printGuidePanel">Print</a>
+            <a id="openLicenseInfo" class="nav-link" href="#licenseInfoPanel">License</a>
+            <a id="openFaq" class="nav-link" href="#faqPanel">FAQ</a>
             <a id="openStudio" class="nav-link nav-admin" href="#developerPanel" data-i18n="tabStudio" hidden>Developer</a>
             <a id="openLicenses" class="nav-link nav-admin" href="#licensePanel" hidden>Codes</a>
           </nav>
@@ -267,12 +278,42 @@
             </div>
             <div id="sunGalleryGrid" class="gallery-grid"></div>
           </section>
-          <section class="collection-section">
-            <div class="collection-head">
-              <h3 data-i18n="opticalHeading">Optical</h3>
-            </div>
-            <div id="opticalGalleryGrid" class="gallery-grid"></div>
-          </section>
+        </section>
+        <section id="sizeGuidePanel" class="content-section size-guide-panel">
+          <div class="content-section-copy">
+            <p class="eyebrow">Fit guide</p>
+            <h2 id="sizeGuideHeading">Sizes</h2>
+            <p id="sizeGuideIntro"></p>
+          </div>
+          <div id="sizeGuideRows" class="size-guide-grid"></div>
+        </section>
+        <section id="printGuidePanel" class="content-section print-guide-panel">
+          <div class="content-section-copy">
+            <p class="eyebrow">Production</p>
+            <h2 id="printGuideHeading">How to print it</h2>
+            <p id="printGuideIntro"></p>
+          </div>
+        </section>
+        <section id="roadmapPanel" class="content-section roadmap-panel">
+          <div class="content-section-copy">
+            <p class="eyebrow">Next</p>
+            <h2 id="roadmapHeading">Roadmap</h2>
+          </div>
+          <div id="roadmapItems" class="roadmap-grid"></div>
+        </section>
+        <section id="licenseInfoPanel" class="content-section license-info-panel">
+          <div class="content-section-copy">
+            <p class="eyebrow">Access</p>
+            <h2 id="licenseInfoHeading">License</h2>
+            <p id="licenseInfoBody"></p>
+          </div>
+        </section>
+        <section id="faqPanel" class="content-section faq-panel">
+          <div class="content-section-copy">
+            <p class="eyebrow">Support</p>
+            <h2 id="faqHeading">FAQ</h2>
+          </div>
+          <div id="faqItems" class="faq-list"></div>
         </section>
       </main>
 
@@ -296,6 +337,7 @@
             </div>
             <div id="builderControls" class="builder-controls"></div>
           </section>
+          <button id="printGuideButton" type="button" class="guide-link-button">How to print it</button>
 
           <div id="controls" class="hidden-utility" hidden></div>
           <button id="resetParams" class="hidden-utility" type="button" hidden>Reset</button>
@@ -399,6 +441,16 @@
           </div>
           <pre id="storageDebugPanel" class="storage-debug-panel" hidden></pre>
         </section>
+        <section class="studio-card content-settings-card">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Content</p>
+              <h3>Plans and public sections</h3>
+            </div>
+          </div>
+          <div id="planContentEditor" class="plan-content-editor"></div>
+          <div id="pageContentEditor" class="page-content-editor"></div>
+        </section>
       </section>
 
       <section id="collectionEditorPanel" class="studio-panel collection-editor-panel" hidden>
@@ -433,7 +485,6 @@
             <input id="collectionTitle" type="text" data-i18n-attr="placeholder:collectionTitlePlaceholder" placeholder="Collection title" />
             <select id="collectionCategory" class="component-select">
               <option value="sun" data-i18n="sunCategory">Sunglasses</option>
-              <option value="optical" data-i18n="opticalCategory">Optical</option>
             </select>
             <select id="collectionAccess" class="component-select">
               <option value="basic">Basic</option>
@@ -549,6 +600,6 @@
       </section>
     </div>
 
-    <script type="module" src="./src/app.js?v=developer-components-20260521-2"></script>
+    <script type="module" src="./src/app.js?v=sun-content-20260522-1"></script>
   </body>
 </html>
