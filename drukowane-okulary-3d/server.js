@@ -967,10 +967,8 @@ async function handleApi(req, res, url) {
   if (req.method === "GET" && pathname.startsWith("/api/auth/oauth/")) {
     const provider = pathname.split("/").pop();
     return sendJson(res, 501, {
-      error: `${provider} OAuth is ready to wire, but provider credentials are not configured yet.`,
-      required: provider === "apple"
-        ? ["APPLE_CLIENT_ID", "APPLE_TEAM_ID", "APPLE_KEY_ID", "APPLE_PRIVATE_KEY_PATH"]
-        : ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"]
+      error: `${provider} OAuth is not enabled for Frame Lab.`,
+      required: provider === "google" ? ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"] : []
     });
   }
 

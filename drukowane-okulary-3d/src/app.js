@@ -497,7 +497,6 @@ const els = {
   signInAccount: document.querySelector("#signInAccount"),
   signOutAccount: document.querySelector("#signOutAccount"),
   googleLogin: document.querySelector("#googleLogin"),
-  appleLogin: document.querySelector("#appleLogin"),
   closeAccountPanel: document.querySelector("#closeAccountPanel"),
   closePlansPanel: document.querySelector("#closePlansPanel"),
   planButtons: document.querySelectorAll("button[data-plan]"),
@@ -770,7 +769,6 @@ function bindUi() {
   els.profileSignOut.addEventListener("click", () => signOutAccount());
   els.cancelSubscription.addEventListener("click", () => cancelSubscription());
   els.googleLogin.addEventListener("click", () => startOauth("google"));
-  els.appleLogin.addEventListener("click", () => startOauth("apple"));
   els.profileOpenPlans.addEventListener("click", () => {
     els.accountPanel.hidden = true;
     openPlansPanel();
@@ -2937,7 +2935,7 @@ async function startOauth(provider) {
     const payload = await apiRequest(`/api/auth/oauth/${provider}`);
     if (payload.url) window.location.href = payload.url;
   } catch (error) {
-    els.accountNote.textContent = `${provider === "apple" ? "Apple" : "Google"} login needs provider credentials before it can go live.`;
+    els.accountNote.textContent = "Google login needs provider credentials before it can go live.";
   }
 }
 
