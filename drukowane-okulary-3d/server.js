@@ -136,6 +136,7 @@ const defaultBrandSettings = {
   heroTitle: "Your next frame is 3D printed.",
   heroText: "Choose a collection, combine a front with temples, and prepare a clean production kit for additive manufacturing.",
   heroImage: "",
+  heroModelId: "",
   content: cloneJson(defaultContentSettings)
 };
 const maxRequestBodySize = 80_000_000;
@@ -295,6 +296,7 @@ function sanitizeSettings(settings = {}) {
     heroTitle: String(settings.heroTitle || defaultBrandSettings.heroTitle).trim().slice(0, 120) || defaultBrandSettings.heroTitle,
     heroText: String(settings.heroText || defaultBrandSettings.heroText).trim().slice(0, 320) || defaultBrandSettings.heroText,
     heroImage,
+    heroModelId: String(settings.heroModelId || "").trim().slice(0, 120),
     content: sanitizeContentSettings(settings.content)
   };
 }

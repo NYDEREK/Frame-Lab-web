@@ -235,6 +235,7 @@ const defaultBrandSettings = {
   heroTitle: "Your next frame is 3D printed.",
   heroText: "Choose a collection, combine a front with temples, and prepare a clean production kit for additive manufacturing.",
   heroImage: "",
+  heroModelId: "",
   content: structuredClone(defaultContentSettings)
 };
 const accountStorageKey = "framelab.account.v1";
@@ -622,6 +623,7 @@ const els = {
   resetBrandSettings: document.querySelector("#resetBrandSettings"),
   heroTitleInput: document.querySelector("#heroTitleInput"),
   heroTextInput: document.querySelector("#heroTextInput"),
+  heroEditorTarget: document.querySelector("#heroEditorTarget"),
   heroImageInput: document.querySelector("#heroImageInput"),
   resetHeroImage: document.querySelector("#resetHeroImage"),
   brandSettingsNote: document.querySelector("#brandSettingsNote"),
@@ -1005,6 +1007,11 @@ function bindUi() {
     applyBrandSettings();
     if (els.brandSettingsNote) els.brandSettingsNote.textContent = "Previewing hero text. Save to publish it.";
   });
+  els.heroEditorTarget?.addEventListener("change", () => {
+    state.brandSettings.heroModelId = els.heroEditorTarget.value;
+    applyBrandSettings();
+    if (els.brandSettingsNote) els.brandSettingsNote.textContent = "Previewing hero editor target. Save to publish it.";
+  });
   els.heroImageInput?.addEventListener("change", handleHeroImageSelect);
   els.resetHeroImage?.addEventListener("click", () => {
     state.brandSettings.heroImage = "";
@@ -1033,7 +1040,7 @@ function bindUi() {
   els.refreshStorageDebug?.addEventListener("click", () => loadStorageDebug());
   els.generateLicenseCodes.addEventListener("click", () => generateLicenseCodes());
   els.heroBrowse.addEventListener("click", scrollGalleryIntoView);
-  els.heroEditor.addEventListener("click", () => navigateToView("configurator"));
+  els.heroEditor.addEventListener("click", openHeroEditorTarget);
   els.printGuideButton?.addEventListener("click", () => scrollHomeSection("#printGuidePanel"));
   els.openPrintGuideImage?.addEventListener("click", openPrintGuideLightbox);
   els.closeImageLightbox?.addEventListener("click", closePrintGuideLightbox);
@@ -1256,6 +1263,7 @@ function normalizeBrandSettings(settings = {}) {
     heroTitle: String(settings.heroTitle || defaultBrandSettings.heroTitle).trim().slice(0, 120) || defaultBrandSettings.heroTitle,
     heroText: String(settings.heroText || defaultBrandSettings.heroText).trim().slice(0, 320) || defaultBrandSettings.heroText,
     heroImage,
+    heroModelId: String(settings.heroModelId || "").trim().slice(0, 120),
     content: normalizeContentSettings(settings.content)
   };
 }
@@ -1348,6 +1356,7 @@ function syncBrandSettingsUi() {
 	  if (els.brandSceneColor) els.brandSceneColor.value = state.brandSettings.sceneColor;
 	  if (els.heroTitleInput) els.heroTitleInput.value = state.brandSettings.heroTitle;
 	  if (els.heroTextInput) els.heroTextInput.value = state.brandSettings.heroText;
+	  renderHeroEditorTargetOptions();
 	  renderContentEditors();
 	}
 
@@ -1585,6 +1594,7 @@ function parseFaqItems(value) {
 	    sceneColor: els.brandSceneColor?.value || state.brandSettings.sceneColor,
 	    heroTitle: els.heroTitleInput?.value || state.brandSettings.heroTitle,
 	    heroText: els.heroTextInput?.value || state.brandSettings.heroText,
+	    heroModelId: els.heroEditorTarget?.value || state.brandSettings.heroModelId,
 	    content: readContentSettingsFromEditor()
 	  });
 	  applyBrandSettings();
@@ -3798,6 +3808,36 @@ function renderGallery() {
     els.sunGalleryGrid.append(card);
   });
   renderDeveloperCollectionList();
+  renderHeroEditorTargetOptions();
+}
+
+function heroEditorModel() {
+  const models = galleryModels();
+  return models.find((model) => model.id === state.brandSettings.heroModelId) || models[0] || state.models[0] || null;
+}
+
+function renderHeroEditorTargetOptions() {
+  if (!els.heroEditorTarget) return;
+  const models = galleryModels();
+  const selected = heroEditorModel();
+  els.heroEditorTarget.innerHTML = models.length
+    ? models.map((model) => `<option value="${escapeHtml(model.id)}">${escapeHtml(model.name)}</option>`).join("")
+    : `<option value="">No available collections</option>`;
+  els.heroEditorTarget.disabled = models.length === 0;
+  els.heroEditorTarget.value = selected?.id || "";
+}
+
+function openHeroEditorTarget() {
+  const model = heroEditorModel();
+  if (model) selectModel(model.id);
+  navigateToView("configurator");
+}
+
+function repairDeletedHeroEditorTarget(deletedModelId) {
+  if (state.brandSettings.heroModelId !== deletedModelId) return;
+  state.brandSettings.heroModelId = heroEditorModel()?.id || "";
+  applyBrandSettings();
+  saveBrandSettings();
 }
 
 function renderDeveloperCollectionList() {
@@ -3888,6 +3928,7 @@ function handleGalleryClick(event) {
     if (state.activeModelId === model.id) selectModel(state.models[0]?.id || defaultModelId, { logSelection: false });
     normalizeGalleryOrder(model.category);
     persistModels();
+    repairDeletedHeroEditorTarget(model.id);
     renderGallery();
     log(`Deleted model: ${model.name}.`);
   }
@@ -3914,6 +3955,7 @@ function handleDeveloperCollectionListClick(event) {
     if (state.activeModelId === model.id) selectModel(state.models[0]?.id || defaultModelId, { logSelection: false });
     normalizeGalleryOrder(model.category);
     persistModels();
+    repairDeletedHeroEditorTarget(model.id);
     renderGallery();
     log(`Deleted model: ${model.name}.`);
   }

@@ -16,7 +16,7 @@
         document.documentElement.dataset.appError = event.reason?.message || String(event.reason || "promise");
       });
     </script>
-    <link rel="stylesheet" href="./styles.css?v=navigation-lightbox-20260523-3" />
+    <link rel="stylesheet" href="./styles.css?v=hero-target-20260523-1" />
     <script type="importmap">
       {
         "imports": {
@@ -439,6 +439,10 @@
           <div class="hero-settings-grid">
             <input id="heroTitleInput" type="text" data-i18n-attr="placeholder:heroTitlePlaceholder" placeholder="Hero title" />
             <input id="heroTextInput" type="text" data-i18n-attr="placeholder:heroTextPlaceholder" placeholder="Hero text" />
+            <label class="hero-target-control">
+              <span>Open editor target</span>
+              <select id="heroEditorTarget" class="component-select" aria-label="Collection opened by hero editor button"></select>
+            </label>
             <label class="file-button" for="heroImageInput">
               <input id="heroImageInput" type="file" accept="image/*" />
               <span data-i18n="heroImageFile">Hero image</span>
@@ -611,6 +615,6 @@
       </section>
     </div>
 
-    <script type="module" src="./src/app.js?v=navigation-lightbox-20260523-3"></script>
+    <script type="module" src="./src/app.js?v=hero-target-20260523-1"></script>
   </body>
 </html>
