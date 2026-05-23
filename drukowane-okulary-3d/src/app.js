@@ -502,6 +502,7 @@ const state = {
 };
 
 const els = {
+  topbar: document.querySelector(".topbar"),
   homePage: document.querySelector("#homePage"),
   workspace: document.querySelector("#workspace"),
   studioPanel: document.querySelector("#developerPanel"),
@@ -598,6 +599,7 @@ const els = {
 	  openGallery: document.querySelector("#openGallery"),
 	  openSizes: document.querySelector("#openSizes"),
 	  openPrintGuide: document.querySelector("#openPrintGuide"),
+	  openRoadmap: document.querySelector("#openRoadmap"),
 	  openLicenseInfo: document.querySelector("#openLicenseInfo"),
 	  openFaq: document.querySelector("#openFaq"),
 	  openStudio: document.querySelector("#openStudio"),
@@ -635,6 +637,10 @@ const els = {
 	  printGuideIntro: document.querySelector("#printGuideIntro"),
 	  printGuideFigure: document.querySelector("#printGuideFigure"),
 	  printGuideImage: document.querySelector("#printGuideImage"),
+	  openPrintGuideImage: document.querySelector("#openPrintGuideImage"),
+	  imageLightbox: document.querySelector("#imageLightbox"),
+	  lightboxImage: document.querySelector("#lightboxImage"),
+	  closeImageLightbox: document.querySelector("#closeImageLightbox"),
 	  roadmapHeading: document.querySelector("#roadmapHeading"),
 	  roadmapItems: document.querySelector("#roadmapItems"),
 	  licenseInfoHeading: document.querySelector("#licenseInfoHeading"),
@@ -692,6 +698,7 @@ let cameraBaseDistance = 250;
 let cameraBaseHeight = 0;
 let componentPreviewRenderers = [];
 let sharedComponentPreviewRenderer = null;
+let navigationScrollFrame = null;
 
 init();
 
@@ -723,6 +730,7 @@ async function init() {
   updateGeneratedSource();
   render();
   renderGallery();
+  setupNavigation();
   animate();
 }
 
@@ -932,17 +940,17 @@ function bindUi() {
     goHome();
   });
   els.brandHome?.addEventListener("click", goHome);
-  els.openConfigurator.addEventListener("click", () => setActiveSection("configurator"));
+  els.openConfigurator.addEventListener("click", () => navigateToView("configurator"));
   els.openGallery.addEventListener("click", (event) => {
     event.preventDefault();
     syncActiveModel();
     renderGallery();
-    setActiveSection("home");
     scrollGalleryIntoView();
   });
   [
     [els.openSizes, "#sizeGuidePanel"],
     [els.openPrintGuide, "#printGuidePanel"],
+    [els.openRoadmap, "#roadmapPanel"],
     [els.openLicenseInfo, "#licenseInfoPanel"],
     [els.openFaq, "#faqPanel"]
   ].forEach(([link, target]) => {
@@ -953,22 +961,22 @@ function bindUi() {
   });
   els.openStudio.addEventListener("click", (event) => {
     event.preventDefault();
-    setActiveSection("developer");
+    navigateToView("developer");
   });
   els.clearStudioEdit?.addEventListener("click", () => {
     clearCollectionForm();
-    setActiveSection("collection-editor");
+    navigateToView("collection-editor");
   });
   els.backToDeveloper?.addEventListener("click", () => {
-    setActiveSection("developer");
+    navigateToView("developer");
   });
   els.newDeveloperCollection?.addEventListener("click", () => {
     clearCollectionForm();
-    setActiveSection("collection-editor");
+    navigateToView("collection-editor");
   });
   els.openLicenses.addEventListener("click", async (event) => {
     event.preventDefault();
-    setActiveSection("licenses");
+    navigateToView("licenses");
     await Promise.all([loadStaticLicenseCodes(), loadLicenseCodes()]);
   });
   els.brandAccentColor?.addEventListener("input", () => {
@@ -1025,8 +1033,16 @@ function bindUi() {
   els.refreshStorageDebug?.addEventListener("click", () => loadStorageDebug());
   els.generateLicenseCodes.addEventListener("click", () => generateLicenseCodes());
   els.heroBrowse.addEventListener("click", scrollGalleryIntoView);
-  els.heroEditor.addEventListener("click", () => setActiveSection("configurator"));
+  els.heroEditor.addEventListener("click", () => navigateToView("configurator"));
   els.printGuideButton?.addEventListener("click", () => scrollHomeSection("#printGuidePanel"));
+  els.openPrintGuideImage?.addEventListener("click", openPrintGuideLightbox);
+  els.closeImageLightbox?.addEventListener("click", closePrintGuideLightbox);
+  els.imageLightbox?.addEventListener("click", (event) => {
+    if (event.target === els.imageLightbox) closePrintGuideLightbox();
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && els.imageLightbox && !els.imageLightbox.hidden) closePrintGuideLightbox();
+  });
   els.saveCurrentModel.addEventListener("click", saveCurrentModel);
   els.resetParams.addEventListener("click", resetParams);
   els.exportScad.addEventListener("click", exportScad);
@@ -1385,7 +1401,10 @@ function renderMarketingContent() {
   if (els.printGuideFigure && els.printGuideImage) {
     const image = sanitizeContentImage(content.printGuide.image, "");
     els.printGuideFigure.hidden = !image;
-    if (image) els.printGuideImage.src = image;
+    if (image) {
+      els.printGuideImage.src = image;
+      if (els.lightboxImage) els.lightboxImage.src = image;
+    }
   }
   if (els.roadmapHeading) els.roadmapHeading.textContent = content.roadmap.heading;
   if (els.roadmapItems) {
@@ -2874,43 +2893,143 @@ function setActiveSection(section) {
   els.studioPanel.hidden = !showStudio || !isDeveloper();
   els.collectionEditorPanel.hidden = !showCollectionEditor || !isDeveloper();
   els.licensePanel.hidden = !showLicenses || !isDeveloper();
-  document.querySelectorAll(".topbar-tabs .nav-link").forEach((link) => link.classList.remove("active"));
-  els.openHome.classList.toggle("active", section === "home");
-  els.openGallery.classList.toggle("active", false);
-  els.openStudio.classList.toggle("active", (showStudio || showCollectionEditor) && isDeveloper());
-  els.openLicenses.classList.toggle("active", showLicenses && isDeveloper());
+  if (section === "home") {
+    setActiveHomeLink("#top");
+  } else {
+    document.querySelectorAll(".topbar-tabs .nav-link").forEach((link) => link.classList.remove("active"));
+    els.openStudio.classList.toggle("active", (showStudio || showCollectionEditor) && isDeveloper());
+    els.openLicenses.classList.toggle("active", showLicenses && isDeveloper());
+  }
   if (showEditor) {
     resize();
     render();
   }
+  return section;
 }
 
-function scrollGalleryIntoView() {
-  scrollToPageTarget(els.galleryPanel);
+function homeNavigationEntries() {
+  return [
+    { selector: "#top", element: document.querySelector(".hero-page"), link: els.openHome },
+    { selector: "#galleryPanel", element: els.galleryPanel, link: els.openGallery },
+    { selector: "#sizeGuidePanel", element: document.querySelector("#sizeGuidePanel"), link: els.openSizes },
+    { selector: "#printGuidePanel", element: document.querySelector("#printGuidePanel"), link: els.openPrintGuide },
+    { selector: "#roadmapPanel", element: document.querySelector("#roadmapPanel"), link: els.openRoadmap },
+    { selector: "#licenseInfoPanel", element: document.querySelector("#licenseInfoPanel"), link: els.openLicenseInfo },
+    { selector: "#faqPanel", element: document.querySelector("#faqPanel"), link: els.openFaq }
+  ].filter((entry) => entry.element && entry.link);
+}
+
+function setActiveHomeLink(selector) {
   document.querySelectorAll(".topbar-tabs .nav-link").forEach((link) => link.classList.remove("active"));
-  els.openGallery.classList.add("active");
+  const entry = homeNavigationEntries().find((item) => item.selector === selector);
+  (entry?.link || els.openHome).classList.add("active");
 }
 
-function scrollHomeSection(selector) {
+function routeForView(section) {
+  return {
+    configurator: "#configurator",
+    developer: "#developer",
+    "collection-editor": "#frame-editor",
+    licenses: "#codes"
+  }[section] || "#top";
+}
+
+function updateNavigationHistory(hash, options = {}) {
+  if (window.location.hash === hash && !options.replace) return;
+  const method = options.replace ? "replaceState" : "pushState";
+  window.history[method]({ frameLabRoute: hash }, "", hash);
+}
+
+function navigateToView(section, options = {}) {
+  const activeSection = setActiveSection(section);
+  updateNavigationHistory(routeForView(activeSection), options);
+  if (activeSection !== "home") window.scrollTo({ top: 0, behavior: "auto" });
+}
+
+function scrollGalleryIntoView(options = {}) {
+  scrollHomeSection("#galleryPanel", options);
+}
+
+function scrollHomeSection(selector, options = {}) {
+  const targetSelector = homeNavigationEntries().some((entry) => entry.selector === selector) ? selector : "#top";
   setActiveSection("home");
-  requestAnimationFrame(() => {
-    scrollToPageTarget(document.querySelector(selector));
-  });
-  document.querySelectorAll(".topbar-tabs .nav-link").forEach((link) => {
-    link.classList.toggle("active", link.getAttribute("href") === selector);
-  });
+  setActiveHomeLink(targetSelector);
+  if (options.history !== false) updateNavigationHistory(targetSelector, { replace: options.replace });
+  const target = targetSelector === "#top" ? document.querySelector(".hero-page") : document.querySelector(targetSelector);
+  scrollToPageTarget(target, options.behavior || "smooth");
 }
 
-function scrollToPageTarget(target) {
+function scrollToPageTarget(target, behavior = "smooth") {
   if (!target) return;
   const topbarOffset = (els.topbar?.offsetHeight || 72) + 10;
-  const top = Math.max(0, target.getBoundingClientRect().top + window.scrollY - topbarOffset);
-  window.scrollTo({ top, behavior: "smooth" });
+  target.style.scrollMarginTop = `${topbarOffset}px`;
+  target.scrollIntoView({ behavior, block: "start" });
 }
 
 function goHome() {
-  setActiveSection("home");
-  window.scrollTo({ top: 0, behavior: "smooth" });
+  scrollHomeSection("#top");
+}
+
+function syncActiveHomeSection() {
+  if (els.homePage.hidden) return;
+  const entries = homeNavigationEntries();
+  const marker = (els.topbar?.offsetHeight || 72) + Math.min(window.innerHeight * 0.22, 180);
+  let active = entries[0];
+  entries.forEach((entry) => {
+    if (entry.element.getBoundingClientRect().top <= marker) active = entry;
+  });
+  if (active) setActiveHomeLink(active.selector);
+}
+
+function restoreNavigationRoute() {
+  if (els.imageLightbox && !els.imageLightbox.hidden) closePrintGuideLightbox({ restoreFocus: false });
+  const viewSections = {
+    "#configurator": "configurator",
+    "#developer": "developer",
+    "#frame-editor": "collection-editor",
+    "#codes": "licenses"
+  };
+  const view = viewSections[window.location.hash];
+  if (view) {
+    const activeSection = setActiveSection(view);
+    if (activeSection !== view) updateNavigationHistory("#top", { replace: true });
+    window.scrollTo({ top: 0, behavior: "auto" });
+    return;
+  }
+  const selector = homeNavigationEntries().some((entry) => entry.selector === window.location.hash)
+    ? window.location.hash
+    : "#top";
+  if (selector === "#top" && window.location.hash !== selector) updateNavigationHistory(selector, { replace: true });
+  scrollHomeSection(selector, { history: false, behavior: "auto" });
+}
+
+function setupNavigation() {
+  const initialHash = window.location.hash || "#top";
+  updateNavigationHistory(initialHash, { replace: true });
+  window.addEventListener("popstate", restoreNavigationRoute);
+  window.addEventListener("scroll", () => {
+    if (navigationScrollFrame !== null) return;
+    navigationScrollFrame = requestAnimationFrame(() => {
+      navigationScrollFrame = null;
+      syncActiveHomeSection();
+    });
+  }, { passive: true });
+  restoreNavigationRoute();
+}
+
+function openPrintGuideLightbox() {
+  if (!els.imageLightbox || !els.printGuideImage?.src || els.printGuideFigure?.hidden) return;
+  els.lightboxImage.src = els.printGuideImage.src;
+  els.imageLightbox.hidden = false;
+  document.body.classList.add("lightbox-open");
+  els.closeImageLightbox?.focus();
+}
+
+function closePrintGuideLightbox(options = {}) {
+  if (!els.imageLightbox || els.imageLightbox.hidden) return;
+  els.imageLightbox.hidden = true;
+  document.body.classList.remove("lightbox-open");
+  if (options.restoreFocus !== false) els.openPrintGuideImage?.focus();
 }
 
 async function handleHeroImageSelect() {
@@ -3554,7 +3673,7 @@ async function signOutAccount() {
   els.accountPasswordConfirm.value = "";
   els.accountFirstName.value = "";
   els.accountLastName.value = "";
-  setActiveSection("home");
+  goHome();
   updateAccountUi();
   log("Signed out.");
 }
@@ -3731,7 +3850,7 @@ function handleGalleryClick(event) {
   if (!model) return;
   if (button.dataset.action === "open") {
     selectModel(model.id);
-    setActiveSection("configurator");
+    navigateToView("configurator");
     return;
   }
   if (button.dataset.action === "export") {
@@ -3867,7 +3986,7 @@ async function handleScadImport(event) {
   state.models.unshift(model);
   persistModels();
   selectModel(model.id);
-  setActiveSection("configurator");
+  navigateToView("configurator");
   log(`Added ${file.name}. Detected ${Object.keys(parsed).length} Frame Lab-compatible parameters.`);
   event.target.value = "";
 }
@@ -3967,7 +4086,7 @@ async function addCollectionFromStudio() {
   clearCollectionUploadInputs();
   els.addCollection.textContent = "Save changes";
   syncStudioModeUi();
-  setActiveSection("collection-editor");
+  navigateToView("collection-editor");
   log(`${existing ? "Updated" : "Added"} collection: ${model.name}.`);
 }
 
@@ -4080,7 +4199,7 @@ function startModelEdit(model) {
   els.collectionLensInput.value = "";
   els.addCollection.textContent = "Save changes";
   syncStudioModeUi();
-  setActiveSection("collection-editor");
+  navigateToView("collection-editor");
   log(`Editing collection: ${model.name}.`);
 }
 

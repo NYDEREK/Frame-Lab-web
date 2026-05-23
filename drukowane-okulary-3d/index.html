@@ -16,7 +16,7 @@
         document.documentElement.dataset.appError = event.reason?.message || String(event.reason || "promise");
       });
     </script>
-    <link rel="stylesheet" href="./styles.css?v=sun-fixes-20260523-1" />
+    <link rel="stylesheet" href="./styles.css?v=navigation-lightbox-20260523-3" />
     <script type="importmap">
       {
         "imports": {
@@ -236,6 +236,7 @@
             <a id="openGallery" class="nav-link" href="#galleryPanel" data-i18n="tabGallery">Collections</a>
             <a id="openSizes" class="nav-link" href="#sizeGuidePanel">Sizes</a>
             <a id="openPrintGuide" class="nav-link" href="#printGuidePanel">Print</a>
+            <a id="openRoadmap" class="nav-link" href="#roadmapPanel">Roadmap</a>
             <a id="openLicenseInfo" class="nav-link" href="#licenseInfoPanel">License</a>
             <a id="openFaq" class="nav-link" href="#faqPanel">FAQ</a>
             <a id="openStudio" class="nav-link nav-admin" href="#developerPanel" data-i18n="tabStudio" hidden>Developer</a>
@@ -294,7 +295,9 @@
             <p id="printGuideIntro"></p>
           </div>
           <figure id="printGuideFigure" class="print-guide-figure" hidden>
-            <img id="printGuideImage" alt="Honeycomb lens slicer preview" />
+            <button id="openPrintGuideImage" class="print-guide-image-button" type="button" aria-label="Enlarge print preview">
+              <img id="printGuideImage" alt="Honeycomb lens slicer preview" />
+            </button>
           </figure>
         </section>
         <section id="roadmapPanel" class="content-section roadmap-panel">
@@ -319,6 +322,11 @@
           <div id="faqItems" class="faq-list"></div>
         </section>
       </main>
+
+      <div id="imageLightbox" class="image-lightbox" role="dialog" aria-modal="true" aria-label="Enlarged print preview" hidden>
+        <button id="closeImageLightbox" class="lightbox-close" type="button" aria-label="Close enlarged image">Close</button>
+        <img id="lightboxImage" alt="Honeycomb lens slicer preview enlarged" />
+      </div>
 
       <main id="workspace" class="workspace" hidden>
         <section class="viewer-panel" aria-label="Podglad modelu 3D">
@@ -603,6 +611,6 @@
       </section>
     </div>
 
-    <script type="module" src="./src/app.js?v=sun-fixes-20260523-1"></script>
+    <script type="module" src="./src/app.js?v=navigation-lightbox-20260523-3"></script>
   </body>
 </html>
