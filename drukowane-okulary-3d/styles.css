@@ -1819,14 +1819,20 @@ input[type="password"] {
 }
 
 .roadmap-item span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   width: fit-content;
-  padding: 0.16rem 0.5rem;
+  min-height: 1.65rem;
+  padding: 0 0.62rem;
   border: 1px solid color-mix(in srgb, var(--accent) 42%, var(--line));
   border-radius: 999px;
   color: var(--accent-2);
   background: var(--accent-soft);
   font-size: 0.7rem;
   font-weight: 900;
+  line-height: 1;
+  letter-spacing: 0;
   text-transform: uppercase;
 }
 
