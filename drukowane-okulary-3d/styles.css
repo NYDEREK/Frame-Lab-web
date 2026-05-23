@@ -994,6 +994,19 @@ input[type="password"] {
   gap: 0.7rem;
 }
 
+.assembly-size-panel {
+  display: grid;
+  gap: 0.65rem;
+  padding: 0.78rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--subtle-bg);
+}
+
+.assembly-size-panel strong {
+  font-size: 0.9rem;
+}
+
 .component-card {
   display: grid;
   gap: 0.7rem;

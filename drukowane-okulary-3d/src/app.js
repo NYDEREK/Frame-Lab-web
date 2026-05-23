@@ -50,6 +50,7 @@ const translations = {
     heroEditor: "Open editor",
     builderKicker: "",
     builderHeading: "Components",
+    frameSize: "Frame size",
     frontComponent: "Front",
     leftTempleComponent: "Left temple",
     rightTempleComponent: "Right temple",
@@ -494,6 +495,7 @@ const state = {
   system: {
     storage: { persistent: false, source: "unknown", message: "" }
   },
+  assemblySize: "M",
   assembly: {
     front: { modelId: "frame001-front", size: "M" },
     leftTemple: { modelId: "frame001-temple-left", size: "M" },
@@ -850,9 +852,9 @@ function bindUi() {
       return;
     }
 
-    const button = event.target.closest("[data-component-size]");
+    const button = event.target.closest("[data-assembly-size]");
     if (!button) return;
-    state.assembly[button.dataset.componentSize].size = button.dataset.size;
+    setAssemblySize(button.dataset.assemblySize);
     applyAssemblyToParams();
     buildBuilderControls();
     buildControls();
@@ -1778,9 +1780,39 @@ function buildBuilderControls() {
     { key: "rightTemple", label: t("rightTempleComponent"), items: templeItemsForKey("rightTemple") },
     { key: "lens", label: t("lensComponent"), items: componentLibrary.lenses, optional: true }
   ];
-  els.builderControls.innerHTML = `${colorSlotPaletteTemplate()}${parts.map((part) => componentCardTemplate(part)).join("")}`;
-  renderComponentPreviews(parts);
+  const sizedParts = parts.map((part) => ({
+    ...part,
+    allItems: part.items,
+    items: part.items.filter((item) => item.sizes?.[state.assemblySize])
+  }));
+  els.builderControls.innerHTML = `${assemblySizeTemplate()}${colorSlotPaletteTemplate()}${sizedParts.map((part) => componentCardTemplate(part)).join("")}`;
+  renderComponentPreviews(sizedParts);
   renderComponentFileList();
+}
+
+function assemblySizeTemplate() {
+  const completeSizes = availableAssemblySizes();
+  return `
+    <article class="assembly-size-panel">
+      <strong>${t("frameSize")}</strong>
+      <div class="size-row" role="group" aria-label="${t("frameSize")}">
+        ${["S", "M", "L"].map((size) => `
+          <button type="button" class="size-chip${state.assemblySize === size ? " active" : ""}" data-assembly-size="${size}" aria-pressed="${state.assemblySize === size}" ${completeSizes.includes(size) || state.assemblySize === size ? "" : "disabled"}>
+            ${size}
+          </button>
+        `).join("")}
+      </div>
+    </article>
+  `;
+}
+
+function availableAssemblySizes() {
+  const requiredParts = [
+    componentLibrary.fronts,
+    templeItemsForKey("leftTemple"),
+    templeItemsForKey("rightTemple")
+  ];
+  return ["S", "M", "L"].filter((size) => requiredParts.every((items) => items.some((item) => item.sizes?.[size])));
 }
 
 function colorSlotPaletteTemplate() {
@@ -1807,15 +1839,20 @@ function componentCardTemplate(part) {
   const selection = state.assembly[part.key];
   const selectedModel = part.items.find((item) => item.id === selection.modelId) || (part.optional ? null : part.items[0]);
   if (!selectedModel && part.items.length === 0) {
+    const hasOtherSizes = Boolean(part.allItems?.length);
+    const detail = hasOtherSizes ? `No ${state.assemblySize} option available` : t("noLensComponent");
+    const note = hasOtherSizes
+      ? `${escapeHtml(part.label)} is not available in size ${state.assemblySize}.`
+      : `${escapeHtml(part.label)} is not available in this collection.`;
     return `
       <article class="component-card">
         <div class="component-head">
           <div>
             <strong>${escapeHtml(part.label)}</strong>
-            <small>${t("noLensComponent")}</small>
+            <small>${detail}</small>
           </div>
         </div>
-        <div class="compatibility-note">Add a ${escapeHtml(part.label)} component to make it available in this selector.</div>
+        <div class="compatibility-note">${note}</div>
       </article>
     `;
   }
@@ -1836,23 +1873,17 @@ function componentCardTemplate(part) {
       </article>
     `;
   }
-  const availableSizes = Object.keys(selectedModel.sizes);
   const options = [
     ...(part.optional ? [noLensOptionTemplate(part)] : []),
     ...part.items.map((item) => optionCardTemplate(part, item, item.id === selectedModel.id))
   ].join("");
   const color = state.componentColors[part.key] || selectedModel.materialColor || state.frameColor;
-  const sizes = ["S", "M", "L"].map((size) => `
-    <button type="button" class="size-chip${selection.size === size ? " active" : ""}" data-component-size="${part.key}" data-size="${size}" ${availableSizes.includes(size) ? "" : "disabled"}>
-      ${size}
-    </button>
-  `).join("");
   return `
     <article class="component-card">
       <div class="component-head">
         <div>
           <strong>${escapeHtml(part.label)}</strong>
-          <small>${escapeHtml(selectedModel.name)} · ${selection.size}</small>
+          <small>${escapeHtml(selectedModel.name)}</small>
         </div>
         <label class="component-color" style="--component-color:${escapeHtml(color)}" title="${escapeHtml(part.label)} color">
           <input type="color" value="${escapeHtml(color)}" data-component-color="${part.key}" aria-label="${escapeHtml(part.label)} color" />
@@ -1869,27 +1900,25 @@ function componentCardTemplate(part) {
         <summary>${t("variants")} (${part.items.length})</summary>
         <div class="component-option-grid">${options}</div>
       </details>
-      <div class="size-row">${sizes}</div>
     </article>
   `;
 }
 
 function optionCardTemplate(part, item, active) {
-  const firstAvailableSize = Object.keys(item.sizes)[0] || "M";
   return `
     <button type="button" class="component-option${active ? " active" : ""}" data-component-option="${part.key}" data-model-id="${item.id}">
       <canvas class="component-option-canvas" data-option-preview="${part.key}:${item.id}" aria-label="${escapeHtml(item.name)} 3D"></canvas>
       <span class="component-option-main">
         <strong>${escapeHtml(item.name)}</strong>
-        <small>${escapeHtml(componentOptionMeta(part, item, firstAvailableSize))}</small>
+        <small>${escapeHtml(componentOptionMeta(part, item))}</small>
       </span>
     </button>
   `;
 }
 
-function componentOptionMeta(part, item, size) {
+function componentOptionMeta(part, item) {
   const side = item.kind === "temple" ? ` · ${templeSideLabel(item.templeSide)}` : "";
-  return `${componentTypeLabel(part.key)}${side} · ${size}`;
+  return `${componentTypeLabel(part.key)}${side}`;
 }
 
 function noLensOptionTemplate(part) {
@@ -2051,15 +2080,12 @@ function previewMaterial(item, colorOverride = "") {
 }
 
 function applyAssemblyToParams() {
+  syncAssemblySizes();
   const front = selectedFront();
   const leftTemple = selectedTemple("leftTemple");
   const rightTemple = selectedTemple("rightTemple");
   const lens = selectedLens();
   if (!front || !leftTemple || !rightTemple) return;
-  normalizeAssemblySize("front", front);
-  normalizeAssemblySize("leftTemple", leftTemple);
-  normalizeAssemblySize("rightTemple", rightTemple);
-  if (lens) normalizeAssemblySize("lens", lens);
   const frontSize = front.sizes[state.assembly.front.size] || firstSize(front);
   const leftSize = leftTemple.sizes[state.assembly.leftTemple.size] || firstSize(leftTemple);
   const rightSize = rightTemple.sizes[state.assembly.rightTemple.size] || firstSize(rightTemple);
@@ -2075,10 +2101,28 @@ function applyAssemblyToParams() {
   };
 }
 
-function normalizeAssemblySize(key, item) {
-  if (!item.sizes[state.assembly[key].size]) {
-    state.assembly[key].size = Object.keys(item.sizes)[0] || "M";
-  }
+function setAssemblySize(size) {
+  state.assemblySize = ["S", "M", "L"].includes(size) ? size : "M";
+  syncAssemblySizes();
+  [
+    { key: "front", items: componentLibrary.fronts },
+    { key: "leftTemple", items: templeItemsForKey("leftTemple") },
+    { key: "rightTemple", items: templeItemsForKey("rightTemple") },
+    { key: "lens", items: componentLibrary.lenses, optional: true }
+  ].forEach(({ key, items, optional }) => {
+    if (optional && !state.assembly[key].modelId) return;
+    const selected = items.find((item) => item.id === state.assembly[key].modelId);
+    if (selected?.sizes?.[state.assemblySize]) return;
+    const replacement = items.find((item) => item.sizes?.[state.assemblySize]);
+    if (replacement) state.assembly[key].modelId = replacement.id;
+    else if (optional) state.assembly[key].modelId = "";
+  });
+}
+
+function syncAssemblySizes() {
+  ["front", "leftTemple", "rightTemple", "lens"].forEach((key) => {
+    state.assembly[key].size = state.assemblySize;
+  });
 }
 
 function firstSize(item) {
@@ -2429,10 +2473,14 @@ function repairAssemblyForActiveModel(model = currentModelRecord()) {
   state.assembly.lens = assemblyPartExists(lensPart, componentLibrary.lenses)
     ? lensPart
     : { modelId: "", size: "M" };
+  const storedSize = model?.assembly?.size || state.assembly.front.size || "M";
+  const completeSizes = availableAssemblySizes();
+  setAssemblySize(completeSizes.includes(storedSize) ? storedSize : completeSizes[0] || storedSize);
 }
 
 function serializeAssemblySelection() {
   return {
+    size: state.assemblySize,
     front: { ...state.assembly.front },
     leftTemple: { ...state.assembly.leftTemple },
     rightTemple: { ...state.assembly.rightTemple },
@@ -4090,6 +4138,8 @@ async function addCollectionFromStudio() {
   if (leftTempleComponents[0]) assembly.leftTemple = { modelId: leftTempleComponents[0].id, size: leftTempleComponents[0].size };
   if (rightTempleComponents[0]) assembly.rightTemple = { modelId: rightTempleComponents[0].id, size: rightTempleComponents[0].size };
   if (lensComponents[0]) assembly.lens = { modelId: lensComponents[0].id, size: lensComponents[0].size };
+  const initialComponent = frontComponents[0] || leftTempleComponents[0] || rightTempleComponents[0] || lensComponents[0];
+  if (!existing && initialComponent) assembly.size = initialComponent.size;
   const category = els.collectionCategory.value === "optical" ? "optical" : "sun";
   const nextOrder = Math.max(-1, ...state.models.filter((item) => item.category === category).map((item) => Number(item.order || 0))) + 1;
   const model = normalizeStoredModel({
@@ -4412,6 +4462,7 @@ async function addComponentFile() {
     if (side === "left" || side === "universal") state.assembly.leftTemple = { modelId: component.id, size: component.size };
     if (side === "right" || side === "universal") state.assembly.rightTemple = { modelId: component.id, size: component.size };
   }
+  setAssemblySize(component.size);
   applyAssemblyToParams();
   buildBuilderControls();
   buildControls();
@@ -4746,10 +4797,10 @@ async function downloadAssemblyPackage() {
 
 function getSelectedUploadedComponents() {
   const selected = [
-    { role: "front", item: selectedFront(), size: state.assembly.front.size },
-    { role: "leftTemple", item: selectedTemple("leftTemple"), size: state.assembly.leftTemple.size },
-    { role: "rightTemple", item: selectedTemple("rightTemple"), size: state.assembly.rightTemple.size },
-    { role: "lens", item: selectedLens(), size: state.assembly.lens.size }
+    { role: "front", item: selectedFront(), size: state.assemblySize },
+    { role: "leftTemple", item: selectedTemple("leftTemple"), size: state.assemblySize },
+    { role: "rightTemple", item: selectedTemple("rightTemple"), size: state.assemblySize },
+    { role: "lens", item: selectedLens(), size: state.assemblySize }
   ];
   return selected
     .filter(({ item }) => item?.source === "uploaded")
@@ -4770,10 +4821,11 @@ function buildAssemblyManifest(selectedFiles) {
     version: 1,
     createdAt: new Date().toISOString(),
     assembly: {
-      front: serializeAssemblyPart("front", selectedFront(), state.assembly.front.size),
-      leftTemple: serializeAssemblyPart("leftTemple", selectedTemple("leftTemple"), state.assembly.leftTemple.size),
-      rightTemple: serializeAssemblyPart("rightTemple", selectedTemple("rightTemple"), state.assembly.rightTemple.size),
-      lens: serializeAssemblyPart("lens", selectedLens(), state.assembly.lens.size)
+      size: state.assemblySize,
+      front: serializeAssemblyPart("front", selectedFront(), state.assemblySize),
+      leftTemple: serializeAssemblyPart("leftTemple", selectedTemple("leftTemple"), state.assemblySize),
+      rightTemple: serializeAssemblyPart("rightTemple", selectedTemple("rightTemple"), state.assemblySize),
+      lens: serializeAssemblyPart("lens", selectedLens(), state.assemblySize)
     },
     parameters: state.params,
     lens: currentLensConfig(),
