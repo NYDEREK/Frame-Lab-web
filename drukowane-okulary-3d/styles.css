@@ -1141,6 +1141,7 @@ input[type="password"] {
 }
 
 .component-color {
+  margin-left: auto;
   min-height: 2.1rem;
   display: inline-flex;
   align-items: center;
