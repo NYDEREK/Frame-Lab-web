@@ -16,7 +16,7 @@
         document.documentElement.dataset.appError = event.reason?.message || String(event.reason || "promise");
       });
     </script>
-    <link rel="stylesheet" href="./styles.css?v=frame-size-20260524-1" />
+    <link rel="stylesheet" href="./styles.css?v=loading-states-20260524-1" />
     <script type="importmap">
       {
         "imports": {
@@ -277,7 +277,44 @@
             <div class="collection-head">
               <h3 data-i18n="sunHeading">Sunglasses</h3>
             </div>
-            <div id="sunGalleryGrid" class="gallery-grid"></div>
+            <div id="sunGalleryGrid" class="gallery-grid gallery-grid-loading" aria-busy="true" aria-label="Loading sunglasses collections">
+              <div class="gallery-loading-status" role="status">
+                <span class="gallery-loading-spinner" aria-hidden="true"></span>
+                <span>Loading collections</span>
+              </div>
+              <article class="gallery-card gallery-skeleton" aria-hidden="true">
+                <div class="gallery-thumb"><span class="gallery-skeleton-preview"></span></div>
+                <div class="gallery-body">
+                  <span class="gallery-skeleton-line gallery-skeleton-title"></span>
+                  <span class="gallery-skeleton-line gallery-skeleton-copy"></span>
+                  <span class="gallery-skeleton-action"></span>
+                </div>
+              </article>
+              <article class="gallery-card gallery-skeleton" aria-hidden="true">
+                <div class="gallery-thumb"><span class="gallery-skeleton-preview"></span></div>
+                <div class="gallery-body">
+                  <span class="gallery-skeleton-line gallery-skeleton-title"></span>
+                  <span class="gallery-skeleton-line gallery-skeleton-copy"></span>
+                  <span class="gallery-skeleton-action"></span>
+                </div>
+              </article>
+              <article class="gallery-card gallery-skeleton" aria-hidden="true">
+                <div class="gallery-thumb"><span class="gallery-skeleton-preview"></span></div>
+                <div class="gallery-body">
+                  <span class="gallery-skeleton-line gallery-skeleton-title"></span>
+                  <span class="gallery-skeleton-line gallery-skeleton-copy"></span>
+                  <span class="gallery-skeleton-action"></span>
+                </div>
+              </article>
+              <article class="gallery-card gallery-skeleton" aria-hidden="true">
+                <div class="gallery-thumb"><span class="gallery-skeleton-preview"></span></div>
+                <div class="gallery-body">
+                  <span class="gallery-skeleton-line gallery-skeleton-title"></span>
+                  <span class="gallery-skeleton-line gallery-skeleton-copy"></span>
+                  <span class="gallery-skeleton-action"></span>
+                </div>
+              </article>
+            </div>
           </section>
         </section>
         <section id="sizeGuidePanel" class="content-section size-guide-panel">
@@ -615,6 +652,17 @@
       </section>
     </div>
 
-    <script type="module" src="./src/app.js?v=first-variant-20260524-2"></script>
+    <script>
+      window.frameLabBoot = { ready: false, editorRequested: false };
+      document.querySelector("#heroEditor")?.addEventListener("click", () => {
+        if (window.frameLabBoot.ready) return;
+        window.frameLabBoot.editorRequested = true;
+        const overlay = document.querySelector("#loaderOverlay");
+        document.querySelector("#loaderTitle").textContent = "Loading editor";
+        document.querySelector("#loaderText").textContent = "Preparing frame options and 3D previews...";
+        overlay.hidden = false;
+      });
+    </script>
+    <script type="module" src="./src/app.js?v=preserve-view-20260524-1"></script>
   </body>
 </html>

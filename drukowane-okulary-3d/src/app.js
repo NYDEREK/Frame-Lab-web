@@ -490,6 +490,13 @@ const state = {
     rightTemple: "",
     lens: ""
   },
+  colorEditor: {
+    key: "",
+    draft: ""
+  },
+  openComponentOptions: {
+    front: true
+  },
   colorSlots: [...defaultColorSlots],
   brandSettings: structuredClone(defaultBrandSettings),
   system: {
@@ -703,6 +710,7 @@ let cameraBaseHeight = 0;
 let componentPreviewRenderers = [];
 let sharedComponentPreviewRenderer = null;
 let navigationScrollFrame = null;
+const bootState = window.frameLabBoot || { ready: false, editorRequested: false };
 
 init();
 
@@ -735,6 +743,11 @@ async function init() {
   render();
   renderGallery();
   setupNavigation();
+  bootState.ready = true;
+  if (bootState.editorRequested) {
+    openHeroEditorTarget();
+    showLoader(false);
+  }
   animate();
 }
 
@@ -777,7 +790,7 @@ function bindUi() {
     document.querySelector(`#${input.dataset.param}Output`).value = formatValue(input.value, findParam(input.dataset.param)?.[6] || "");
     state.previewMode = "parametric";
     updateGeneratedSource();
-    render();
+    render({ fitView: false });
     syncActiveModel({ persist: false });
     scheduleModelPersist();
   });
@@ -790,15 +803,16 @@ function bindUi() {
       state.colorSlots = normalizeColorSlots(state.colorSlots);
       persistColorSlots();
       buildBuilderControls();
-      render();
+      render({ fitView: false });
       return;
     }
 
-    const colorInput = event.target.closest("[data-component-color]");
-    if (colorInput) {
-      state.componentColors[colorInput.dataset.componentColor] = colorInput.value;
-      colorInput.closest(".component-color")?.style.setProperty("--component-color", colorInput.value);
-      render();
+    const draftInput = event.target.closest("[data-component-color-draft]");
+    if (draftInput) {
+      state.colorEditor.draft = sanitizeHexColor(draftInput.value, defaultAccentColor);
+      draftInput.closest(".component-color-popover")?.style.setProperty("--draft-color", state.colorEditor.draft);
+      const valueOutput = draftInput.closest(".component-color-popover")?.querySelector(".component-color-value");
+      if (valueOutput) valueOutput.textContent = state.colorEditor.draft.toUpperCase();
       return;
     }
 
@@ -809,31 +823,56 @@ function bindUi() {
     buildBuilderControls();
     buildControls();
     updateGeneratedSource();
-    render();
+    render({ fitView: false });
     syncActiveModel({ persist: false });
     scheduleModelPersist();
   });
+
+  els.builderControls.addEventListener("toggle", (event) => {
+    const details = event.target.closest("details[data-component-options]");
+    if (!details) return;
+    state.openComponentOptions[details.dataset.componentOptions] = details.open;
+  }, true);
 
   els.builderControls.addEventListener("click", (event) => {
     const colorSlot = event.target.closest("[data-apply-color-slot]");
     if (colorSlot) {
       const key = colorSlot.dataset.applyColorSlot;
       state.componentColors[key] = sanitizeHexColor(colorSlot.dataset.color, state.componentColors[key] || defaultAccentColor);
+      state.colorEditor.key = "";
+      state.colorEditor.draft = "";
       buildBuilderControls();
-      render();
+      render({ fitView: false });
       syncActiveModel({ persist: false });
       scheduleModelPersist();
       return;
     }
 
-    if (event.target.closest("[data-apply-color-all]")) {
-      const color = state.colorSlots[0] || defaultAccentColor;
-      state.componentColors.front = color;
-      state.componentColors.leftTemple = color;
-      state.componentColors.rightTemple = color;
-      state.componentColors.lens = color;
+    const openColorEditor = event.target.closest("[data-open-component-color]");
+    if (openColorEditor) {
+      const key = openColorEditor.dataset.openComponentColor;
+      state.colorEditor.key = key;
+      state.colorEditor.draft = sanitizeHexColor(openColorEditor.dataset.currentColor, defaultAccentColor);
       buildBuilderControls();
-      render();
+      return;
+    }
+
+    const cancelColorEditor = event.target.closest("[data-cancel-component-color]");
+    if (cancelColorEditor) {
+      state.colorEditor.key = "";
+      state.colorEditor.draft = "";
+      buildBuilderControls();
+      return;
+    }
+
+    const applyColorEditor = event.target.closest("[data-apply-component-color]");
+    if (applyColorEditor) {
+      const key = applyColorEditor.dataset.applyComponentColor;
+      state.componentColors[key] = sanitizeHexColor(state.colorEditor.draft, state.componentColors[key] || defaultAccentColor);
+      state.colorEditor.key = "";
+      state.colorEditor.draft = "";
+      buildBuilderControls();
+      render({ fitView: false });
       syncActiveModel({ persist: false });
       scheduleModelPersist();
       return;
@@ -846,7 +885,7 @@ function bindUi() {
       buildBuilderControls();
       buildControls();
       updateGeneratedSource();
-      render();
+      render({ fitView: false });
       syncActiveModel({ persist: false });
       scheduleModelPersist();
       return;
@@ -859,7 +898,7 @@ function bindUi() {
     buildBuilderControls();
     buildControls();
     updateGeneratedSource();
-    render();
+    render({ fitView: false });
     syncActiveModel({ persist: false });
     scheduleModelPersist();
   });
@@ -1821,7 +1860,6 @@ function colorSlotPaletteTemplate() {
     <article class="color-slots-panel">
       <div class="color-slots-head">
         <strong>Color slots</strong>
-        <button type="button" class="compact" data-apply-color-all>Apply to all</button>
       </div>
       <div class="color-slots-grid">
         ${slots.map((color, index) => `
@@ -1866,7 +1904,7 @@ function componentCardTemplate(part) {
             <small>${t("noLensComponent")}</small>
           </div>
         </div>
-        <details class="component-options">
+        <details class="component-options" data-component-options="${part.key}" ${state.openComponentOptions[part.key] ? "open" : ""}>
           <summary>${t("variants")} (${part.items.length})</summary>
           <div class="component-option-grid">${options}</div>
         </details>
@@ -1878,6 +1916,8 @@ function componentCardTemplate(part) {
     ...part.items.map((item) => optionCardTemplate(part, item, item.id === selectedModel.id))
   ].join("");
   const color = state.componentColors[part.key] || selectedModel.materialColor || state.frameColor;
+  const editorOpen = state.colorEditor.key === part.key;
+  const draftColor = editorOpen ? state.colorEditor.draft : color;
   return `
     <article class="component-card">
       <div class="component-head">
@@ -1885,22 +1925,37 @@ function componentCardTemplate(part) {
           <strong>${escapeHtml(part.label)}</strong>
           <small>${escapeHtml(selectedModel.name)}</small>
         </div>
-        <label class="component-color" style="--component-color:${escapeHtml(color)}" title="${escapeHtml(part.label)} color">
-          <input type="color" value="${escapeHtml(color)}" data-component-color="${part.key}" aria-label="${escapeHtml(part.label)} color" />
+        <button type="button" class="component-color" style="--component-color:${escapeHtml(color)}" data-open-component-color="${part.key}" data-current-color="${escapeHtml(color)}" title="${escapeHtml(part.label)} color" aria-label="Edit ${escapeHtml(part.label)} color" aria-expanded="${editorOpen}">
           <span class="component-color-chip" aria-hidden="true"></span>
           <span class="component-color-corner" aria-hidden="true"></span>
-        </label>
+        </button>
       </div>
+      ${editorOpen ? componentColorPopoverTemplate(part, draftColor) : ""}
       <div class="component-color-slots" aria-label="${escapeHtml(part.label)} color slots">
         ${state.colorSlots.map((slotColor, index) => `
           <button type="button" class="color-slot-button" style="--slot-color:${escapeHtml(slotColor)}" data-apply-color-slot="${part.key}" data-color="${escapeHtml(slotColor)}" title="Apply color slot ${index + 1}"></button>
         `).join("")}
       </div>
-      <details class="component-options" ${part.key === "front" ? "open" : ""}>
+      <details class="component-options" data-component-options="${part.key}" ${state.openComponentOptions[part.key] ? "open" : ""}>
         <summary>${t("variants")} (${part.items.length})</summary>
         <div class="component-option-grid">${options}</div>
       </details>
     </article>
+  `;
+}
+
+function componentColorPopoverTemplate(part, color) {
+  return `
+    <div class="component-color-popover" style="--draft-color:${escapeHtml(color)}" role="dialog" aria-label="${escapeHtml(part.label)} color picker">
+      <div class="component-color-picker-field">
+        <input type="color" value="${escapeHtml(color)}" data-component-color-draft="${part.key}" aria-label="${escapeHtml(part.label)} selected color" />
+        <span class="component-color-value">${escapeHtml(color.toUpperCase())}</span>
+      </div>
+      <div class="component-color-picker-actions">
+        <button type="button" class="compact" data-cancel-component-color>Cancel</button>
+        <button type="button" class="compact accent" data-apply-component-color="${part.key}">Apply</button>
+      </div>
+    </div>
   `;
 }
 
@@ -2539,7 +2594,8 @@ function persistColorSlots() {
   localStorage.setItem(colorSlotsStorageKey, JSON.stringify(normalizeColorSlots(state.colorSlots)));
 }
 
-function render() {
+function render(options = {}) {
+  const { fitView = true } = options;
   modelGroup.clear();
   modelGroup.position.set(0, 8, 0);
   modelBasePosition.copy(modelGroup.position);
@@ -2554,7 +2610,7 @@ function render() {
     renderParametricPreview();
   }
   updateMetrics();
-  fitCameraToObject(modelGroup);
+  if (fitView) fitCameraToObject(modelGroup);
   els.polyCount.textContent = `${triangleCount.toLocaleString("en-US")} tris`;
   els.meshStatus.textContent = state.meshObject ? "STL" : selectedAssemblyHasMeshes() ? "3MF" : "Preview";
 }
@@ -2911,6 +2967,11 @@ function selectModel(id, options = {}) {
   const { rebuildControls = true, renderScene = true, logSelection = true, captureThumbnail = false } = options;
   const model = state.models.find((item) => item.id === id) || state.models[0] || createDefaultModel();
   if (!state.models.includes(model)) state.models.unshift(model);
+  if (state.activeModelId !== model.id) {
+    state.openComponentOptions = { front: true };
+  }
+  state.colorEditor.key = "";
+  state.colorEditor.draft = "";
   state.activeModelId = model.id;
   state.modelName = model.name;
   state.scadSource = model.scadSource;
@@ -3845,6 +3906,9 @@ function persistActiveAccount(options = {}) {
 
 function renderGallery() {
   if (!els.sunGalleryGrid) return;
+  els.sunGalleryGrid.classList.remove("gallery-grid-loading");
+  els.sunGalleryGrid.removeAttribute("aria-busy");
+  els.sunGalleryGrid.removeAttribute("aria-label");
   els.sunGalleryGrid.innerHTML = "";
   if (els.opticalGalleryGrid) els.opticalGalleryGrid.innerHTML = "";
   galleryModels().forEach((model, index) => {

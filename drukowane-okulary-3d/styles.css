@@ -1008,6 +1008,7 @@ input[type="password"] {
 }
 
 .component-card {
+  position: relative;
   display: grid;
   gap: 0.7rem;
   padding: 0.78rem;
@@ -1102,19 +1103,8 @@ input[type="password"] {
     0 0.55rem 1.4rem rgba(0, 0, 0, 0.26);
   cursor: pointer;
   transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
-}
-
-.component-color input {
-  position: absolute;
-  inset: 0;
-  z-index: 3;
-  width: 100%;
-  height: 100%;
-  border: 0;
+  min-height: 0;
   padding: 0;
-  opacity: 0;
-  background: transparent;
-  cursor: pointer;
 }
 
 .component-color-chip {
@@ -1152,9 +1142,66 @@ input[type="password"] {
   transform: translateY(-1px);
 }
 
-.component-color:focus-within {
+.component-color:focus-visible {
   outline: 2px solid color-mix(in srgb, var(--accent) 70%, transparent);
   outline-offset: 3px;
+}
+
+.component-color-popover {
+  position: absolute;
+  top: 3.45rem;
+  right: 0.78rem;
+  z-index: 8;
+  width: min(14.5rem, calc(100% - 1.56rem));
+  display: grid;
+  gap: 0.7rem;
+  padding: 0.7rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 0 1.1rem 2.2rem rgba(0, 0, 0, 0.38);
+}
+
+.component-color-picker-field {
+  min-height: 2.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.28rem 0.42rem;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--subtle-bg);
+}
+
+.component-color-picker-field input[type="color"] {
+  width: 2.25rem;
+  height: 2.25rem;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: var(--draft-color);
+  cursor: pointer;
+}
+
+.component-color-picker-field input[type="color"]::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+
+.component-color-picker-field input[type="color"]::-webkit-color-swatch {
+  border: 1px solid color-mix(in srgb, var(--line-strong) 72%, var(--ink));
+  border-radius: 999px;
+}
+
+.component-color-value {
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 750;
+}
+
+.component-color-picker-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.45rem;
 }
 
 .component-color-slots {
@@ -1487,6 +1534,26 @@ input[type="password"] {
   gap: 0.9rem;
 }
 
+.gallery-loading-status {
+  grid-column: 1 / -1;
+  min-height: 2.3rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 760;
+}
+
+.gallery-loading-spinner {
+  width: 0.95rem;
+  height: 0.95rem;
+  border: 2px solid var(--line-strong);
+  border-top-color: var(--accent);
+  border-radius: 999px;
+  animation: spin 0.8s linear infinite;
+}
+
 .gallery-card {
   min-height: 21rem;
   display: grid;
@@ -1500,6 +1567,68 @@ input[type="password"] {
   box-shadow: none;
   transition: transform 180ms ease, border-color 180ms ease, background 180ms ease;
   animation: cardIn 520ms ease both;
+}
+
+.gallery-skeleton {
+  pointer-events: none;
+  animation: none;
+}
+
+.gallery-skeleton .gallery-thumb {
+  background: var(--surface);
+}
+
+.gallery-skeleton:hover {
+  transform: none;
+  border-color: var(--line);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--surface) 92%, white), var(--surface-2)),
+    var(--surface);
+}
+
+.gallery-skeleton-preview,
+.gallery-skeleton-line,
+.gallery-skeleton-action {
+  position: relative;
+  display: block;
+  overflow: hidden;
+  background: var(--subtle-bg);
+}
+
+.gallery-skeleton-preview::after,
+.gallery-skeleton-line::after,
+.gallery-skeleton-action::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-105%);
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--accent) 18%, transparent), transparent);
+  animation: galleryShimmer 1.35s ease-in-out infinite;
+}
+
+.gallery-skeleton-preview {
+  width: min(72%, 10.5rem);
+  height: 4.4rem;
+  border-radius: 8px;
+}
+
+.gallery-skeleton-line {
+  height: 0.8rem;
+  border-radius: 999px;
+}
+
+.gallery-skeleton-title {
+  width: 60%;
+}
+
+.gallery-skeleton-copy {
+  width: 82%;
+}
+
+.gallery-skeleton-action {
+  width: 7.3rem;
+  height: 2.55rem;
+  border-radius: 8px;
 }
 
 .gallery-card:hover {
@@ -2424,6 +2553,21 @@ input[type="password"] {
 @keyframes spin {
   to {
     transform: rotate(360deg);
+  }
+}
+
+@keyframes galleryShimmer {
+  to {
+    transform: translateX(105%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gallery-loading-spinner,
+  .gallery-skeleton-preview::after,
+  .gallery-skeleton-line::after,
+  .gallery-skeleton-action::after {
+    animation-duration: 2.4s;
   }
 }
 
