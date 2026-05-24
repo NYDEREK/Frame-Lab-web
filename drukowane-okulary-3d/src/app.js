@@ -490,8 +490,17 @@ const state = {
     rightTemple: "",
     lens: ""
   },
+  componentColorSources: {
+    front: "",
+    leftTemple: "",
+    rightTemple: "",
+    lens: ""
+  },
   colorEditor: {
+    type: "",
     key: "",
+    index: -1,
+    source: "",
     draft: ""
   },
   openComponentOptions: {
@@ -688,6 +697,13 @@ const els = {
   loaderOverlay: document.querySelector("#loaderOverlay"),
   loaderTitle: document.querySelector("#loaderTitle"),
   loaderText: document.querySelector("#loaderText"),
+  colorPickerPanel: document.querySelector("#colorPickerPanel"),
+  colorPickerTitle: document.querySelector("#colorPickerTitle"),
+  colorPickerInput: document.querySelector("#colorPickerInput"),
+  colorPickerValue: document.querySelector("#colorPickerValue"),
+  closeColorPicker: document.querySelector("#closeColorPicker"),
+  cancelColorPicker: document.querySelector("#cancelColorPicker"),
+  applyColorPicker: document.querySelector("#applyColorPicker"),
   viewFront: document.querySelector("#viewFront"),
   viewIso: document.querySelector("#viewIso"),
   viewSide: document.querySelector("#viewSide")
@@ -796,26 +812,6 @@ function bindUi() {
   });
 
   els.builderControls.addEventListener("change", (event) => {
-    const slotInput = event.target.closest("[data-color-slot-edit]");
-    if (slotInput) {
-      const index = Number(slotInput.dataset.colorSlotEdit);
-      state.colorSlots[index] = sanitizeHexColor(slotInput.value, state.colorSlots[index] || defaultAccentColor);
-      state.colorSlots = normalizeColorSlots(state.colorSlots);
-      persistColorSlots();
-      buildBuilderControls();
-      render({ fitView: false });
-      return;
-    }
-
-    const draftInput = event.target.closest("[data-component-color-draft]");
-    if (draftInput) {
-      state.colorEditor.draft = sanitizeHexColor(draftInput.value, defaultAccentColor);
-      draftInput.closest(".component-color-popover")?.style.setProperty("--draft-color", state.colorEditor.draft);
-      const valueOutput = draftInput.closest(".component-color-popover")?.querySelector(".component-color-value");
-      if (valueOutput) valueOutput.textContent = state.colorEditor.draft.toUpperCase();
-      return;
-    }
-
     const select = event.target.closest("[data-component-model]");
     if (!select) return;
     state.assembly[select.dataset.componentModel].modelId = select.value;
@@ -835,46 +831,41 @@ function bindUi() {
   }, true);
 
   els.builderControls.addEventListener("click", (event) => {
+    const editSlot = event.target.closest("[data-edit-color-slot]");
+    if (editSlot) {
+      const index = Number(editSlot.dataset.editColorSlot);
+      openColorPickerEditor({
+        type: "slot",
+        index,
+        color: state.colorSlots[index],
+        title: `Color slot ${index + 1}`
+      });
+      return;
+    }
+
     const colorSlot = event.target.closest("[data-apply-color-slot]");
     if (colorSlot) {
       const key = colorSlot.dataset.applyColorSlot;
-      state.componentColors[key] = sanitizeHexColor(colorSlot.dataset.color, state.componentColors[key] || defaultAccentColor);
-      state.colorEditor.key = "";
-      state.colorEditor.draft = "";
-      buildBuilderControls();
-      render({ fitView: false });
-      syncActiveModel({ persist: false });
-      scheduleModelPersist();
+      openColorPickerEditor({
+        type: "component",
+        key,
+        color: colorSlot.dataset.color,
+        source: "slot",
+        title: `${colorSlot.dataset.componentLabel} color`
+      });
       return;
     }
 
     const openColorEditor = event.target.closest("[data-open-component-color]");
     if (openColorEditor) {
       const key = openColorEditor.dataset.openComponentColor;
-      state.colorEditor.key = key;
-      state.colorEditor.draft = sanitizeHexColor(openColorEditor.dataset.currentColor, defaultAccentColor);
-      buildBuilderControls();
-      return;
-    }
-
-    const cancelColorEditor = event.target.closest("[data-cancel-component-color]");
-    if (cancelColorEditor) {
-      state.colorEditor.key = "";
-      state.colorEditor.draft = "";
-      buildBuilderControls();
-      return;
-    }
-
-    const applyColorEditor = event.target.closest("[data-apply-component-color]");
-    if (applyColorEditor) {
-      const key = applyColorEditor.dataset.applyComponentColor;
-      state.componentColors[key] = sanitizeHexColor(state.colorEditor.draft, state.componentColors[key] || defaultAccentColor);
-      state.colorEditor.key = "";
-      state.colorEditor.draft = "";
-      buildBuilderControls();
-      render({ fitView: false });
-      syncActiveModel({ persist: false });
-      scheduleModelPersist();
+      openColorPickerEditor({
+        type: "component",
+        key,
+        color: openColorEditor.dataset.currentColor,
+        source: "custom",
+        title: `${openColorEditor.dataset.componentLabel} color`
+      });
       return;
     }
 
@@ -1088,8 +1079,16 @@ function bindUi() {
   els.imageLightbox?.addEventListener("click", (event) => {
     if (event.target === els.imageLightbox) closePrintGuideLightbox();
   });
+  els.colorPickerInput?.addEventListener("input", updateColorPickerDraft);
+  els.closeColorPicker?.addEventListener("click", closeColorPickerEditor);
+  els.cancelColorPicker?.addEventListener("click", closeColorPickerEditor);
+  els.applyColorPicker?.addEventListener("click", applyColorPickerEditor);
+  els.colorPickerPanel?.addEventListener("click", (event) => {
+    if (event.target === els.colorPickerPanel) closeColorPickerEditor();
+  });
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && els.imageLightbox && !els.imageLightbox.hidden) closePrintGuideLightbox();
+    if (event.key === "Escape" && els.colorPickerPanel && !els.colorPickerPanel.hidden) closeColorPickerEditor();
   });
   els.saveCurrentModel.addEventListener("click", saveCurrentModel);
   els.resetParams.addEventListener("click", resetParams);
@@ -1859,14 +1858,15 @@ function colorSlotPaletteTemplate() {
   return `
     <article class="color-slots-panel">
       <div class="color-slots-head">
-        <strong>Color slots</strong>
+        <strong>Color palette</strong>
+        <small>Edit slots</small>
       </div>
       <div class="color-slots-grid">
         ${slots.map((color, index) => `
-          <label class="color-slot-editor" style="--slot-color:${escapeHtml(color)}" title="Color slot ${index + 1}">
-            <input type="color" value="${escapeHtml(color)}" data-color-slot-edit="${index}" aria-label="Color slot ${index + 1}" />
+          <button type="button" class="color-slot-editor${state.colorEditor.type === "slot" && state.colorEditor.index === index ? " active" : ""}" style="--slot-color:${escapeHtml(color)}" data-edit-color-slot="${index}" aria-label="Edit color slot ${index + 1}" aria-expanded="${state.colorEditor.type === "slot" && state.colorEditor.index === index}">
             <span aria-hidden="true"></span>
-          </label>
+            <small>${index + 1}</small>
+          </button>
         `).join("")}
       </div>
     </article>
@@ -1916,8 +1916,12 @@ function componentCardTemplate(part) {
     ...part.items.map((item) => optionCardTemplate(part, item, item.id === selectedModel.id))
   ].join("");
   const color = state.componentColors[part.key] || selectedModel.materialColor || state.frameColor;
-  const editorOpen = state.colorEditor.key === part.key;
-  const draftColor = editorOpen ? state.colorEditor.draft : color;
+  const slots = normalizeColorSlots(state.colorSlots);
+  const matchesSlot = slots.findIndex((slotColor) => sanitizeHexColor(slotColor) === sanitizeHexColor(color));
+  const chosenCustom = state.componentColorSources[part.key] === "custom";
+  const activeSlotIndex = chosenCustom ? -1 : matchesSlot;
+  const customActive = chosenCustom || activeSlotIndex < 0;
+  const editorOpen = state.colorEditor.type === "component" && state.colorEditor.key === part.key;
   return `
     <article class="component-card">
       <div class="component-head">
@@ -1925,16 +1929,18 @@ function componentCardTemplate(part) {
           <strong>${escapeHtml(part.label)}</strong>
           <small>${escapeHtml(selectedModel.name)}</small>
         </div>
-        <button type="button" class="component-color" style="--component-color:${escapeHtml(color)}" data-open-component-color="${part.key}" data-current-color="${escapeHtml(color)}" title="${escapeHtml(part.label)} color" aria-label="Edit ${escapeHtml(part.label)} color" aria-expanded="${editorOpen}">
-          <span class="component-color-chip" aria-hidden="true"></span>
-          <span class="component-color-corner" aria-hidden="true"></span>
-        </button>
       </div>
-      ${editorOpen ? componentColorPopoverTemplate(part, draftColor) : ""}
-      <div class="component-color-slots" aria-label="${escapeHtml(part.label)} color slots">
-        ${state.colorSlots.map((slotColor, index) => `
-          <button type="button" class="color-slot-button" style="--slot-color:${escapeHtml(slotColor)}" data-apply-color-slot="${part.key}" data-color="${escapeHtml(slotColor)}" title="Apply color slot ${index + 1}"></button>
-        `).join("")}
+      <div class="component-color-row">
+        <span class="component-color-row-label">Color</span>
+        <div class="component-color-slots" aria-label="${escapeHtml(part.label)} color options">
+          ${slots.map((slotColor, index) => `
+            <button type="button" class="color-slot-button${activeSlotIndex === index ? " active" : ""}" style="--slot-color:${escapeHtml(slotColor)}" data-apply-color-slot="${part.key}" data-component-label="${escapeHtml(part.label)}" data-color="${escapeHtml(slotColor)}" title="Choose color slot ${index + 1}" aria-pressed="${activeSlotIndex === index}"></button>
+          `).join("")}
+          <button type="button" class="component-color${customActive ? " active" : ""}${editorOpen ? " open" : ""}" style="--component-color:${escapeHtml(color)}" data-open-component-color="${part.key}" data-component-label="${escapeHtml(part.label)}" data-current-color="${escapeHtml(color)}" aria-label="Choose custom ${escapeHtml(part.label)} color" aria-pressed="${customActive}" aria-expanded="${editorOpen}">
+            <span class="component-color-chip" aria-hidden="true"></span>
+            <span class="component-color-text">Custom</span>
+          </button>
+        </div>
       </div>
       <details class="component-options" data-component-options="${part.key}" ${state.openComponentOptions[part.key] ? "open" : ""}>
         <summary>${t("variants")} (${part.items.length})</summary>
@@ -1944,19 +1950,58 @@ function componentCardTemplate(part) {
   `;
 }
 
-function componentColorPopoverTemplate(part, color) {
-  return `
-    <div class="component-color-popover" style="--draft-color:${escapeHtml(color)}" role="dialog" aria-label="${escapeHtml(part.label)} color picker">
-      <div class="component-color-picker-field">
-        <input type="color" value="${escapeHtml(color)}" data-component-color-draft="${part.key}" aria-label="${escapeHtml(part.label)} selected color" />
-        <span class="component-color-value">${escapeHtml(color.toUpperCase())}</span>
-      </div>
-      <div class="component-color-picker-actions">
-        <button type="button" class="compact" data-cancel-component-color>Cancel</button>
-        <button type="button" class="compact accent" data-apply-component-color="${part.key}">Apply</button>
-      </div>
-    </div>
-  `;
+function openColorPickerEditor({ type, key = "", index = -1, color, source = "", title }) {
+  state.colorEditor = {
+    type,
+    key,
+    index,
+    source,
+    draft: sanitizeHexColor(color, defaultAccentColor)
+  };
+  els.colorPickerTitle.textContent = title;
+  els.colorPickerInput.value = state.colorEditor.draft;
+  updateColorPickerDisplay();
+  els.colorPickerPanel.hidden = false;
+  document.body.classList.add("color-dialog-open");
+  els.colorPickerInput.focus({ preventScroll: true });
+  buildBuilderControls();
+}
+
+function updateColorPickerDraft() {
+  state.colorEditor.draft = sanitizeHexColor(els.colorPickerInput.value, defaultAccentColor);
+  updateColorPickerDisplay();
+}
+
+function updateColorPickerDisplay() {
+  els.colorPickerPanel.style.setProperty("--draft-color", state.colorEditor.draft);
+  els.colorPickerValue.textContent = state.colorEditor.draft.toUpperCase();
+}
+
+function closeColorPickerEditor(options = {}) {
+  state.colorEditor = { type: "", key: "", index: -1, source: "", draft: "" };
+  if (els.colorPickerPanel) els.colorPickerPanel.hidden = true;
+  document.body.classList.remove("color-dialog-open");
+  if (options.rebuild !== false) buildBuilderControls();
+}
+
+function applyColorPickerEditor() {
+  const editor = { ...state.colorEditor };
+  if (!editor.type) return;
+  if (editor.type === "slot") {
+    state.colorSlots[editor.index] = sanitizeHexColor(editor.draft, state.colorSlots[editor.index] || defaultAccentColor);
+    state.colorSlots = normalizeColorSlots(state.colorSlots);
+    persistColorSlots();
+    closeColorPickerEditor({ rebuild: false });
+    buildBuilderControls();
+    return;
+  }
+  state.componentColors[editor.key] = sanitizeHexColor(editor.draft, state.componentColors[editor.key] || defaultAccentColor);
+  state.componentColorSources[editor.key] = editor.source === "custom" ? "custom" : "slot";
+  closeColorPickerEditor({ rebuild: false });
+  buildBuilderControls();
+  render({ fitView: false });
+  syncActiveModel({ persist: false });
+  scheduleModelPersist();
 }
 
 function optionCardTemplate(part, item, active) {
@@ -2970,8 +3015,7 @@ function selectModel(id, options = {}) {
   if (state.activeModelId !== model.id) {
     state.openComponentOptions = { front: true };
   }
-  state.colorEditor.key = "";
-  state.colorEditor.draft = "";
+  closeColorPickerEditor({ rebuild: false });
   state.activeModelId = model.id;
   state.modelName = model.name;
   state.scadSource = model.scadSource;

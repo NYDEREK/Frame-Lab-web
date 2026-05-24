@@ -16,7 +16,7 @@
         document.documentElement.dataset.appError = event.reason?.message || String(event.reason || "promise");
       });
     </script>
-    <link rel="stylesheet" href="./styles.css?v=loading-states-20260524-1" />
+    <link rel="stylesheet" href="./styles.css?v=color-dialog-20260524-1" />
     <script type="importmap">
       {
         "imports": {
@@ -36,6 +36,29 @@
           <small id="loaderText">Preparing production geometry...</small>
           <div class="loader-bar"><span></span></div>
         </div>
+      </div>
+
+      <div id="colorPickerPanel" class="color-picker-overlay" hidden>
+        <section class="color-picker-dialog" role="dialog" aria-modal="true" aria-labelledby="colorPickerTitle">
+          <div class="color-picker-dialog-head">
+            <div>
+              <p class="eyebrow">Color</p>
+              <h2 id="colorPickerTitle">Choose color</h2>
+            </div>
+            <button id="closeColorPicker" type="button" class="compact ghost" aria-label="Close color picker">Close</button>
+          </div>
+          <label class="color-picker-control" for="colorPickerInput">
+            <span>Selected color</span>
+            <div class="color-picker-input-row">
+              <input id="colorPickerInput" type="color" value="#c96b34" />
+              <output id="colorPickerValue" class="color-picker-value">#C96B34</output>
+            </div>
+          </label>
+          <div class="color-picker-dialog-actions">
+            <button id="cancelColorPicker" type="button" class="ghost">Cancel</button>
+            <button id="applyColorPicker" type="button" class="accent">Apply</button>
+          </div>
+        </section>
       </div>
 
       <section id="accountPanel" class="account-panel auth-screen" hidden aria-label="Account">
@@ -663,6 +686,6 @@
         overlay.hidden = false;
       });
     </script>
-    <script type="module" src="./src/app.js?v=preserve-view-20260524-1"></script>
+    <script type="module" src="./src/app.js?v=color-dialog-20260524-1"></script>
   </body>
 </html>
