@@ -2125,6 +2125,23 @@ function syncAssemblySizes() {
   });
 }
 
+function selectFirstAssemblyVariants() {
+  [
+    { key: "front", items: componentLibrary.fronts },
+    { key: "leftTemple", items: templeItemsForKey("leftTemple") },
+    { key: "rightTemple", items: templeItemsForKey("rightTemple") },
+    { key: "lens", items: componentLibrary.lenses, optional: true }
+  ].forEach(({ key, items, optional }) => {
+    const first = items.find((item) => item.sizes?.[state.assemblySize]) || null;
+    if (first) {
+      state.assembly[key].modelId = first.id;
+    } else if (optional) {
+      state.assembly[key].modelId = "";
+    }
+  });
+  syncAssemblySizes();
+}
+
 function firstSize(item) {
   return item.sizes[Object.keys(item.sizes)[0]] || {};
 }
@@ -2227,16 +2244,19 @@ function uniqueComponentsById(components) {
   return [...new Map(components.map((item) => [item.id, item])).values()];
 }
 
-function modelComponentIds(model = currentModelRecord()) {
+function modelComponentsInOrder(model = currentModelRecord()) {
   const components = normalizeModelComponents(model?.components);
-  if (!components) return new Set();
-  return new Set([...components.front, ...components.temples, ...components.leftTemples, ...components.rightTemples, ...components.lenses].map((item) => item.id));
+  if (!components) return [];
+  return [...components.front, ...components.temples, ...components.leftTemples, ...components.rightTemples, ...components.lenses];
 }
 
 function componentsForModel(model = currentModelRecord()) {
   const visible = visibleUploadedComponents();
-  const linkedIds = modelComponentIds(model);
-  if (linkedIds.size) return visible.filter((component) => linkedIds.has(component.id));
+  const linkedComponents = modelComponentsInOrder(model);
+  if (linkedComponents.length) {
+    const visibleById = new Map(visible.map((component) => [component.id, component]));
+    return linkedComponents.map((component) => visibleById.get(component.id)).filter(Boolean);
+  }
   if (model?.id === defaultModelId) return visible.filter((component) => component.source === "asset" || !component.collectionId);
   return visible.filter((component) => component.collectionId === model?.id);
 }
@@ -2476,6 +2496,7 @@ function repairAssemblyForActiveModel(model = currentModelRecord()) {
   const storedSize = model?.assembly?.size || state.assembly.front.size || "M";
   const completeSizes = availableAssemblySizes();
   setAssemblySize(completeSizes.includes(storedSize) ? storedSize : completeSizes[0] || storedSize);
+  selectFirstAssemblyVariants();
 }
 
 function serializeAssemblySelection() {
@@ -4134,10 +4155,10 @@ async function addCollectionFromStudio() {
   }
   const existingComponents = normalizeModelComponents(existing?.components) || { front: [], temples: [], leftTemples: [], rightTemples: [], lenses: [] };
   const assembly = existing?.assembly ? structuredClone(existing.assembly) : serializeAssemblySelection();
-  if (frontComponents[0]) assembly.front = { modelId: frontComponents[0].id, size: frontComponents[0].size };
-  if (leftTempleComponents[0]) assembly.leftTemple = { modelId: leftTempleComponents[0].id, size: leftTempleComponents[0].size };
-  if (rightTempleComponents[0]) assembly.rightTemple = { modelId: rightTempleComponents[0].id, size: rightTempleComponents[0].size };
-  if (lensComponents[0]) assembly.lens = { modelId: lensComponents[0].id, size: lensComponents[0].size };
+  if (!existing && frontComponents[0]) assembly.front = { modelId: frontComponents[0].id, size: frontComponents[0].size };
+  if (!existing && leftTempleComponents[0]) assembly.leftTemple = { modelId: leftTempleComponents[0].id, size: leftTempleComponents[0].size };
+  if (!existing && rightTempleComponents[0]) assembly.rightTemple = { modelId: rightTempleComponents[0].id, size: rightTempleComponents[0].size };
+  if (!existing && lensComponents[0]) assembly.lens = { modelId: lensComponents[0].id, size: lensComponents[0].size };
   const initialComponent = frontComponents[0] || leftTempleComponents[0] || rightTempleComponents[0] || lensComponents[0];
   if (!existing && initialComponent) assembly.size = initialComponent.size;
   const category = els.collectionCategory.value === "optical" ? "optical" : "sun";
@@ -4453,16 +4474,7 @@ async function addComponentFile() {
   await hydrateUploadedComponentMeshes();
   attachComponentToCurrentModel(component);
   rebuildComponentLibrary();
-  if (component.kind === "front") {
-    state.assembly.front = { modelId: component.id, size: component.size };
-  } else if (component.kind === "lens") {
-    state.assembly.lens = { modelId: component.id, size: component.size };
-  } else {
-    const side = normalizeTempleSide(component.templeSide);
-    if (side === "left" || side === "universal") state.assembly.leftTemple = { modelId: component.id, size: component.size };
-    if (side === "right" || side === "universal") state.assembly.rightTemple = { modelId: component.id, size: component.size };
-  }
-  setAssemblySize(component.size);
+  selectFirstAssemblyVariants();
   applyAssemblyToParams();
   buildBuilderControls();
   buildControls();
