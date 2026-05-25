@@ -167,7 +167,7 @@ const staticLicenseCodes = [
 ];
 
 function defaultDb() {
-  return { users: [], sessions: [], collections: [], components: [], downloads: [], licenseCodes: [], settings: { ...defaultBrandSettings } };
+  return { users: [], sessions: [], collections: [], components: [], downloads: [], licenseCodes: [], designSubmissions: [], settings: { ...defaultBrandSettings } };
 }
 
 function sanitizeHexColor(value, fallback) {
@@ -359,7 +359,8 @@ function storageDebug(db) {
       collections: Array.isArray(db.collections) ? db.collections.length : 0,
       components: Array.isArray(db.components) ? db.components.length : 0,
       downloads: Array.isArray(db.downloads) ? db.downloads.length : 0,
-      licenseCodes: Array.isArray(db.licenseCodes) ? db.licenseCodes.length : 0
+      licenseCodes: Array.isArray(db.licenseCodes) ? db.licenseCodes.length : 0,
+      designSubmissions: Array.isArray(db.designSubmissions) ? db.designSubmissions.length : 0
     }
   };
 }
@@ -772,6 +773,7 @@ function sanitizeCollection(model) {
     description: String(model.description || "").slice(0, 260),
     scadSource: String(model.scadSource || "").slice(0, 500_000),
     params: model.params && typeof model.params === "object" ? model.params : {},
+    design: model.design && typeof model.design === "object" ? sanitizeParametricDesign(model.design) : null,
     lensMode: ["none", "component"].includes(model.lensMode) ? model.lensMode : "none",
     thumbnail: typeof model.thumbnail === "string" ? model.thumbnail : "",
     components: model.components && typeof model.components === "object" ? model.components : null,
@@ -779,6 +781,89 @@ function sanitizeCollection(model) {
     order: Number.isFinite(Number(model.order)) ? Number(model.order) : 0,
     createdAt: Number(model.createdAt) || Date.now(),
     updatedAt: Number(model.updatedAt) || Date.now()
+  };
+}
+
+function sanitizeParametricDesign(style = {}) {
+  const color = (key, fallback) => sanitizeHexColor(style[key], fallback);
+  return {
+    type: "parametric-openscad",
+    lensShape: ["soft-square", "round", "sharp"].includes(style.lensShape) ? style.lensShape : "soft-square",
+    templePattern: ["none", "ribs", "perforated"].includes(style.templePattern) ? style.templePattern : "none",
+    templeText: cleanText(style.templeText, "", 24),
+    browBar: style.browBar !== false,
+    frameColor: color("frameColor", "#ff741f"),
+    lensColor: color("lensColor", "#202529"),
+    detailColor: color("detailColor", "#e59a62")
+  };
+}
+
+function sanitizeDesignParams(params = {}) {
+  const limits = {
+    head_width: [118, 172],
+    bridge_width: [12, 30],
+    lens_width: [40, 64],
+    lens_height: [28, 50],
+    rim_thickness: [2.5, 9],
+    frame_depth: [3, 12],
+    temple_length: [115, 175],
+    temple_drop: [0, 42],
+    temple_spread: [0, 28],
+    nose_pad_width: [3, 14],
+    nose_pad_drop: [0, 18],
+    hinge_width: [3, 16],
+    corner_radius: [2, 14],
+    bevel: [0, 2.4]
+  };
+  return Object.fromEntries(Object.entries(limits).map(([key, [min, max]]) => {
+    const number = Number(params[key]);
+    return [key, Number.isFinite(number) ? Math.min(max, Math.max(min, number)) : undefined];
+  }).filter(([, value]) => value !== undefined));
+}
+
+function sanitizeDesignThumbnail(value) {
+  const thumbnail = String(value || "");
+  return thumbnail.startsWith("data:image/") && thumbnail.length < 3_000_000 ? thumbnail : "";
+}
+
+function publicDesignSubmission(item, includeOwner = false) {
+  const result = {
+    id: item.id,
+    name: item.name,
+    description: item.description,
+    params: sanitizeDesignParams(item.params),
+    design: sanitizeParametricDesign(item.design),
+    scadSource: item.scadSource,
+    thumbnail: item.thumbnail,
+    status: ["pending", "approved", "rejected"].includes(item.status) ? item.status : "pending",
+    collectionId: item.collectionId || "",
+    createdAt: item.createdAt,
+    reviewedAt: item.reviewedAt || null
+  };
+  if (includeOwner) {
+    result.authorName = item.authorName || "";
+    result.authorEmail = item.authorEmail || "";
+  }
+  return result;
+}
+
+function sanitizeDesignSubmission(body = {}, user) {
+  return {
+    id: randomBytes(12).toString("hex"),
+    userId: user.id,
+    authorName: cleanText([user.firstName, user.lastName].filter(Boolean).join(" "), user.email, 120),
+    authorEmail: user.email,
+    name: cleanText(body.name, "Custom sunglasses", 120),
+    description: cleanText(body.description, "", 260),
+    params: sanitizeDesignParams(body.params),
+    design: sanitizeParametricDesign(body.design),
+    scadSource: String(body.scadSource || "").slice(0, 500_000),
+    thumbnail: sanitizeDesignThumbnail(body.thumbnail),
+    status: "pending",
+    collectionId: "",
+    createdAt: new Date().toISOString(),
+    reviewedAt: null,
+    reviewedBy: ""
   };
 }
 
@@ -951,6 +1036,86 @@ async function handleApi(req, res, url) {
     db.collections = collections.map(sanitizeCollection).filter(Boolean).slice(0, 100);
     writeDb(db);
     return sendJson(res, 200, { collections: db.collections, savedAt: new Date().toISOString() });
+  }
+
+  if (req.method === "POST" && pathname === "/api/design-submissions") {
+    const user = currentUser(req, db);
+    if (!user) return sendJson(res, 401, { error: "Login is required to submit a design." });
+    const body = await readBody(req);
+    const submission = sanitizeDesignSubmission(body, user);
+    if (!submission.scadSource.trim()) return sendJson(res, 400, { error: "OpenSCAD source is required." });
+    db.designSubmissions = [submission, ...(db.designSubmissions || [])].slice(0, 1000);
+    writeDb(db);
+    return sendJson(res, 201, { submission: publicDesignSubmission(submission) });
+  }
+
+  if (req.method === "GET" && pathname === "/api/design-submissions/mine") {
+    const user = currentUser(req, db);
+    if (!user) return sendJson(res, 401, { error: "Login is required." });
+    const submissions = (db.designSubmissions || [])
+      .filter((item) => item.userId === user.id)
+      .map((item) => publicDesignSubmission(item))
+      .slice(0, 20);
+    return sendJson(res, 200, { submissions });
+  }
+
+  if (req.method === "GET" && pathname === "/api/admin/design-submissions") {
+    const user = currentUser(req, db);
+    if (!user || user.role !== "developer") return sendJson(res, 403, { error: "Developer access is required." });
+    const submissions = (db.designSubmissions || [])
+      .map((item) => publicDesignSubmission(item, true))
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+      .slice(0, 250);
+    return sendJson(res, 200, { submissions });
+  }
+
+  const reviewMatch = pathname.match(/^\/api\/admin\/design-submissions\/([^/]+)\/(approve|reject)$/);
+  if (req.method === "POST" && reviewMatch) {
+    const user = currentUser(req, db);
+    if (!user || user.role !== "developer") return sendJson(res, 403, { error: "Developer access is required." });
+    const submissionId = decodeURIComponent(reviewMatch[1]);
+    const action = reviewMatch[2];
+    const submission = (db.designSubmissions || []).find((item) => item.id === submissionId);
+    if (!submission) return sendJson(res, 404, { error: "Design submission not found." });
+    if (action === "reject") {
+      submission.status = "rejected";
+      submission.reviewedAt = new Date().toISOString();
+      submission.reviewedBy = user.id;
+      writeDb(db);
+      return sendJson(res, 200, { submission: publicDesignSubmission(submission, true) });
+    }
+    const currentOrder = (db.collections || [])
+      .filter((item) => item.category !== "optical")
+      .reduce((max, item) => Math.max(max, Number(item.order) || 0), -1);
+    const collection = sanitizeCollection({
+      id: submission.collectionId || `design-${submission.id}`,
+      name: submission.name,
+      category: "sun",
+      access: "basic",
+      description: submission.description,
+      scadSource: submission.scadSource,
+      params: submission.params,
+      design: submission.design,
+      thumbnail: submission.thumbnail,
+      components: null,
+      assembly: null,
+      order: currentOrder + 1,
+      createdAt: Date.now(),
+      updatedAt: Date.now()
+    });
+    db.collections = [
+      ...(db.collections || []).filter((item) => item.id !== collection.id),
+      collection
+    ];
+    submission.status = "approved";
+    submission.collectionId = collection.id;
+    submission.reviewedAt = new Date().toISOString();
+    submission.reviewedBy = user.id;
+    writeDb(db);
+    return sendJson(res, 200, {
+      submission: publicDesignSubmission(submission, true),
+      collection
+    });
   }
 
   if (req.method === "GET" && pathname === "/api/components") {

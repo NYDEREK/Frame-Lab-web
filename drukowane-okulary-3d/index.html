@@ -257,6 +257,7 @@
           <nav class="topbar-tabs" aria-label="Navigation" data-i18n-attr="aria-label:navLabel">
             <a id="openHome" class="nav-link active" href="#top" data-i18n="tabHome">Start</a>
             <a id="openGallery" class="nav-link" href="#galleryPanel" data-i18n="tabGallery">Collections</a>
+            <a id="openDesignLab" class="nav-link" href="#design-lab">Design Lab</a>
             <a id="openSizes" class="nav-link" href="#sizeGuidePanel">Sizes</a>
             <a id="openPrintGuide" class="nav-link" href="#printGuidePanel">Print</a>
             <a id="openRoadmap" class="nav-link" href="#roadmapPanel">Roadmap</a>
@@ -295,6 +296,7 @@
               <p class="eyebrow" data-i18n="libraryKicker">Collections</p>
               <h2 data-i18n="galleryHeading">Choose a frame base</h2>
             </div>
+            <button id="startDesignLab" type="button" class="ghost">Create your own</button>
           </div>
           <section class="collection-section">
             <div class="collection-head">
@@ -439,6 +441,94 @@
         </aside>
       </main>
 
+      <main id="designLab" class="design-lab" hidden>
+        <section class="design-stage" aria-label="Custom sunglasses 3D preview">
+          <canvas id="designScene"></canvas>
+          <div class="design-stage-header">
+            <button id="exitDesignLab" type="button" class="ghost">Back to collections</button>
+            <div>
+              <p class="eyebrow">Parametric studio</p>
+              <h2>Design Lab</h2>
+            </div>
+          </div>
+          <div class="design-stage-footer">
+            <span id="designDimensions">148 mm frame / 18 mm bridge / 145 mm temple</span>
+            <span>Drag to rotate · Scroll to zoom</span>
+          </div>
+        </section>
+        <aside class="design-sidebar" aria-label="Custom frame parameters">
+          <header class="design-sidebar-head">
+            <p class="eyebrow">Create</p>
+            <h2>Custom sunglasses</h2>
+            <input id="designName" type="text" value="My custom frame" maxlength="120" aria-label="Project name" />
+            <textarea id="designDescription" rows="2" maxlength="260" placeholder="Short gallery description" aria-label="Gallery description"></textarea>
+          </header>
+          <div class="design-tabs" role="tablist" aria-label="Design mode">
+            <button type="button" class="active" data-design-tab="operations" role="tab" aria-selected="true">Operations</button>
+            <button type="button" data-design-tab="code" role="tab" aria-selected="false">OpenSCAD code</button>
+          </div>
+          <section id="designOperationsPanel" class="design-operations" role="tabpanel">
+            <section class="design-control-section">
+              <h3>Front geometry</h3>
+              <div id="designFrontControls" class="design-controls"></div>
+            </section>
+            <section class="design-control-section">
+              <h3>Temples and fit</h3>
+              <div id="designTempleControls" class="design-controls"></div>
+            </section>
+            <section class="design-control-section design-details">
+              <h3>Details</h3>
+              <label>
+                <span>Lens shape</span>
+                <select id="designLensShape" class="component-select">
+                  <option value="soft-square">Soft square</option>
+                  <option value="round">Round</option>
+                  <option value="sharp">Architectural</option>
+                </select>
+              </label>
+              <label>
+                <span>Temple pattern</span>
+                <select id="designTemplePattern" class="component-select">
+                  <option value="none">Clean</option>
+                  <option value="ribs">Ribs</option>
+                  <option value="perforated">Perforated</option>
+                </select>
+              </label>
+              <label class="design-text-field">
+                <span>Temple text</span>
+                <input id="designTempleText" type="text" maxlength="24" placeholder="Optional engraving" />
+              </label>
+              <label class="design-toggle">
+                <input id="designBrowBar" type="checkbox" checked />
+                <span>Upper brow support</span>
+              </label>
+              <div class="design-colors">
+                <label><span>Frame</span><input id="designFrameColor" type="color" value="#ff741f" /></label>
+                <label><span>Lens</span><input id="designLensColor" type="color" value="#202529" /></label>
+                <label><span>Detail</span><input id="designDetailColor" type="color" value="#e59a62" /></label>
+              </div>
+            </section>
+          </section>
+          <section id="designCodePanel" class="design-code-panel" role="tabpanel" hidden>
+            <textarea id="designScadCode" spellcheck="false" aria-label="OpenSCAD source code"></textarea>
+            <div class="design-code-actions">
+              <button id="regenerateDesignCode" type="button">Regenerate</button>
+              <button id="applyDesignCode" type="button" class="accent">Apply code</button>
+            </div>
+            <p class="design-note">Numeric parameters and supported detail options update the live preview; additional OpenSCAD operations remain in the exported project.</p>
+          </section>
+          <footer class="design-submit">
+            <p id="designStatus" class="design-note"></p>
+            <div id="designSubmissionStatus" class="design-submission-status"></div>
+            <div class="design-submit-actions">
+              <button id="resetDesign" type="button">Reset</button>
+              <button id="downloadDesignScad" type="button">.scad</button>
+              <button id="submitDesign" type="button" class="accent">Submit for review</button>
+            </div>
+          </footer>
+        </aside>
+      </main>
+
       <section id="developerPanel" class="studio-panel developer-panel" hidden>
         <div class="studio-head">
           <div>
@@ -455,6 +545,17 @@
             <button id="newDeveloperCollection" type="button" class="compact ghost">New collection</button>
           </div>
           <div id="developerCollectionList" class="developer-collection-list"></div>
+        </section>
+        <section class="studio-card submission-manager-card">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Submissions</p>
+              <h3>Design Lab review</h3>
+            </div>
+          </div>
+          <div id="designSubmissionList" class="design-submission-list">
+            <p class="account-note">No pending designs.</p>
+          </div>
         </section>
         <section class="studio-card brand-settings-card">
           <div class="section-head">
