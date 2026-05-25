@@ -442,44 +442,94 @@
       </main>
 
       <main id="designLab" class="design-lab" hidden>
-        <section class="design-stage" aria-label="Custom sunglasses 3D preview">
-          <canvas id="designScene"></canvas>
+        <section class="design-stage" aria-label="Parametric frame authoring view">
+          <canvas id="designScene" class="design-view-hidden"></canvas>
+          <canvas id="designSketchCanvas" aria-label="Technical sketch editor"></canvas>
           <div class="design-stage-header">
             <button id="exitDesignLab" type="button" class="ghost">Back to collections</button>
             <div>
-              <p class="eyebrow">Parametric studio</p>
+              <p class="eyebrow">Parametric collection authoring</p>
               <h2>Design Lab</h2>
             </div>
           </div>
+          <div class="design-view-switch" role="group" aria-label="Design view">
+            <button id="designViewSketch" type="button" class="active">Sketch</button>
+            <button id="designView3d" type="button">3D</button>
+          </div>
           <div class="design-stage-footer">
             <span id="designDimensions">148 mm frame / 18 mm bridge / 145 mm temple</span>
-            <span>Drag to rotate · Scroll to zoom</span>
+            <span id="designViewHint">Drag profile points to define the lens opening</span>
           </div>
         </section>
-        <aside class="design-sidebar" aria-label="Custom frame parameters">
+        <aside class="design-sidebar" aria-label="Parametric collection authoring">
           <header class="design-sidebar-head">
-            <p class="eyebrow">Create</p>
-            <h2>Custom sunglasses</h2>
+            <p class="eyebrow">New collection template</p>
+            <h2>Technical frame creator</h2>
             <input id="designName" type="text" value="My custom frame" maxlength="120" aria-label="Project name" />
             <textarea id="designDescription" rows="2" maxlength="260" placeholder="Short gallery description" aria-label="Gallery description"></textarea>
           </header>
           <div class="design-tabs" role="tablist" aria-label="Design mode">
-            <button type="button" class="active" data-design-tab="operations" role="tab" aria-selected="true">Operations</button>
-            <button type="button" data-design-tab="code" role="tab" aria-selected="false">OpenSCAD code</button>
+            <button type="button" class="active" data-design-tab="sketch" role="tab" aria-selected="true">Sketch</button>
+            <button type="button" data-design-tab="features" role="tab" aria-selected="false">Features</button>
+            <button type="button" data-design-tab="code" role="tab" aria-selected="false">Code</button>
           </div>
           <section id="designOperationsPanel" class="design-operations" role="tabpanel">
             <section class="design-control-section">
-              <h3>Front geometry</h3>
+              <div class="design-section-heading">
+                <h3>Technical profile</h3>
+                <div class="design-sketch-actions">
+                  <button id="addSketchPoint" type="button" class="compact">+ Point</button>
+                  <button id="removeSketchPoint" type="button" class="compact">Remove</button>
+                </div>
+              </div>
+              <p class="design-note">Draw one lens opening. The opposite side is mirrored automatically.</p>
+            </section>
+            <section class="design-control-section">
+              <h3>Front dimensions</h3>
               <div id="designFrontControls" class="design-controls"></div>
             </section>
             <section class="design-control-section">
-              <h3>Temples and fit</h3>
+              <h3>Fit dimensions</h3>
               <div id="designTempleControls" class="design-controls"></div>
             </section>
+            <section class="design-control-section">
+              <h3>Customer sliders</h3>
+              <p class="design-note">Choose which dimensions the customer can adjust after this design is published.</p>
+              <div id="designPublicParameters" class="design-public-parameters"></div>
+            </section>
+          </section>
+          <section id="designFeaturesPanel" class="design-operations" role="tabpanel" hidden>
+            <section class="design-control-section design-feature-stack">
+              <h3>Operations</h3>
+              <label class="design-feature enabled">
+                <span><strong>Sketch</strong><small>Technical lens profile</small></span>
+                <em>Base</em>
+              </label>
+              <label class="design-feature">
+                <span><strong>Extrude</strong><small>Frame body depth</small></span>
+                <input id="designExtrudeEnabled" type="checkbox" checked />
+                <input id="designExtrudeDepth" type="number" min="3" max="12" step="0.1" value="5.8" aria-label="Extrude depth" />
+              </label>
+              <label class="design-feature">
+                <span><strong>Fillet</strong><small>Rounded printable edge</small></span>
+                <input id="designFilletEnabled" type="checkbox" checked />
+                <input id="designFilletRadius" type="number" min="0" max="2.4" step="0.1" value="0.6" aria-label="Fillet radius" />
+              </label>
+              <label class="design-feature">
+                <span><strong>Chamfer</strong><small>Planar edge break</small></span>
+                <input id="designChamferEnabled" type="checkbox" />
+                <input id="designChamferAmount" type="number" min="0" max="2.4" step="0.1" value="0.4" aria-label="Chamfer amount" />
+              </label>
+              <label class="design-feature">
+                <span><strong>Lens recess</strong><small>Seat for a lens insert</small></span>
+                <input id="designLensRecessEnabled" type="checkbox" checked />
+                <input id="designLensRecessDepth" type="number" min="0.4" max="3" step="0.1" value="1" aria-label="Lens recess depth" />
+              </label>
+            </section>
             <section class="design-control-section design-details">
-              <h3>Details</h3>
+              <h3>Details and material</h3>
               <label>
-                <span>Lens shape</span>
+                <span>Starting profile</span>
                 <select id="designLensShape" class="component-select">
                   <option value="soft-square">Soft square</option>
                   <option value="round">Round</option>
@@ -515,7 +565,7 @@
               <button id="regenerateDesignCode" type="button">Regenerate</button>
               <button id="applyDesignCode" type="button" class="accent">Apply code</button>
             </div>
-            <p class="design-note">Numeric parameters and supported detail options update the live preview; additional OpenSCAD operations remain in the exported project.</p>
+            <p class="design-note">The generated OpenSCAD contains the drawn profile, exposed dimensions and modeling operations.</p>
           </section>
           <footer class="design-submit">
             <p id="designStatus" class="design-note"></p>
@@ -523,6 +573,7 @@
             <div class="design-submit-actions">
               <button id="resetDesign" type="button">Reset</button>
               <button id="downloadDesignScad" type="button">.scad</button>
+              <button id="saveDesignCollection" type="button" class="accent" hidden>Save collection</button>
               <button id="submitDesign" type="button" class="accent">Submit for review</button>
             </div>
           </footer>

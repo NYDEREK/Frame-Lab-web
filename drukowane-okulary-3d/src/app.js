@@ -163,9 +163,7 @@ const designParameterGroups = {
     ["lens_width", "Lens opening"],
     ["lens_height", "Lens height"],
     ["rim_thickness", "Rim thickness"],
-    ["frame_depth", "Front depth"],
-    ["corner_radius", "Corner radius"],
-    ["bevel", "Edge bevel"]
+    ["corner_radius", "Corner radius"]
   ],
   temples: [
     ["temple_length", "Temple length"],
@@ -185,6 +183,27 @@ const defaultDesignStyle = {
   lensColor: "#202529",
   detailColor: "#e59a62"
 };
+const defaultDesignSketchPoints = [
+  [-0.42, 0.5],
+  [0.36, 0.5],
+  [0.5, 0.34],
+  [0.47, -0.3],
+  [0.34, -0.5],
+  [-0.38, -0.5],
+  [-0.5, -0.3],
+  [-0.5, 0.3]
+];
+const defaultDesignPublicParameters = ["head_width", "bridge_width", "temple_length"];
+const designPublicParameterKeys = [
+  "head_width",
+  "bridge_width",
+  "lens_width",
+  "lens_height",
+  "rim_thickness",
+  "temple_length",
+  "temple_drop",
+  "temple_spread"
+];
 
 const defaultModelId = "frame001-sun-01";
 const ownerDeveloperEmail = "nyderek@framelab.dev";
@@ -563,6 +582,7 @@ const els = {
   galleryPanel: document.querySelector("#galleryPanel"),
   canvas: document.querySelector("#scene"),
   designCanvas: document.querySelector("#designScene"),
+  designSketchCanvas: document.querySelector("#designSketchCanvas"),
   controls: document.querySelector("#controls"),
   builderControls: document.querySelector("#builderControls"),
   componentName: document.querySelector("#componentName"),
@@ -667,6 +687,7 @@ const els = {
   designTempleControls: document.querySelector("#designTempleControls"),
   designTabs: document.querySelectorAll("[data-design-tab]"),
   designOperationsPanel: document.querySelector("#designOperationsPanel"),
+  designFeaturesPanel: document.querySelector("#designFeaturesPanel"),
   designCodePanel: document.querySelector("#designCodePanel"),
   designScadCode: document.querySelector("#designScadCode"),
   regenerateDesignCode: document.querySelector("#regenerateDesignCode"),
@@ -678,11 +699,26 @@ const els = {
   designFrameColor: document.querySelector("#designFrameColor"),
   designLensColor: document.querySelector("#designLensColor"),
   designDetailColor: document.querySelector("#designDetailColor"),
+  designPublicParameters: document.querySelector("#designPublicParameters"),
+  addSketchPoint: document.querySelector("#addSketchPoint"),
+  removeSketchPoint: document.querySelector("#removeSketchPoint"),
+  designViewSketch: document.querySelector("#designViewSketch"),
+  designView3d: document.querySelector("#designView3d"),
+  designViewHint: document.querySelector("#designViewHint"),
+  designExtrudeEnabled: document.querySelector("#designExtrudeEnabled"),
+  designExtrudeDepth: document.querySelector("#designExtrudeDepth"),
+  designFilletEnabled: document.querySelector("#designFilletEnabled"),
+  designFilletRadius: document.querySelector("#designFilletRadius"),
+  designChamferEnabled: document.querySelector("#designChamferEnabled"),
+  designChamferAmount: document.querySelector("#designChamferAmount"),
+  designLensRecessEnabled: document.querySelector("#designLensRecessEnabled"),
+  designLensRecessDepth: document.querySelector("#designLensRecessDepth"),
   designDimensions: document.querySelector("#designDimensions"),
   designStatus: document.querySelector("#designStatus"),
   designSubmissionStatus: document.querySelector("#designSubmissionStatus"),
   resetDesign: document.querySelector("#resetDesign"),
   downloadDesignScad: document.querySelector("#downloadDesignScad"),
+  saveDesignCollection: document.querySelector("#saveDesignCollection"),
   submitDesign: document.querySelector("#submitDesign"),
   designSubmissionList: document.querySelector("#designSubmissionList"),
   collectionEditorHeading: document.querySelector("#collectionEditorHeading"),
@@ -793,6 +829,8 @@ let designCamera;
 let designRenderer;
 let designModelGroup;
 let designDragState = null;
+let designSketchDragIndex = -1;
+let designSketchSelectedIndex = 0;
 let designCameraDistance = 260;
 let designZoomScale = 1;
 const designCameraTarget = new THREE.Vector3();
@@ -824,6 +862,7 @@ async function init() {
   buildDesignControls();
   setupScene();
   setupDesignScene();
+  setupDesignSketch();
   bindUi();
   syncComponentSideInput();
   applyTranslations();
@@ -885,6 +924,12 @@ function createDefaultDesignDraft() {
       temple_length: 145
     },
     style: structuredClone(defaultDesignStyle),
+    sketch: { points: structuredClone(defaultDesignSketchPoints), symmetric: true },
+    features: createDefaultDesignFeatures(),
+    publicParameters: [...defaultDesignPublicParameters],
+    sliderRanges: normalizeDesignSliderRanges(),
+    collectionId: "",
+    view: "sketch",
     code: "",
     manualCode: false
   };
@@ -899,6 +944,91 @@ function normalizeDesignStyle(style = {}) {
     frameColor: sanitizeHexColor(style.frameColor, defaultDesignStyle.frameColor),
     lensColor: sanitizeHexColor(style.lensColor, defaultDesignStyle.lensColor),
     detailColor: sanitizeHexColor(style.detailColor, defaultDesignStyle.detailColor)
+  };
+}
+
+function createDefaultDesignFeatures(params = defaultParams) {
+  return {
+    extrude: { enabled: true, depth: Number(params.frame_depth) || defaultParams.frame_depth },
+    fillet: { enabled: true, radius: Number(params.bevel) || defaultParams.bevel },
+    chamfer: { enabled: false, amount: 0.4 },
+    lensRecess: { enabled: true, depth: 1 }
+  };
+}
+
+function normalizeDesignSketch(sketch = {}) {
+  const supplied = Array.isArray(sketch.points) ? sketch.points : defaultDesignSketchPoints;
+  const points = supplied.slice(0, 20).map((point) => {
+    const x = THREE.MathUtils.clamp(Number(Array.isArray(point) ? point[0] : point?.x) || 0, -0.7, 0.7);
+    const y = THREE.MathUtils.clamp(Number(Array.isArray(point) ? point[1] : point?.y) || 0, -0.7, 0.7);
+    return [x, y];
+  });
+  return {
+    symmetric: sketch.symmetric !== false,
+    points: points.length >= 4 ? points : structuredClone(defaultDesignSketchPoints)
+  };
+}
+
+function normalizeDesignFeatures(features = {}, params = defaultParams) {
+  const defaults = createDefaultDesignFeatures(params);
+  const clamp = (value, min, max, fallback) => {
+    const number = Number(value);
+    return THREE.MathUtils.clamp(Number.isFinite(number) ? number : fallback, min, max);
+  };
+  return {
+    extrude: {
+      enabled: features.extrude?.enabled !== false,
+      depth: clamp(features.extrude?.depth, 3, 12, defaults.extrude.depth)
+    },
+    fillet: {
+      enabled: features.fillet?.enabled !== false,
+      radius: clamp(features.fillet?.radius, 0, 2.4, defaults.fillet.radius)
+    },
+    chamfer: {
+      enabled: Boolean(features.chamfer?.enabled),
+      amount: clamp(features.chamfer?.amount, 0, 2.4, defaults.chamfer.amount)
+    },
+    lensRecess: {
+      enabled: features.lensRecess?.enabled !== false,
+      depth: clamp(features.lensRecess?.depth, 0.4, 3, defaults.lensRecess.depth)
+    }
+  };
+}
+
+function normalizeDesignPublicParameters(keys = defaultDesignPublicParameters) {
+  const source = Array.isArray(keys) ? keys : defaultDesignPublicParameters;
+  return [...new Set(source.filter((key) => designPublicParameterKeys.includes(key)))];
+}
+
+function normalizeDesignSliderRanges(ranges = {}) {
+  return Object.fromEntries(designPublicParameterKeys.map((key) => {
+    const [, , , schemaMin, schemaMax, schemaStep] = parameterSchema.find(([itemKey]) => itemKey === key);
+    const supplied = ranges[key] || {};
+    const min = THREE.MathUtils.clamp(Number.isFinite(Number(supplied.min)) ? Number(supplied.min) : schemaMin, schemaMin, schemaMax);
+    const max = THREE.MathUtils.clamp(Number.isFinite(Number(supplied.max)) ? Number(supplied.max) : schemaMax, schemaMin, schemaMax);
+    return [key, { min: Math.min(min, max), max: Math.max(min, max), step: schemaStep }];
+  }));
+}
+
+function normalizeParametricDesign(design = {}) {
+  return {
+    type: "parametric-openscad",
+    ...normalizeDesignStyle(design),
+    sketch: normalizeDesignSketch(design.sketch),
+    features: normalizeDesignFeatures(design.features),
+    publicParameters: normalizeDesignPublicParameters(design.publicParameters),
+    sliderRanges: normalizeDesignSliderRanges(design.sliderRanges)
+  };
+}
+
+function designDefinitionFromDraft(draft = state.designDraft) {
+  return {
+    type: "parametric-openscad",
+    ...normalizeDesignStyle(draft.style),
+    sketch: normalizeDesignSketch(draft.sketch),
+    features: normalizeDesignFeatures(draft.features, draft.params),
+    publicParameters: normalizeDesignPublicParameters(draft.publicParameters),
+    sliderRanges: normalizeDesignSliderRanges(draft.sliderRanges)
   };
 }
 
@@ -944,6 +1074,216 @@ function resizeDesignScene() {
   designRenderer.setSize(width, height, false);
 }
 
+function setupDesignSketch() {
+  if (!els.designSketchCanvas) return;
+  setDesignView("sketch");
+  const locatePoint = (event) => {
+    const metrics = designSketchMetrics();
+    if (!metrics) return -1;
+    const rect = els.designSketchCanvas.getBoundingClientRect();
+    const x = event.clientX - rect.left;
+    const y = event.clientY - rect.top;
+    const points = normalizeDesignSketch(state.designDraft.sketch).points;
+    let closest = -1;
+    let distance = 14;
+    points.forEach((_, index) => {
+      const point = sketchScreenPoint(index, metrics);
+      const nextDistance = Math.hypot(point.x - x, point.y - y);
+      if (nextDistance < distance) {
+        closest = index;
+        distance = nextDistance;
+      }
+    });
+    return closest;
+  };
+  els.designSketchCanvas.addEventListener("pointerdown", (event) => {
+    const index = locatePoint(event);
+    if (index < 0) return;
+    designSketchDragIndex = index;
+    designSketchSelectedIndex = index;
+    els.designSketchCanvas.setPointerCapture(event.pointerId);
+    drawDesignSketch();
+  });
+  els.designSketchCanvas.addEventListener("pointermove", (event) => {
+    if (designSketchDragIndex < 0) return;
+    const metrics = designSketchMetrics();
+    if (!metrics) return;
+    const rect = els.designSketchCanvas.getBoundingClientRect();
+    const x = (event.clientX - rect.left - metrics.rightCenterX) / (metrics.lensWidth * metrics.scale);
+    const y = (metrics.centerY - (event.clientY - rect.top)) / (metrics.lensHeight * metrics.scale);
+    const sketch = normalizeDesignSketch(state.designDraft.sketch);
+    sketch.points[designSketchDragIndex] = [
+      THREE.MathUtils.clamp(x, -0.68, 0.68),
+      THREE.MathUtils.clamp(y, -0.68, 0.68)
+    ];
+    state.designDraft.sketch = sketch;
+    state.designDraft.manualCode = false;
+    syncDesignCode();
+    renderDesignPreview({ fitView: false });
+  });
+  const finish = () => {
+    designSketchDragIndex = -1;
+  };
+  els.designSketchCanvas.addEventListener("pointerup", finish);
+  els.designSketchCanvas.addEventListener("pointercancel", finish);
+}
+
+function setDesignView(view) {
+  const sketch = view !== "3d";
+  state.designDraft.view = sketch ? "sketch" : "3d";
+  els.designSketchCanvas?.classList.toggle("design-view-hidden", !sketch);
+  els.designCanvas?.classList.toggle("design-view-hidden", sketch);
+  els.designViewSketch?.classList.toggle("active", sketch);
+  els.designView3d?.classList.toggle("active", !sketch);
+  if (els.designViewHint) {
+    els.designViewHint.textContent = sketch
+      ? "Drag profile points to define the lens opening"
+      : "Drag to rotate · Scroll to zoom";
+  }
+  if (sketch) drawDesignSketch();
+  else {
+    resizeDesignScene();
+    renderDesignPreview({ fitView: false });
+  }
+}
+
+function designSketchMetrics() {
+  if (!els.designSketchCanvas) return null;
+  const rect = els.designSketchCanvas.getBoundingClientRect();
+  if (!rect.width || !rect.height) return null;
+  const p = designGeometryParams();
+  const usableWidth = Math.max(100, rect.width - 132);
+  const usableHeight = Math.max(100, rect.height - 148);
+  const scale = Math.min(usableWidth / (p.head_width + 20), usableHeight / (p.lens_height + p.rim_thickness * 4 + 32));
+  const lensWidth = p.lens_width;
+  const lensHeight = p.lens_height;
+  const rightCenterX = rect.width / 2 + (p.bridge_width / 2 + lensWidth / 2 + p.rim_thickness) * scale;
+  return {
+    rect,
+    p,
+    scale,
+    lensWidth,
+    lensHeight,
+    centerX: rect.width / 2,
+    centerY: rect.height / 2 + 16,
+    rightCenterX,
+    leftCenterX: rect.width - rightCenterX
+  };
+}
+
+function sketchScreenPoint(index, metrics) {
+  const [x, y] = normalizeDesignSketch(state.designDraft.sketch).points[index];
+  return {
+    x: metrics.rightCenterX + x * metrics.lensWidth * metrics.scale,
+    y: metrics.centerY - y * metrics.lensHeight * metrics.scale
+  };
+}
+
+function drawSketchProfile(ctx, centerX, metrics, expansion, fill, stroke, mirror = false) {
+  const points = normalizeDesignSketch(state.designDraft.sketch).points;
+  const width = metrics.lensWidth + expansion * 2;
+  const height = metrics.lensHeight + expansion * 2;
+  ctx.beginPath();
+  points.forEach(([x, y], index) => {
+    const pointX = centerX + (mirror ? -x : x) * width * metrics.scale;
+    const pointY = metrics.centerY - y * height * metrics.scale;
+    if (index === 0) ctx.moveTo(pointX, pointY);
+    else ctx.lineTo(pointX, pointY);
+  });
+  ctx.closePath();
+  if (fill) {
+    ctx.fillStyle = fill;
+    ctx.fill();
+  }
+  ctx.strokeStyle = stroke;
+  ctx.lineWidth = expansion ? 2 : 1.25;
+  ctx.stroke();
+}
+
+function sketchDimension(ctx, x1, y1, x2, y2, label) {
+  ctx.strokeStyle = "#9acc4b";
+  ctx.fillStyle = "#9acc4b";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(x1, y1);
+  ctx.lineTo(x2, y2);
+  ctx.stroke();
+  const angle = Math.atan2(y2 - y1, x2 - x1);
+  [[x1, y1, angle], [x2, y2, angle + Math.PI]].forEach(([x, y, direction]) => {
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(x + Math.cos(direction + 0.42) * 10, y + Math.sin(direction + 0.42) * 10);
+    ctx.lineTo(x + Math.cos(direction - 0.42) * 10, y + Math.sin(direction - 0.42) * 10);
+    ctx.closePath();
+    ctx.fill();
+  });
+  ctx.font = "600 12px Inter, Arial, sans-serif";
+  ctx.textAlign = "center";
+  ctx.fillText(label, (x1 + x2) / 2, (y1 + y2) / 2 - 8);
+}
+
+function drawDesignSketch() {
+  const canvas = els.designSketchCanvas;
+  const metrics = designSketchMetrics();
+  if (!canvas || !metrics) return;
+  const ratio = Math.min(window.devicePixelRatio || 1, 2);
+  canvas.width = Math.round(metrics.rect.width * ratio);
+  canvas.height = Math.round(metrics.rect.height * ratio);
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+  const { rect, p, scale, centerX, centerY, leftCenterX, rightCenterX } = metrics;
+  ctx.fillStyle = "#222932";
+  ctx.fillRect(0, 0, rect.width, rect.height);
+  ctx.strokeStyle = "rgba(160, 183, 201, .12)";
+  ctx.lineWidth = 1;
+  const grid = Math.max(22, 10 * scale);
+  for (let x = centerX % grid; x < rect.width; x += grid) {
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, rect.height);
+    ctx.stroke();
+  }
+  for (let y = centerY % grid; y < rect.height; y += grid) {
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(rect.width, y);
+    ctx.stroke();
+  }
+  ctx.strokeStyle = "rgba(142, 202, 220, .58)";
+  ctx.beginPath();
+  ctx.moveTo(centerX, 0);
+  ctx.lineTo(centerX, rect.height);
+  ctx.moveTo(0, centerY);
+  ctx.lineTo(rect.width, centerY);
+  ctx.stroke();
+  drawSketchProfile(ctx, leftCenterX, metrics, p.rim_thickness, "rgba(74, 114, 135, .32)", "#79bfd5", true);
+  drawSketchProfile(ctx, rightCenterX, metrics, p.rim_thickness, "rgba(74, 114, 135, .32)", "#79bfd5");
+  drawSketchProfile(ctx, leftCenterX, metrics, 0, "#222932", "#a5d4e0", true);
+  drawSketchProfile(ctx, rightCenterX, metrics, 0, "#222932", "#a5d4e0");
+  ctx.strokeStyle = "#79bfd5";
+  ctx.lineWidth = Math.max(2, p.rim_thickness * scale);
+  ctx.beginPath();
+  ctx.moveTo(leftCenterX + p.lens_width * scale * 0.45, centerY - p.lens_height * scale * 0.25);
+  ctx.lineTo(rightCenterX - p.lens_width * scale * 0.45, centerY - p.lens_height * scale * 0.25);
+  ctx.stroke();
+  normalizeDesignSketch(state.designDraft.sketch).points.forEach((_, index) => {
+    const point = sketchScreenPoint(index, metrics);
+    ctx.beginPath();
+    ctx.arc(point.x, point.y, index === designSketchSelectedIndex ? 6 : 4.5, 0, Math.PI * 2);
+    ctx.fillStyle = index === designSketchSelectedIndex ? "#ff741f" : "#f0f4f6";
+    ctx.fill();
+    ctx.strokeStyle = "#222932";
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+  });
+  const topY = centerY - (p.lens_height / 2 + p.rim_thickness + 14) * scale;
+  sketchDimension(ctx, centerX - p.head_width * scale / 2, topY, centerX + p.head_width * scale / 2, topY, `${formatNumber(p.head_width)} mm overall width`);
+  const bridgeY = centerY - p.lens_height * scale * 0.1;
+  sketchDimension(ctx, centerX - p.bridge_width * scale / 2, bridgeY, centerX + p.bridge_width * scale / 2, bridgeY, `${formatNumber(p.bridge_width)} mm bridge`);
+  const heightX = rightCenterX + (p.lens_width / 2 + p.rim_thickness + 12) * scale;
+  sketchDimension(ctx, heightX, centerY - p.lens_height * scale / 2, heightX, centerY + p.lens_height * scale / 2, `${formatNumber(p.lens_height)} mm`);
+}
+
 function updateDesignCamera() {
   if (!designCamera) return;
   designCamera.position.set(designCameraTarget.x, designCameraTarget.y + designCameraDistance * 0.26, designCameraTarget.z + designCameraDistance);
@@ -968,7 +1308,8 @@ function renderDesignPreview(options = {}) {
   if (!designModelGroup) return;
   const { fitView = false } = options;
   const p = designGeometryParams();
-  const style = normalizeDesignStyle(state.designDraft.style);
+  const definition = designDefinitionFromDraft();
+  const style = normalizeDesignStyle(definition);
   designModelGroup.clear();
   designModelGroup.rotation.set(designViewerRotation.x, designViewerRotation.y, designViewerRotation.z);
   const frameMaterial = new THREE.MeshStandardMaterial({ color: style.frameColor, roughness: 0.37, metalness: 0.035 });
@@ -984,8 +1325,8 @@ function renderDesignPreview(options = {}) {
   const outerLensWidth = (p.head_width - p.bridge_width) / 2;
   const center = p.bridge_width / 2 + outerLensWidth / 2;
   [-1, 1].forEach((side) => {
-    addDesignRim(side * center, p, outerLensWidth, frameMaterial, style);
-    addDesignLens(side * center, p, lensMaterial, style);
+    addDesignRim(side * center, p, outerLensWidth, frameMaterial, definition);
+    addDesignLens(side * center, p, lensMaterial, definition);
     addDesignTemple(side, p, outerLensWidth, frameMaterial, detailMaterial, style);
   });
   if (style.browBar) addDesignBar(p.head_width, p.lens_height / 2 + p.rim_thickness * 0.72, p.rim_thickness * 1.05, p.frame_depth * 0.95, frameMaterial, p);
@@ -1006,6 +1347,7 @@ function renderDesignPreview(options = {}) {
   if (els.designDimensions) {
     els.designDimensions.textContent = `${formatNumber(p.head_width)} mm frame / ${formatNumber(p.bridge_width)} mm bridge / ${formatNumber(p.temple_length)} mm temple`;
   }
+  drawDesignSketch();
 }
 
 function designCornerRadius(p, style, outer = false) {
@@ -1014,28 +1356,54 @@ function designCornerRadius(p, style, outer = false) {
   return p.corner_radius + (outer ? p.rim_thickness * 0.9 : 0);
 }
 
-function addDesignRim(x, p, outerWidth, material, style, target = designModelGroup) {
-  const outer = roundedRectShape(outerWidth, p.lens_height + p.rim_thickness * 2.05, designCornerRadius(p, style, true));
-  outer.holes.push(roundedRectShape(p.lens_width, p.lens_height, designCornerRadius(p, style)));
+function designProfilePath(width, height, definition, expansion = 0, asHole = false) {
+  const sketch = normalizeDesignSketch(definition?.sketch);
+  if (!definition?.sketch?.points?.length) {
+    return roundedRectShape(width + expansion * 2, height + expansion * 2, designCornerRadius(designGeometryParams(), definition, expansion > 0));
+  }
+  const horizontal = width + expansion * 2;
+  const vertical = height + expansion * 2;
+  const points = sketch.points.map(([x, y]) => new THREE.Vector2(x * horizontal, y * vertical));
+  const ordered = asHole ? [...points].reverse() : points;
+  const path = asHole ? new THREE.Path() : new THREE.Shape();
+  path.moveTo(ordered[0].x, ordered[0].y);
+  ordered.slice(1).forEach((point) => path.lineTo(point.x, point.y));
+  path.closePath();
+  return path;
+}
+
+function designEdgeOperation(p, definition) {
+  const features = normalizeDesignFeatures(definition?.features, p);
+  if (features.chamfer.enabled) return { amount: features.chamfer.amount, segments: 1 };
+  if (features.fillet.enabled) return { amount: features.fillet.radius, segments: 3 };
+  return { amount: 0, segments: 0 };
+}
+
+function addDesignRim(x, p, outerWidth, material, definition, target = designModelGroup) {
+  const outer = designProfilePath(outerWidth, p.lens_height, definition, p.rim_thickness);
+  outer.holes.push(designProfilePath(p.lens_width, p.lens_height, definition, 0, true));
+  const edge = designEdgeOperation(p, definition);
   const geometry = new THREE.ExtrudeGeometry(outer, {
-    depth: p.frame_depth,
-    bevelEnabled: p.bevel > 0,
-    bevelThickness: Math.max(0.01, p.bevel),
-    bevelSize: Math.max(0.01, p.bevel),
-    bevelSegments: p.bevel > 0 ? 2 : 0
+    depth: normalizeDesignFeatures(definition?.features, p).extrude.depth,
+    bevelEnabled: edge.amount > 0,
+    bevelThickness: Math.max(0.01, edge.amount),
+    bevelSize: Math.max(0.01, edge.amount),
+    bevelSegments: edge.segments
   });
   geometry.center();
   const rim = new THREE.Mesh(geometry, material);
   rim.position.x = x;
+  rim.scale.x = x < 0 ? -1 : 1;
   target.add(rim);
 }
 
-function addDesignLens(x, p, material, style, target = designModelGroup) {
-  const shape = roundedRectShape(p.lens_width - 0.4, p.lens_height - 0.4, designCornerRadius(p, style));
+function addDesignLens(x, p, material, definition, target = designModelGroup) {
+  const shape = designProfilePath(p.lens_width - 0.4, p.lens_height - 0.4, definition);
   const geometry = new THREE.ExtrudeGeometry(shape, { depth: Math.max(0.8, p.frame_depth * 0.36), bevelEnabled: false });
   geometry.center();
   const lens = new THREE.Mesh(geometry, material);
   lens.position.set(x, 0, p.frame_depth * 0.18);
+  lens.scale.x = x < 0 ? -1 : 1;
   target.add(lens);
 }
 
@@ -1367,11 +1735,20 @@ function bindUi() {
     event.preventDefault();
     navigateToView("design-lab");
   });
-  els.startDesignLab?.addEventListener("click", () => navigateToView("design-lab"));
+  els.startDesignLab?.addEventListener("click", () => {
+    resetDesignDraft();
+    navigateToView("design-lab");
+  });
   els.exitDesignLab?.addEventListener("click", scrollGalleryIntoView);
   els.designTabs.forEach((button) => button.addEventListener("click", () => switchDesignTab(button.dataset.designTab)));
   els.designOperationsPanel?.addEventListener("input", handleDesignOperationChange);
   els.designOperationsPanel?.addEventListener("change", handleDesignOperationChange);
+  els.designFeaturesPanel?.addEventListener("input", handleDesignOperationChange);
+  els.designFeaturesPanel?.addEventListener("change", handleDesignOperationChange);
+  els.designViewSketch?.addEventListener("click", () => setDesignView("sketch"));
+  els.designView3d?.addEventListener("click", () => setDesignView("3d"));
+  els.addSketchPoint?.addEventListener("click", addDesignSketchPoint);
+  els.removeSketchPoint?.addEventListener("click", removeDesignSketchPoint);
   els.designName?.addEventListener("input", handleDesignProjectCopyChange);
   els.designDescription?.addEventListener("input", handleDesignProjectCopyChange);
   els.regenerateDesignCode?.addEventListener("click", () => {
@@ -1382,6 +1759,7 @@ function bindUi() {
   els.applyDesignCode?.addEventListener("click", applyDesignCode);
   els.resetDesign?.addEventListener("click", resetDesignDraft);
   els.downloadDesignScad?.addEventListener("click", exportDesignScad);
+  els.saveDesignCollection?.addEventListener("click", saveDesignToCollections);
   els.submitDesign?.addEventListener("click", submitDesignForReview);
   els.printGuideButton?.addEventListener("click", () => scrollHomeSection("#printGuidePanel"));
   els.openPrintGuideImage?.addEventListener("click", openPrintGuideLightbox);
@@ -1538,6 +1916,19 @@ function buildDesignControls() {
   }).join("");
   if (els.designFrontControls) els.designFrontControls.innerHTML = renderGroup(designParameterGroups.front);
   if (els.designTempleControls) els.designTempleControls.innerHTML = renderGroup(designParameterGroups.temples);
+  if (els.designPublicParameters) {
+    const exposed = normalizeDesignPublicParameters(state.designDraft.publicParameters);
+    els.designPublicParameters.innerHTML = designPublicParameterKeys.map((key) => {
+      const [, label] = findParam(key);
+      return `
+        <label class="design-public-toggle">
+          <input type="checkbox" data-public-design-param="${escapeHtml(key)}"${exposed.includes(key) ? " checked" : ""} />
+          <span>${escapeHtml(label)}</span>
+          <small>slider</small>
+        </label>
+      `;
+    }).join("");
+  }
   syncDesignFields();
   syncDesignCode();
 }
@@ -1561,6 +1952,15 @@ function syncDesignFields() {
   if (els.designFrameColor) els.designFrameColor.value = style.frameColor;
   if (els.designLensColor) els.designLensColor.value = style.lensColor;
   if (els.designDetailColor) els.designDetailColor.value = style.detailColor;
+  const features = normalizeDesignFeatures(draft.features, draft.params);
+  if (els.designExtrudeEnabled) els.designExtrudeEnabled.checked = features.extrude.enabled;
+  if (els.designExtrudeDepth) els.designExtrudeDepth.value = String(features.extrude.depth);
+  if (els.designFilletEnabled) els.designFilletEnabled.checked = features.fillet.enabled;
+  if (els.designFilletRadius) els.designFilletRadius.value = String(features.fillet.radius);
+  if (els.designChamferEnabled) els.designChamferEnabled.checked = features.chamfer.enabled;
+  if (els.designChamferAmount) els.designChamferAmount.value = String(features.chamfer.amount);
+  if (els.designLensRecessEnabled) els.designLensRecessEnabled.checked = features.lensRecess.enabled;
+  if (els.designLensRecessDepth) els.designLensRecessDepth.value = String(features.lensRecess.depth);
 }
 
 function syncDesignCode() {
@@ -1570,14 +1970,15 @@ function syncDesignCode() {
 }
 
 function switchDesignTab(mode) {
-  const code = mode === "code";
+  const nextMode = ["sketch", "features", "code"].includes(mode) ? mode : "sketch";
   els.designTabs.forEach((button) => {
-    const active = button.dataset.designTab === (code ? "code" : "operations");
+    const active = button.dataset.designTab === nextMode;
     button.classList.toggle("active", active);
     button.setAttribute("aria-selected", String(active));
   });
-  if (els.designOperationsPanel) els.designOperationsPanel.hidden = code;
-  if (els.designCodePanel) els.designCodePanel.hidden = !code;
+  if (els.designOperationsPanel) els.designOperationsPanel.hidden = nextMode !== "sketch";
+  if (els.designFeaturesPanel) els.designFeaturesPanel.hidden = nextMode !== "features";
+  if (els.designCodePanel) els.designCodePanel.hidden = nextMode !== "code";
 }
 
 function handleDesignProjectCopyChange() {
@@ -1592,6 +1993,26 @@ function handleDesignOperationChange(event) {
     const unit = findParam(param)?.[6] || "";
     const output = document.querySelector(`#design-${param}-output`);
     if (output) output.textContent = formatValue(event.target.value, unit);
+  }
+  const publicParam = event.target.dataset.publicDesignParam;
+  if (publicParam) {
+    const selected = new Set(normalizeDesignPublicParameters(state.designDraft.publicParameters));
+    if (event.target.checked) selected.add(publicParam);
+    else selected.delete(publicParam);
+    state.designDraft.publicParameters = normalizeDesignPublicParameters([...selected]);
+  }
+  const features = normalizeDesignFeatures({
+    extrude: { enabled: els.designExtrudeEnabled?.checked, depth: els.designExtrudeDepth?.value },
+    fillet: { enabled: els.designFilletEnabled?.checked, radius: els.designFilletRadius?.value },
+    chamfer: { enabled: els.designChamferEnabled?.checked, amount: els.designChamferAmount?.value },
+    lensRecess: { enabled: els.designLensRecessEnabled?.checked, depth: els.designLensRecessDepth?.value }
+  }, state.designDraft.params);
+  state.designDraft.features = features;
+  state.designDraft.params.frame_depth = features.extrude.depth;
+  state.designDraft.params.bevel = features.chamfer.enabled ? features.chamfer.amount : features.fillet.enabled ? features.fillet.radius : 0;
+  if (event.target === els.designLensShape) {
+    state.designDraft.sketch = { symmetric: true, points: designProfilePreset(els.designLensShape.value) };
+    designSketchSelectedIndex = 0;
   }
   state.designDraft.style = normalizeDesignStyle({
     ...state.designDraft.style,
@@ -1609,6 +2030,49 @@ function handleDesignOperationChange(event) {
   setDesignNote("");
 }
 
+function designProfilePreset(shape) {
+  if (shape === "round") {
+    return Array.from({ length: 12 }, (_, index) => {
+      const angle = Math.PI / 2 - index * Math.PI * 2 / 12;
+      return [Math.cos(angle) * 0.5, Math.sin(angle) * 0.5];
+    });
+  }
+  if (shape === "sharp") {
+    return [[-0.48, 0.5], [0.48, 0.5], [0.5, 0.34], [0.45, -0.5], [-0.43, -0.5], [-0.5, 0.31]];
+  }
+  return structuredClone(defaultDesignSketchPoints);
+}
+
+function addDesignSketchPoint() {
+  const sketch = normalizeDesignSketch(state.designDraft.sketch);
+  if (sketch.points.length >= 20) return;
+  const index = Math.min(sketch.points.length - 1, Math.max(0, designSketchSelectedIndex));
+  const nextIndex = (index + 1) % sketch.points.length;
+  const first = sketch.points[index];
+  const second = sketch.points[nextIndex];
+  const point = [(first[0] + second[0]) / 2, (first[1] + second[1]) / 2];
+  sketch.points.splice(nextIndex, 0, point);
+  state.designDraft.sketch = sketch;
+  designSketchSelectedIndex = nextIndex;
+  state.designDraft.manualCode = false;
+  syncDesignCode();
+  renderDesignPreview({ fitView: false });
+}
+
+function removeDesignSketchPoint() {
+  const sketch = normalizeDesignSketch(state.designDraft.sketch);
+  if (sketch.points.length <= 4) {
+    setDesignNote("A closed profile needs at least four points.");
+    return;
+  }
+  sketch.points.splice(Math.min(designSketchSelectedIndex, sketch.points.length - 1), 1);
+  designSketchSelectedIndex = Math.max(0, Math.min(designSketchSelectedIndex, sketch.points.length - 1));
+  state.designDraft.sketch = sketch;
+  state.designDraft.manualCode = false;
+  syncDesignCode();
+  renderDesignPreview({ fitView: false });
+}
+
 function parseDesignCode(source) {
   const style = { ...state.designDraft.style };
   const textValue = source.match(/(?:^|\n)\s*temple_text\s*=\s*"([^"]*)"\s*;/)?.[1];
@@ -1620,8 +2084,42 @@ function parseDesignCode(source) {
     lensColor: source.match(/(?:^|\n)\s*lens_color\s*=\s*"(#[0-9a-fA-F]{6})"\s*;/)?.[1],
     detailColor: source.match(/(?:^|\n)\s*detail_color\s*=\s*"(#[0-9a-fA-F]{6})"\s*;/)?.[1]
   };
+  const profileSource = source.match(/(?:^|\n)\s*profile_points\s*=\s*\[([\s\S]*?)\]\s*;/)?.[1] || "";
+  const parsedPoints = [...profileSource.matchAll(/\[\s*(-?\d*\.?\d+)\s*,\s*(-?\d*\.?\d+)\s*\]/g)]
+    .map((match) => [Number(match[1]), Number(match[2])]);
+  const publicSource = source.match(/(?:^|\n)\s*customer_sliders\s*=\s*\[([\s\S]*?)\]\s*;/)?.[1] || "";
+  const publicParameters = [...publicSource.matchAll(/"([^"]+)"/g)].map((match) => match[1]);
+  const readBool = (key, fallback) => {
+    const value = source.match(new RegExp(`(?:^|\\n)\\s*${key}\\s*=\\s*(true|false)\\s*;`))?.[1];
+    return value === undefined ? fallback : value === "true";
+  };
+  const readNumber = (key, fallback) => {
+    const value = source.match(new RegExp(`(?:^|\\n)\\s*${key}\\s*=\\s*(-?\\d*\\.?\\d+)\\s*;`))?.[1];
+    return value === undefined ? fallback : Number(value);
+  };
+  const currentFeatures = normalizeDesignFeatures(state.designDraft.features, state.designDraft.params);
   return {
     params: { ...state.designDraft.params, ...parseScadParameters(source) },
+    sketch: normalizeDesignSketch({ points: parsedPoints.length >= 4 ? parsedPoints : state.designDraft.sketch.points }),
+    publicParameters: normalizeDesignPublicParameters(publicParameters.length ? publicParameters : state.designDraft.publicParameters),
+    features: normalizeDesignFeatures({
+      extrude: {
+        enabled: readBool("extrude_enabled", currentFeatures.extrude.enabled),
+        depth: readNumber("extrude_depth", currentFeatures.extrude.depth)
+      },
+      fillet: {
+        enabled: readBool("fillet_enabled", currentFeatures.fillet.enabled),
+        radius: readNumber("fillet_radius", currentFeatures.fillet.radius)
+      },
+      chamfer: {
+        enabled: readBool("chamfer_enabled", currentFeatures.chamfer.enabled),
+        amount: readNumber("chamfer_amount", currentFeatures.chamfer.amount)
+      },
+      lensRecess: {
+        enabled: readBool("lens_recess_enabled", currentFeatures.lensRecess.enabled),
+        depth: readNumber("lens_recess_depth", currentFeatures.lensRecess.depth)
+      }
+    }, state.designDraft.params),
     style: normalizeDesignStyle({
       ...style,
       templeText: textValue === undefined ? style.templeText : textValue,
@@ -1642,17 +2140,26 @@ function applyDesignCode() {
   const parsed = parseDesignCode(source);
   state.designDraft.params = parsed.params;
   state.designDraft.style = parsed.style;
+  state.designDraft.sketch = parsed.sketch;
+  state.designDraft.features = parsed.features;
+  state.designDraft.publicParameters = parsed.publicParameters;
+  state.designDraft.params.frame_depth = parsed.features.extrude.depth;
+  state.designDraft.params.bevel = parsed.features.chamfer.enabled
+    ? parsed.features.chamfer.amount
+    : parsed.features.fillet.enabled ? parsed.features.fillet.radius : 0;
   state.designDraft.code = source;
   state.designDraft.manualCode = true;
-  syncDesignFields();
+  buildDesignControls();
   renderDesignPreview({ fitView: false });
   setDesignNote("Supported OpenSCAD parameters applied to the preview. Custom code is kept in the submitted file.");
 }
 
 function resetDesignDraft() {
   state.designDraft = createDefaultDesignDraft();
+  designSketchSelectedIndex = 0;
   buildDesignControls();
-  switchDesignTab("operations");
+  switchDesignTab("sketch");
+  setDesignView("sketch");
   renderDesignPreview({ fitView: true });
   setDesignNote("New design ready.");
 }
@@ -1671,6 +2178,12 @@ function setDesignNote(message) {
 function captureDesignThumbnail() {
   if (!designRenderer || !designScene || !designCamera) return "";
   try {
+    const stage = els.designCanvas?.closest(".design-stage");
+    const width = Math.max(1, Math.floor(stage?.clientWidth || els.designCanvas?.clientWidth || 1));
+    const height = Math.max(1, Math.floor(stage?.clientHeight || els.designCanvas?.clientHeight || 1));
+    designCamera.aspect = width / height;
+    designCamera.updateProjectionMatrix();
+    designRenderer.setSize(width, height, false);
     designRenderer.render(designScene, designCamera);
     return designRenderer.domElement.toDataURL("image/jpeg", 0.82);
   } catch {
@@ -1699,7 +2212,7 @@ async function submitDesignForReview() {
         name: state.designDraft.name,
         description: state.designDraft.description,
         params: state.designDraft.params,
-        design: state.designDraft.style,
+        design: designDefinitionFromDraft(),
         scadSource: source,
         thumbnail: captureDesignThumbnail()
       })
@@ -1711,6 +2224,50 @@ async function submitDesignForReview() {
     setDesignNote(error.message || "Could not submit this design.");
   } finally {
     els.submitDesign.disabled = false;
+  }
+}
+
+async function saveDesignToCollections() {
+  if (!isDeveloper() || !sessionToken()) {
+    setDesignNote("Developer access is required to publish a collection template.");
+    return;
+  }
+  handleDesignProjectCopyChange();
+  const source = state.designDraft.manualCode ? String(els.designScadCode?.value || "") : buildDesignScad(state.designDraft);
+  const existing = state.designDraft.collectionId
+    ? state.models.find((model) => model.id === state.designDraft.collectionId)
+    : null;
+  const category = "sun";
+  const nextOrder = Math.max(-1, ...state.models.filter((item) => item.category === category).map((item) => Number(item.order || 0))) + 1;
+  const collection = normalizeStoredModel({
+    id: existing?.id || `design-${crypto.randomUUID()}`,
+    name: state.designDraft.name,
+    category,
+    access: existing?.access || "basic",
+    description: state.designDraft.description,
+    scadSource: source,
+    params: state.designDraft.params,
+    design: designDefinitionFromDraft(),
+    lensMode: "none",
+    thumbnail: captureDesignThumbnail() || existing?.thumbnail || "",
+    components: null,
+    assembly: null,
+    order: existing?.order ?? nextOrder,
+    createdAt: existing?.createdAt || Date.now(),
+    updatedAt: Date.now()
+  });
+  state.models = existing
+    ? state.models.map((model) => model.id === existing.id ? collection : model)
+    : [collection, ...state.models];
+  normalizeGalleryOrder(category);
+  persistModels({ syncBackend: false });
+  try {
+    await syncCollectionsToBackend({ announce: true });
+    state.designDraft.collectionId = collection.id;
+    renderGallery();
+    setDesignNote(`${collection.name} saved to Collections.`);
+  } catch (error) {
+    setDesignNote(error.message || "Could not save this collection.");
   }
 }
 
@@ -1798,11 +2355,22 @@ async function handleDesignSubmissionReviewClick(event) {
 
 function loadPublishedDesignIntoLab(model) {
   const storedCode = String(model.scadSource || "");
+  const definition = normalizeParametricDesign(model.design);
+  const params = { ...structuredClone(defaultParams), ...model.params };
+  params.frame_depth = definition.features.extrude.depth;
+  params.bevel = definition.features.chamfer.enabled
+    ? definition.features.chamfer.amount
+    : definition.features.fillet.enabled ? definition.features.fillet.radius : 0;
   state.designDraft = {
     name: model.name,
     description: model.description,
-    params: { ...structuredClone(defaultParams), ...model.params },
-    style: normalizeDesignStyle(model.design),
+    params,
+    style: normalizeDesignStyle(definition),
+    sketch: definition.sketch,
+    features: definition.features,
+    publicParameters: definition.publicParameters,
+    collectionId: model.id,
+    view: "sketch",
     code: storedCode,
     manualCode: Boolean(storedCode.trim())
   };
@@ -1811,10 +2379,11 @@ function loadPublishedDesignIntoLab(model) {
     state.designDraft.code = storedCode;
     els.designScadCode.value = storedCode;
   }
-  switchDesignTab("operations");
+  switchDesignTab("sketch");
+  setDesignView("sketch");
   navigateToView("design-lab");
   renderDesignPreview({ fitView: true });
-  setDesignNote("Published design loaded. Changes can be submitted as a new review.");
+  setDesignNote(isDeveloper() ? "Collection template loaded. Edit the sketch or feature stack and save it again." : "Published parametric design loaded.");
 }
 
 function sceneBackgroundColor() {
@@ -2454,7 +3023,10 @@ function applyTranslations() {
 
 function buildControls() {
   els.controls.innerHTML = "";
-  parameterSchema.filter(([key]) => visibleParameterKeys.has(key)).forEach(([key, label, hint, min, max, step, unit]) => {
+  const activeKeys = state.activeParametricDesign
+    ? new Set(normalizeParametricDesign(state.activeParametricDesign).publicParameters)
+    : visibleParameterKeys;
+  parameterSchema.filter(([key]) => activeKeys.has(key)).forEach(([key, label, hint, min, max, step, unit]) => {
     const translated = getParameterText(key, label, hint);
     const row = document.createElement("div");
     row.className = "control";
@@ -3381,15 +3953,16 @@ function renderParametricPreview() {
 
 function renderPublishedDesignPreview() {
   const p = designGeometryParams(state.params);
-  const style = normalizeDesignStyle(state.activeParametricDesign);
+  const definition = normalizeParametricDesign(state.activeParametricDesign);
+  const style = normalizeDesignStyle(definition);
   const frameMaterial = new THREE.MeshStandardMaterial({ color: style.frameColor, roughness: 0.37, metalness: 0.035 });
   const detailMaterial = new THREE.MeshStandardMaterial({ color: style.detailColor, roughness: 0.42, metalness: 0.02 });
   const lensMaterial = new THREE.MeshPhysicalMaterial({ color: style.lensColor, transparent: true, opacity: 0.62, roughness: 0.16, transmission: 0.24 });
   const outerLensWidth = (p.head_width - p.bridge_width) / 2;
   const center = p.bridge_width / 2 + outerLensWidth / 2;
   [-1, 1].forEach((side) => {
-    addDesignRim(side * center, p, outerLensWidth, frameMaterial, style, modelGroup);
-    addDesignLens(side * center, p, lensMaterial, style, modelGroup);
+    addDesignRim(side * center, p, outerLensWidth, frameMaterial, definition, modelGroup);
+    addDesignLens(side * center, p, lensMaterial, definition, modelGroup);
     addDesignTemple(side, p, outerLensWidth, frameMaterial, detailMaterial, style, modelGroup);
   });
   if (style.browBar) addDesignBar(p.head_width, p.lens_height / 2 + p.rim_thickness * 0.72, p.rim_thickness * 1.05, p.frame_depth * 0.95, frameMaterial, p, modelGroup);
@@ -3659,7 +4232,7 @@ function normalizeStoredModel(model) {
     description,
     scadSource,
     params,
-    design: model.design && typeof model.design === "object" ? normalizeDesignStyle(model.design) : null,
+    design: model.design && typeof model.design === "object" ? normalizeParametricDesign(model.design) : null,
     lensMode: validLensMode(model.lensMode),
     thumbnail: typeof model.thumbnail === "string" ? model.thumbnail : "",
     components: normalizeModelComponents(model.components),
@@ -3713,7 +4286,7 @@ function selectModel(id, options = {}) {
   state.modelName = model.name;
   state.scadSource = model.scadSource;
   state.params = { ...structuredClone(defaultParams), ...model.params };
-  state.activeParametricDesign = model.design ? normalizeDesignStyle(model.design) : null;
+  state.activeParametricDesign = model.design ? normalizeParametricDesign(model.design) : null;
   rebuildComponentLibrary();
   repairAssemblyForActiveModel(model);
   applyAssemblyToParams();
@@ -4102,6 +4675,8 @@ function updateAccountUi() {
   els.accountButton.classList.toggle("developer", isDeveloper());
   els.openStudio.hidden = !isDeveloper();
   els.openLicenses.hidden = !isDeveloper();
+  if (els.saveDesignCollection) els.saveDesignCollection.hidden = !isDeveloper();
+  if (els.submitDesign) els.submitDesign.hidden = isDeveloper();
   els.studioPanel.hidden = els.studioPanel.hidden || !isDeveloper();
   els.collectionEditorPanel.hidden = els.collectionEditorPanel.hidden || !isDeveloper();
   els.licensePanel.hidden = els.licensePanel.hidden || !isDeveloper();
@@ -4715,10 +5290,6 @@ function renderHeroEditorTargetOptions() {
 
 function openHeroEditorTarget() {
   const model = heroEditorModel();
-  if (model?.design) {
-    loadPublishedDesignIntoLab(model);
-    return;
-  }
   if (model) selectModel(model.id);
   navigateToView("configurator");
 }
@@ -4779,10 +5350,6 @@ function handleGalleryClick(event) {
   const model = state.models.find((item) => item.id === card?.dataset.modelId);
   if (!model) return;
   if (button.dataset.action === "open") {
-    if (model.design) {
-      loadPublishedDesignIntoLab(model);
-      return;
-    }
     selectModel(model.id);
     navigateToView("configurator");
     return;
@@ -4802,7 +5369,8 @@ function handleGalleryClick(event) {
       log("Editing is available only in developer mode.");
       return;
     }
-    startModelEdit(model);
+    if (model.design) loadPublishedDesignIntoLab(model);
+    else startModelEdit(model);
     return;
   }
   if (button.dataset.action === "move-left" || button.dataset.action === "move-right") {
@@ -4835,7 +5403,8 @@ function handleDeveloperCollectionListClick(event) {
   const model = state.models.find((item) => item.id === row?.dataset.modelId);
   if (!model) return;
   if (button.dataset.devAction === "edit") {
-    startModelEdit(model);
+    if (model.design) loadPublishedDesignIntoLab(model);
+    else startModelEdit(model);
     return;
   }
   if (button.dataset.devAction === "move-left" || button.dataset.devAction === "move-right") {
@@ -5534,8 +6103,14 @@ glasses();
 
 function buildDesignScad(draft = state.designDraft) {
   const p = designGeometryParams(draft.params);
-  const style = normalizeDesignStyle(draft.style);
+  const definition = designDefinitionFromDraft(draft);
+  const style = normalizeDesignStyle(definition);
+  const features = normalizeDesignFeatures(definition.features, p);
   const text = style.templeText.replaceAll("\\", "\\\\").replaceAll("\"", "\\\"");
+  const profilePoints = normalizeDesignSketch(definition.sketch).points
+    .map(([x, y]) => `[${formatNumber(x)}, ${formatNumber(y)}]`)
+    .join(", ");
+  const publicParameters = definition.publicParameters.map((key) => `"${key}"`).join(", ");
   const paramLines = parameterSchema
     .map(([key, label, , min, max, step]) => `${key} = ${formatNumber(p[key])}; // [${min}:${step}:${max}] ${label}`)
     .join("\n");
@@ -5550,6 +6125,16 @@ brow_bar_enabled = ${style.browBar ? "true" : "false"};
 frame_color = "${style.frameColor}";
 lens_color = "${style.lensColor}";
 detail_color = "${style.detailColor}";
+profile_points = [${profilePoints}];
+customer_sliders = [${publicParameters}]; // Exposed controls in Frame Lab.
+extrude_enabled = ${features.extrude.enabled ? "true" : "false"};
+extrude_depth = ${formatNumber(features.extrude.depth)};
+fillet_enabled = ${features.fillet.enabled ? "true" : "false"};
+fillet_radius = ${formatNumber(features.fillet.radius)};
+chamfer_enabled = ${features.chamfer.enabled ? "true" : "false"};
+chamfer_amount = ${formatNumber(features.chamfer.amount)};
+lens_recess_enabled = ${features.lensRecess.enabled ? "true" : "false"};
+lens_recess_depth = ${formatNumber(features.lensRecess.depth)};
 
 outer_lens_width = (head_width - bridge_width) / 2;
 opening_width = min(lens_width, outer_lens_width - rim_thickness * 2.12);
@@ -5559,13 +6144,21 @@ module rounded_rect(size=[10,10], radius=2) {
   offset(r=radius) square([size[0]-2*radius, size[1]-2*radius], center=true);
 }
 
+module drawn_profile(size=[10,10]) {
+  polygon([for (point = profile_points) [point[0] * size[0], point[1] * size[1]]]);
+}
+
+module finished_profile() {
+  if (fillet_enabled)
+    offset(r=fillet_radius) offset(delta=-fillet_radius) children();
+  else if (chamfer_enabled)
+    offset(delta=chamfer_amount, chamfer=true)
+    offset(delta=-chamfer_amount, chamfer=true) children();
+  else children();
+}
+
 module lens_profile(size=[10,10], outer=false) {
-  radius = lens_shape == "round"
-    ? min(size[0], size[1]) / 2
-    : lens_shape == "sharp"
-      ? corner_radius * 0.44 + (outer ? rim_thickness * 0.35 : 0)
-      : corner_radius + (outer ? rim_thickness * 0.9 : 0);
-  rounded_rect(size, radius);
+  finished_profile() drawn_profile(size);
 }
 
 module soft_bar(size=[10,4,4], radius=1) {
@@ -5575,7 +6168,8 @@ module soft_bar(size=[10,4,4], radius=1) {
 
 module rim(cx=0) {
   translate([cx, 0, 0])
-  linear_extrude(height=frame_depth, center=true, convexity=10)
+  scale([cx < 0 ? -1 : 1, 1, 1])
+  linear_extrude(height=extrude_enabled ? extrude_depth : 0.2, center=true, convexity=10)
   difference() {
     lens_profile([outer_lens_width, lens_height + rim_thickness*2.05], true);
     lens_profile([opening_width, lens_height], false);
@@ -5583,8 +6177,9 @@ module rim(cx=0) {
 }
 
 module lens_insert(cx=0) {
-  translate([cx, 0, frame_depth*0.2])
-  linear_extrude(height=max(1, frame_depth*0.36), center=true, convexity=6)
+  translate([cx, 0, lens_recess_enabled ? extrude_depth/2 - lens_recess_depth/2 : extrude_depth*0.2])
+  scale([cx < 0 ? -1 : 1, 1, 1])
+  linear_extrude(height=lens_recess_enabled ? lens_recess_depth : max(1, extrude_depth*0.36), center=true, convexity=6)
   lens_profile([opening_width-0.4, lens_height-0.4], false);
 }
 

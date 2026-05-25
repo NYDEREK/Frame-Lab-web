@@ -786,6 +786,20 @@ function sanitizeCollection(model) {
 
 function sanitizeParametricDesign(style = {}) {
   const color = (key, fallback) => sanitizeHexColor(style[key], fallback);
+  const validParameterKeys = new Set([
+    "head_width", "bridge_width", "lens_width", "lens_height", "rim_thickness",
+    "temple_length", "temple_drop", "temple_spread"
+  ]);
+  const suppliedPoints = Array.isArray(style.sketch?.points) ? style.sketch.points : [];
+  const sketchPoints = suppliedPoints.slice(0, 20).map((point) => {
+    const x = Math.max(-0.7, Math.min(0.7, Number(Array.isArray(point) ? point[0] : point?.x) || 0));
+    const y = Math.max(-0.7, Math.min(0.7, Number(Array.isArray(point) ? point[1] : point?.y) || 0));
+    return [x, y];
+  });
+  const value = (next, min, max, fallback) => {
+    const number = Number(next);
+    return Number.isFinite(number) ? Math.max(min, Math.min(max, number)) : fallback;
+  };
   return {
     type: "parametric-openscad",
     lensShape: ["soft-square", "round", "sharp"].includes(style.lensShape) ? style.lensShape : "soft-square",
@@ -794,7 +808,35 @@ function sanitizeParametricDesign(style = {}) {
     browBar: style.browBar !== false,
     frameColor: color("frameColor", "#ff741f"),
     lensColor: color("lensColor", "#202529"),
-    detailColor: color("detailColor", "#e59a62")
+    detailColor: color("detailColor", "#e59a62"),
+    sketch: {
+      symmetric: style.sketch?.symmetric !== false,
+      points: sketchPoints.length >= 4 ? sketchPoints : [
+        [-0.42, 0.5], [0.36, 0.5], [0.5, 0.34], [0.47, -0.3],
+        [0.34, -0.5], [-0.38, -0.5], [-0.5, -0.3], [-0.5, 0.3]
+      ]
+    },
+    features: {
+      extrude: {
+        enabled: style.features?.extrude?.enabled !== false,
+        depth: value(style.features?.extrude?.depth, 3, 12, 5.8)
+      },
+      fillet: {
+        enabled: style.features?.fillet?.enabled !== false,
+        radius: value(style.features?.fillet?.radius, 0, 2.4, 0.55)
+      },
+      chamfer: {
+        enabled: Boolean(style.features?.chamfer?.enabled),
+        amount: value(style.features?.chamfer?.amount, 0, 2.4, 0.4)
+      },
+      lensRecess: {
+        enabled: style.features?.lensRecess?.enabled !== false,
+        depth: value(style.features?.lensRecess?.depth, 0.4, 3, 1)
+      }
+    },
+    publicParameters: [...new Set(Array.isArray(style.publicParameters)
+      ? style.publicParameters.filter((key) => validParameterKeys.has(key))
+      : ["head_width", "bridge_width", "temple_length"])]
   };
 }
 
