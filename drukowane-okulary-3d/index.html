@@ -496,13 +496,27 @@
               <div id="designFrontControls" class="design-controls"></div>
             </section>
             <section class="design-control-section">
-              <h3>Lens retention</h3>
+              <h3>Lens channel</h3>
               <div class="design-interface-metrics">
                 <div><strong>1.00 mm</strong><small>Acrylic lens</small></div>
-                <div><strong>1.20 mm</strong><small>Seat width</small></div>
-                <div><strong>0.35 mm</strong><small>Recess depth</small></div>
+                <div><strong id="designLensSlotMetric">1.20 mm</strong><small>Internal slot</small></div>
+                <div><strong id="designLensCaptureMetric">0.35 mm</strong><small>Edge capture</small></div>
               </div>
-              <p class="design-note">A retaining seat is cut around every closed lens opening in the front body.</p>
+              <div class="design-construction-grid">
+                <label><span>Slot width</span><input id="designLensSlotWidth" type="number" min="1" max="2" step="0.05" value="1.2" /><small>mm</small></label>
+                <label><span>Edge capture</span><input id="designLensCaptureDepth" type="number" min="0.15" max="1.2" step="0.05" value="0.35" /><small>mm</small></label>
+                <label><span>Fit clearance</span><input id="designLensClearance" type="number" min="0" max="0.6" step="0.05" value="0.2" /><small>mm</small></label>
+                <label><span>Channel offset</span><input id="designLensChannelOffset" type="number" min="-1" max="1" step="0.05" value="0" /><small>mm</small></label>
+              </div>
+              <p class="design-note">The lens edge sits inside the front body with printed lips on both faces. Clearance reduces the lens outline for fitting.</p>
+            </section>
+            <section class="design-control-section">
+              <h3>Interface placement</h3>
+              <div class="design-construction-grid">
+                <label><span>Hinge height</span><input id="designHingeMountHeight" type="number" min="-12" max="22" step="0.5" value="10" /><small>mm</small></label>
+                <label><span>Side offset</span><input id="designHingeMountOffset" type="number" min="-4" max="8" step="0.5" value="0" /><small>mm</small></label>
+              </div>
+              <p class="design-note">Both hinge halves share this vertical screw axis in assembly.</p>
             </section>
             <section class="design-control-section design-feature-stack">
               <h3>Front operations</h3>
@@ -566,6 +580,20 @@
             </section>
             <section class="design-control-section design-details">
               <h3>Left side detail</h3>
+              <label>
+                <span>Outer texture</span>
+                <select id="designTemplePattern" class="component-select">
+                  <option value="none">Clean</option>
+                  <option value="ribs">Ribs</option>
+                  <option value="perforated">Perforated</option>
+                  <option value="diamond">Diamond relief</option>
+                </select>
+              </label>
+              <div class="design-construction-grid">
+                <label><span>Rounding</span><input id="designTempleCornerRadius" type="number" min="0" max="4" step="0.1" value="1.4" /><small>mm</small></label>
+                <label><span>Texture depth</span><input id="designTempleTextureDepth" type="number" min="0.2" max="1.2" step="0.05" value="0.45" /><small>mm</small></label>
+                <label><span>Spacing</span><input id="designTemplePatternSpacing" type="number" min="5" max="18" step="1" value="9" /><small>mm</small></label>
+              </div>
               <label class="design-text-field">
                 <span>Left temple text</span>
                 <input id="designTempleText" type="text" maxlength="24" placeholder="Optional engraving" />
@@ -597,7 +625,7 @@
                 <span>Front hinges</span><strong>Included</strong>
                 <span>Temple hinges</span><strong>Included</strong>
                 <span>Acrylic lenses</span><strong>Generated</strong>
-                <span>Lens seat</span><strong>1.2 x 0.35 mm</strong>
+                <span>Lens channel</span><strong id="designLensChannelSummary">1.20 mm slot / 0.35 mm grip / 0.20 mm clearance</strong>
               </div>
             </section>
             <section class="design-control-section">
@@ -612,14 +640,6 @@
             </section>
             <section class="design-control-section design-details">
               <h3>Appearance</h3>
-              <label>
-                <span>Temple pattern</span>
-                <select id="designTemplePattern" class="component-select">
-                  <option value="none">Clean</option>
-                  <option value="ribs">Ribs</option>
-                  <option value="perforated">Perforated</option>
-                </select>
-              </label>
               <div class="design-colors">
                 <label><span>Frame</span><input id="designFrameColor" type="color" value="#ff741f" /></label>
                 <label><span>Lens</span><input id="designLensColor" type="color" value="#202529" /></label>

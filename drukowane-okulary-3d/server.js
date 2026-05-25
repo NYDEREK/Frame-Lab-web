@@ -819,7 +819,7 @@ function sanitizeParametricDesign(style = {}) {
   return {
     type: "parametric-openscad",
     lensShape: ["soft-square", "round", "sharp"].includes(style.lensShape) ? style.lensShape : "soft-square",
-    templePattern: ["none", "ribs", "perforated"].includes(style.templePattern) ? style.templePattern : "none",
+    templePattern: ["none", "ribs", "perforated", "diamond"].includes(style.templePattern) ? style.templePattern : "none",
     templeText: cleanText(style.templeText, "", 24),
     leftTempleText: cleanText(style.leftTempleText ?? style.templeText, "", 24),
     rightTempleText: cleanText(style.rightTempleText ?? style.templeText, "", 24),
@@ -855,12 +855,19 @@ function sanitizeParametricDesign(style = {}) {
     construction: {
       hingeStandard: "FL-H1",
       lensThickness: 1,
-      lensSeatWidth: 1.2,
-      lensSeatDepth: 0.35,
+      lensSeatWidth: value(style.construction?.lensSeatWidth, 1, 2, 1.2),
+      lensSeatDepth: value(style.construction?.lensSeatDepth, 0.15, 1.2, 0.35),
+      lensClearance: value(style.construction?.lensClearance, 0, 0.6, 0.2),
+      lensChannelOffset: value(style.construction?.lensChannelOffset, -1, 1, 0),
+      hingeMountHeight: value(style.construction?.hingeMountHeight, -12, 22, 10),
+      hingeMountOffset: value(style.construction?.hingeMountOffset, -4, 8, 0),
       templeStraight: value(style.construction?.templeStraight, 35, 120, 65),
       templeHook: value(style.construction?.templeHook, 10, 60, 30),
       templeHookAngle: value(style.construction?.templeHookAngle, 10, 75, 45),
-      templeBarHeight: value(style.construction?.templeBarHeight, 3, 10, 5.4)
+      templeBarHeight: value(style.construction?.templeBarHeight, 3, 10, 5.4),
+      templeCornerRadius: value(style.construction?.templeCornerRadius, 0, 4, 1.4),
+      templeTextureDepth: value(style.construction?.templeTextureDepth, 0.2, 1.2, 0.45),
+      templePatternSpacing: value(style.construction?.templePatternSpacing, 5, 18, 9)
     },
     publicParameters: [...new Set(Array.isArray(style.publicParameters)
       ? style.publicParameters.filter((key) => validParameterKeys.has(key))
