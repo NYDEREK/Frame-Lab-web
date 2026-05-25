@@ -10,7 +10,7 @@ const parameterSchema = [
   ["lens_height", "Lens height", "Lens opening height", 28, 50, 0.5, "mm"],
   ["rim_thickness", "Rim thickness", "Material around lens", 2.5, 9, 0.1, "mm"],
   ["frame_depth", "Front depth", "Extrusion depth", 3, 12, 0.1, "mm"],
-  ["temple_length", "Temple length", "Arm length", 115, 175, 1, "mm"],
+  ["temple_length", "Temple length", "Arm length", 70, 180, 1, "mm"],
   ["temple_drop", "Temple drop", "Behind-ear hook", 0, 42, 1, "mm"],
   ["temple_spread", "Temple spread", "Temple opening angle", 0, 28, 0.5, "°"],
   ["nose_pad_width", "Nose pad width", "Support surface", 3, 14, 0.5, "mm"],
@@ -166,18 +166,15 @@ const designParameterGroups = {
     ["corner_radius", "Corner radius"]
   ],
   temples: [
-    ["temple_length", "Temple length"],
-    ["temple_drop", "Ear hook drop"],
-    ["temple_spread", "Temple angle"],
-    ["hinge_width", "Hinge width"],
-    ["nose_pad_width", "Nose support"],
-    ["nose_pad_drop", "Pad offset"]
+    ["temple_spread", "Opening angle"]
   ]
 };
 const defaultDesignStyle = {
   lensShape: "soft-square",
   templePattern: "none",
   templeText: "",
+  leftTempleText: "",
+  rightTempleText: "",
   browBar: true,
   frameColor: "#ff741f",
   lensColor: "#202529",
@@ -204,6 +201,22 @@ const designPublicParameterKeys = [
   "temple_drop",
   "temple_spread"
 ];
+const defaultDesignConstruction = {
+  hingeStandard: "FL-H1",
+  lensThickness: 1,
+  lensSeatWidth: 1.2,
+  lensSeatDepth: 0.35,
+  templeStraight: 65,
+  templeHook: 30,
+  templeHookAngle: 45,
+  templeBarHeight: 5.4
+};
+const designHingeAssetManifest = {
+  frontLeft: "./assets/hinges/front-hinge-left.3mf",
+  frontRight: "./assets/hinges/front-hinge-right.3mf",
+  templeLeft: "./assets/hinges/temple-hinge-left.3mf",
+  templeRight: "./assets/hinges/temple-hinge-right.3mf"
+};
 
 const defaultModelId = "frame001-sun-01";
 const ownerDeveloperEmail = "nyderek@framelab.dev";
@@ -352,7 +365,7 @@ lens_width = 52;      // [40:0.5:64]
 lens_height = 37;     // [28:0.5:50]
 rim_thickness = 5.2;  // [2.5:0.1:9]
 frame_depth = 5.8;    // [3:0.1:12]
-temple_length = 145;  // [115:1:175]
+temple_length = 145;  // [70:1:180]
 temple_drop = 30;     // [0:1:42]
 temple_spread = 8;    // [0:0.5:28]
 nose_pad_width = 8;   // [3:0.5:14]
@@ -688,6 +701,8 @@ const els = {
   designTabs: document.querySelectorAll("[data-design-tab]"),
   designOperationsPanel: document.querySelector("#designOperationsPanel"),
   designFeaturesPanel: document.querySelector("#designFeaturesPanel"),
+  designRightTemplePanel: document.querySelector("#designRightTemplePanel"),
+  designAssemblyPanel: document.querySelector("#designAssemblyPanel"),
   designCodePanel: document.querySelector("#designCodePanel"),
   designScadCode: document.querySelector("#designScadCode"),
   regenerateDesignCode: document.querySelector("#regenerateDesignCode"),
@@ -695,11 +710,13 @@ const els = {
   designLensShape: document.querySelector("#designLensShape"),
   designTemplePattern: document.querySelector("#designTemplePattern"),
   designTempleText: document.querySelector("#designTempleText"),
+  designRightTempleText: document.querySelector("#designRightTempleText"),
   designBrowBar: document.querySelector("#designBrowBar"),
   designFrameColor: document.querySelector("#designFrameColor"),
   designLensColor: document.querySelector("#designLensColor"),
   designDetailColor: document.querySelector("#designDetailColor"),
   designPublicParameters: document.querySelector("#designPublicParameters"),
+  designProductionChecks: document.querySelector("#designProductionChecks"),
   addSketchPoint: document.querySelector("#addSketchPoint"),
   removeSketchPoint: document.querySelector("#removeSketchPoint"),
   designViewSketch: document.querySelector("#designViewSketch"),
@@ -713,6 +730,10 @@ const els = {
   designChamferAmount: document.querySelector("#designChamferAmount"),
   designLensRecessEnabled: document.querySelector("#designLensRecessEnabled"),
   designLensRecessDepth: document.querySelector("#designLensRecessDepth"),
+  designTempleStraight: document.querySelector("#designTempleStraight"),
+  designTempleHook: document.querySelector("#designTempleHook"),
+  designTempleHookAngle: document.querySelector("#designTempleHookAngle"),
+  designTempleBarHeight: document.querySelector("#designTempleBarHeight"),
   designDimensions: document.querySelector("#designDimensions"),
   designStatus: document.querySelector("#designStatus"),
   designSubmissionStatus: document.querySelector("#designSubmissionStatus"),
@@ -831,6 +852,8 @@ let designModelGroup;
 let designDragState = null;
 let designSketchDragIndex = -1;
 let designSketchSelectedIndex = 0;
+let designTempleDragHandle = "";
+let designHingeLibrary = {};
 let designCameraDistance = 260;
 let designZoomScale = 1;
 const designCameraTarget = new THREE.Vector3();
@@ -862,6 +885,7 @@ async function init() {
   buildDesignControls();
   setupScene();
   setupDesignScene();
+  await loadDesignHingeAssets();
   setupDesignSketch();
   bindUi();
   syncComponentSideInput();
@@ -921,14 +945,16 @@ function createDefaultDesignDraft() {
       bridge_width: 18,
       lens_width: 51,
       lens_height: 38,
-      temple_length: 145
+      temple_length: defaultDesignConstruction.templeStraight + defaultDesignConstruction.templeHook
     },
     style: structuredClone(defaultDesignStyle),
     sketch: { points: structuredClone(defaultDesignSketchPoints), symmetric: true },
     features: createDefaultDesignFeatures(),
+    construction: normalizeDesignConstruction(),
     publicParameters: [...defaultDesignPublicParameters],
     sliderRanges: normalizeDesignSliderRanges(),
     collectionId: "",
+    step: "front",
     view: "sketch",
     code: "",
     manualCode: false
@@ -936,10 +962,14 @@ function createDefaultDesignDraft() {
 }
 
 function normalizeDesignStyle(style = {}) {
+  const leftTempleText = String(style.leftTempleText ?? style.templeText ?? "").trim().slice(0, 24);
+  const rightTempleText = String(style.rightTempleText ?? style.templeText ?? "").trim().slice(0, 24);
   return {
     lensShape: ["soft-square", "round", "sharp"].includes(style.lensShape) ? style.lensShape : defaultDesignStyle.lensShape,
     templePattern: ["none", "ribs", "perforated"].includes(style.templePattern) ? style.templePattern : defaultDesignStyle.templePattern,
-    templeText: String(style.templeText || "").trim().slice(0, 24),
+    templeText: leftTempleText,
+    leftTempleText,
+    rightTempleText,
     browBar: style.browBar !== false,
     frameColor: sanitizeHexColor(style.frameColor, defaultDesignStyle.frameColor),
     lensColor: sanitizeHexColor(style.lensColor, defaultDesignStyle.lensColor),
@@ -952,7 +982,7 @@ function createDefaultDesignFeatures(params = defaultParams) {
     extrude: { enabled: true, depth: Number(params.frame_depth) || defaultParams.frame_depth },
     fillet: { enabled: true, radius: Number(params.bevel) || defaultParams.bevel },
     chamfer: { enabled: false, amount: 0.4 },
-    lensRecess: { enabled: true, depth: 1 }
+    lensRecess: { enabled: true, depth: defaultDesignConstruction.lensSeatDepth }
   };
 }
 
@@ -990,8 +1020,25 @@ function normalizeDesignFeatures(features = {}, params = defaultParams) {
     },
     lensRecess: {
       enabled: features.lensRecess?.enabled !== false,
-      depth: clamp(features.lensRecess?.depth, 0.4, 3, defaults.lensRecess.depth)
+      depth: clamp(features.lensRecess?.depth, 0.1, 3, defaults.lensRecess.depth)
     }
+  };
+}
+
+function normalizeDesignConstruction(construction = {}) {
+  const bounded = (key, min, max) => {
+    const next = Number(construction[key]);
+    return THREE.MathUtils.clamp(Number.isFinite(next) ? next : defaultDesignConstruction[key], min, max);
+  };
+  return {
+    hingeStandard: "FL-H1",
+    lensThickness: 1,
+    lensSeatWidth: 1.2,
+    lensSeatDepth: 0.35,
+    templeStraight: bounded("templeStraight", 35, 120),
+    templeHook: bounded("templeHook", 10, 60),
+    templeHookAngle: bounded("templeHookAngle", 10, 75),
+    templeBarHeight: bounded("templeBarHeight", 3, 10)
   };
 }
 
@@ -1016,6 +1063,7 @@ function normalizeParametricDesign(design = {}) {
     ...normalizeDesignStyle(design),
     sketch: normalizeDesignSketch(design.sketch),
     features: normalizeDesignFeatures(design.features),
+    construction: normalizeDesignConstruction(design.construction),
     publicParameters: normalizeDesignPublicParameters(design.publicParameters),
     sliderRanges: normalizeDesignSliderRanges(design.sliderRanges)
   };
@@ -1027,6 +1075,7 @@ function designDefinitionFromDraft(draft = state.designDraft) {
     ...normalizeDesignStyle(draft.style),
     sketch: normalizeDesignSketch(draft.sketch),
     features: normalizeDesignFeatures(draft.features, draft.params),
+    construction: normalizeDesignConstruction(draft.construction),
     publicParameters: normalizeDesignPublicParameters(draft.publicParameters),
     sliderRanges: normalizeDesignSliderRanges(draft.sliderRanges)
   };
@@ -1064,6 +1113,36 @@ function setupDesignScene() {
   resizeDesignScene();
 }
 
+async function loadDesignHingeAssets() {
+  const entries = await Promise.all(Object.entries(designHingeAssetManifest).map(async ([key, url]) => {
+    try {
+      const response = await fetch(url);
+      if (!response.ok) throw new Error(`${response.status}`);
+      const parsed = await parse3mfComponent(await response.blob());
+      return [key, parsed.object];
+    } catch {
+      return [key, null];
+    }
+  }));
+  designHingeLibrary = Object.fromEntries(entries);
+  renderDesignProductionChecks();
+}
+
+function addDesignHingeAsset(key, position, material, target = designModelGroup) {
+  const source = designHingeLibrary[key];
+  if (!source) return false;
+  const hinge = source.clone(true);
+  hinge.traverse((child) => {
+    if (!child.isMesh) return;
+    child.material = material;
+    child.geometry.computeVertexNormals();
+  });
+  // The supplied hinge parts share their CAD datum; preserving it keeps both mating halves aligned.
+  hinge.position.copy(position);
+  target.add(hinge);
+  return true;
+}
+
 function resizeDesignScene() {
   if (!designRenderer || !designCamera || !els.designCanvas) return;
   const rect = els.designCanvas.getBoundingClientRect();
@@ -1078,6 +1157,7 @@ function setupDesignSketch() {
   if (!els.designSketchCanvas) return;
   setDesignView("sketch");
   const locatePoint = (event) => {
+    if (state.designDraft.step !== "front") return -1;
     const metrics = designSketchMetrics();
     if (!metrics) return -1;
     const rect = els.designSketchCanvas.getBoundingClientRect();
@@ -1097,6 +1177,16 @@ function setupDesignSketch() {
     return closest;
   };
   els.designSketchCanvas.addEventListener("pointerdown", (event) => {
+    if (state.designDraft.step === "left-temple") {
+      const metrics = templeSketchMetrics();
+      if (!metrics) return;
+      const rect = els.designSketchCanvas.getBoundingClientRect();
+      const point = { x: event.clientX - rect.left, y: event.clientY - rect.top };
+      if (Math.hypot(point.x - metrics.end.x, point.y - metrics.end.y) <= 18) designTempleDragHandle = "end";
+      else if (Math.hypot(point.x - metrics.knee.x, point.y - metrics.knee.y) <= 18) designTempleDragHandle = "knee";
+      if (designTempleDragHandle) els.designSketchCanvas.setPointerCapture(event.pointerId);
+      return;
+    }
     const index = locatePoint(event);
     if (index < 0) return;
     designSketchDragIndex = index;
@@ -1105,6 +1195,29 @@ function setupDesignSketch() {
     drawDesignSketch();
   });
   els.designSketchCanvas.addEventListener("pointermove", (event) => {
+    if (designTempleDragHandle) {
+      const metrics = templeSketchMetrics();
+      const rect = els.designSketchCanvas.getBoundingClientRect();
+      if (!metrics || !rect) return;
+      const x = event.clientX - rect.left;
+      const y = event.clientY - rect.top;
+      const construction = normalizeDesignConstruction(state.designDraft.construction);
+      if (designTempleDragHandle === "knee") {
+        construction.templeStraight = THREE.MathUtils.clamp((x - metrics.start.x) / metrics.scale, 35, 120);
+      } else {
+        const dx = Math.max(1, x - metrics.knee.x);
+        const dy = Math.max(1, y - metrics.knee.y);
+        construction.templeHook = THREE.MathUtils.clamp(Math.hypot(dx, dy) / metrics.scale, 10, 60);
+        construction.templeHookAngle = THREE.MathUtils.clamp(THREE.MathUtils.radToDeg(Math.atan2(dy, dx)), 10, 75);
+      }
+      state.designDraft.construction = construction;
+      state.designDraft.params.temple_length = construction.templeStraight + construction.templeHook;
+      state.designDraft.manualCode = false;
+      syncDesignFields();
+      syncDesignCode();
+      renderDesignPreview({ fitView: false });
+      return;
+    }
     if (designSketchDragIndex < 0) return;
     const metrics = designSketchMetrics();
     if (!metrics) return;
@@ -1123,6 +1236,7 @@ function setupDesignSketch() {
   });
   const finish = () => {
     designSketchDragIndex = -1;
+    designTempleDragHandle = "";
   };
   els.designSketchCanvas.addEventListener("pointerup", finish);
   els.designSketchCanvas.addEventListener("pointercancel", finish);
@@ -1136,9 +1250,14 @@ function setDesignView(view) {
   els.designViewSketch?.classList.toggle("active", sketch);
   els.designView3d?.classList.toggle("active", !sketch);
   if (els.designViewHint) {
-    els.designViewHint.textContent = sketch
-      ? "Drag profile points to define the lens opening"
-      : "Drag to rotate · Scroll to zoom";
+    if (!sketch) els.designViewHint.textContent = "Drag to rotate / Scroll to zoom";
+    else if (state.designDraft.step === "left-temple") {
+      els.designViewHint.textContent = "Drag the orange handles to define the temple path";
+    } else if (state.designDraft.step === "right-temple") {
+      els.designViewHint.textContent = "Mirrored fit from the left temple / Edit readable detail on the right";
+    } else {
+      els.designViewHint.textContent = "Drag profile points to define the lens opening";
+    }
   }
   if (sketch) drawDesignSketch();
   else {
@@ -1171,6 +1290,25 @@ function designSketchMetrics() {
   };
 }
 
+function templeSketchMetrics() {
+  if (!els.designSketchCanvas) return null;
+  const rect = els.designSketchCanvas.getBoundingClientRect();
+  if (!rect.width || !rect.height) return null;
+  const c = normalizeDesignConstruction(state.designDraft.construction);
+  const usableWidth = Math.max(100, rect.width - 156);
+  const usableHeight = Math.max(100, rect.height - 180);
+  const totalWidth = c.templeStraight + c.templeHook * Math.cos(THREE.MathUtils.degToRad(c.templeHookAngle));
+  const totalHeight = c.templeHook * Math.sin(THREE.MathUtils.degToRad(c.templeHookAngle)) + 20;
+  const scale = Math.min(usableWidth / Math.max(100, totalWidth), usableHeight / Math.max(45, totalHeight));
+  const start = { x: 86, y: rect.height * 0.46 };
+  const knee = { x: start.x + c.templeStraight * scale, y: start.y };
+  const end = {
+    x: knee.x + c.templeHook * Math.cos(THREE.MathUtils.degToRad(c.templeHookAngle)) * scale,
+    y: knee.y + c.templeHook * Math.sin(THREE.MathUtils.degToRad(c.templeHookAngle)) * scale
+  };
+  return { rect, construction: c, scale, start, knee, end };
+}
+
 function sketchScreenPoint(index, metrics) {
   const [x, y] = normalizeDesignSketch(state.designDraft.sketch).points[index];
   return {
@@ -1201,8 +1339,9 @@ function drawSketchProfile(ctx, centerX, metrics, expansion, fill, stroke, mirro
 }
 
 function sketchDimension(ctx, x1, y1, x2, y2, label) {
-  ctx.strokeStyle = "#9acc4b";
-  ctx.fillStyle = "#9acc4b";
+  const colors = designDrawingColors();
+  ctx.strokeStyle = colors.dimension;
+  ctx.fillStyle = colors.dimension;
   ctx.lineWidth = 1;
   ctx.beginPath();
   ctx.moveTo(x1, y1);
@@ -1222,19 +1361,113 @@ function sketchDimension(ctx, x1, y1, x2, y2, label) {
   ctx.fillText(label, (x1 + x2) / 2, (y1 + y2) / 2 - 8);
 }
 
+function designDrawingColors() {
+  const styles = getComputedStyle(document.documentElement);
+  const read = (key, fallback) => styles.getPropertyValue(key).trim() || fallback;
+  return {
+    background: read("--scene-bg-2", "#0c0d0d"),
+    grid: read("--line", "#292c2c"),
+    axis: read("--line-strong", "#3a3d3d"),
+    stroke: read("--accent-2", "#df8955"),
+    accent: read("--accent", "#c96b34"),
+    dimension: read("--accent-2", "#df8955"),
+    text: read("--ink", "#f3dfc2"),
+    muted: read("--muted", "#aaa39c"),
+    fill: read("--accent-soft", "rgba(201,107,52,.14)")
+  };
+}
+
+function prepareDesignDrawingCanvas(canvas, rect) {
+  const ratio = Math.min(window.devicePixelRatio || 1, 2);
+  canvas.width = Math.round(rect.width * ratio);
+  canvas.height = Math.round(rect.height * ratio);
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+  const colors = designDrawingColors();
+  ctx.fillStyle = colors.background;
+  ctx.fillRect(0, 0, rect.width, rect.height);
+  ctx.strokeStyle = colors.grid;
+  ctx.lineWidth = 1;
+  const grid = 32;
+  for (let x = 0; x < rect.width; x += grid) {
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, rect.height);
+    ctx.stroke();
+  }
+  for (let y = 0; y < rect.height; y += grid) {
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(rect.width, y);
+    ctx.stroke();
+  }
+  return { ctx, colors };
+}
+
+function drawTempleSketch(mirrored = false) {
+  const canvas = els.designSketchCanvas;
+  const metrics = templeSketchMetrics();
+  if (!canvas || !metrics) return;
+  const { ctx, colors } = prepareDesignDrawingCanvas(canvas, metrics.rect);
+  const { construction: c, start, knee, end, scale, rect } = metrics;
+  const flipX = (x) => mirrored ? rect.width - x : x;
+  const point = ({ x, y }) => ({ x: flipX(x), y });
+  const a = point(start);
+  const b = point(knee);
+  const d = point(end);
+  ctx.strokeStyle = colors.axis;
+  ctx.beginPath();
+  ctx.moveTo(0, start.y);
+  ctx.lineTo(rect.width, start.y);
+  ctx.stroke();
+  ctx.fillStyle = colors.fill;
+  ctx.strokeStyle = colors.stroke;
+  ctx.lineWidth = Math.max(6, c.templeBarHeight * scale);
+  ctx.lineJoin = "round";
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(a.x, a.y);
+  ctx.lineTo(b.x, b.y);
+  ctx.lineTo(d.x, d.y);
+  ctx.stroke();
+  const hingeLength = 6.25 * scale;
+  const hingeHeight = 4.5 * scale;
+  ctx.fillStyle = colors.accent;
+  ctx.fillRect(a.x - (mirrored ? 0 : hingeLength), a.y - hingeHeight / 2, hingeLength, hingeHeight);
+  if (!mirrored) {
+    [b, d].forEach((handle) => {
+      ctx.beginPath();
+      ctx.arc(handle.x, handle.y, 7, 0, Math.PI * 2);
+      ctx.fillStyle = colors.accent;
+      ctx.fill();
+      ctx.strokeStyle = colors.text;
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    });
+  }
+  const upperY = start.y - 58;
+  sketchDimension(ctx, a.x, upperY, b.x, upperY, `${formatNumber(c.templeStraight)} mm straight`);
+  sketchDimension(ctx, b.x, end.y + 45, d.x, end.y + 45, `${formatNumber(c.templeHook)} mm / ${formatNumber(c.templeHookAngle)} deg`);
+  ctx.fillStyle = colors.text;
+  ctx.font = "700 13px Inter, Arial, sans-serif";
+  ctx.textAlign = mirrored ? "right" : "left";
+  ctx.fillText(mirrored ? "TEMPLE HINGE RIGHT / MIRRORED PATH" : "TEMPLE HINGE LEFT / DATUM", mirrored ? rect.width - 38 : 38, 188);
+  ctx.font = "500 12px Inter, Arial, sans-serif";
+  ctx.fillStyle = colors.muted;
+  ctx.fillText(`${formatNumber(c.templeBarHeight)} mm bar height`, mirrored ? rect.width - 38 : 38, 208);
+}
+
 function drawDesignSketch() {
   const canvas = els.designSketchCanvas;
   const metrics = designSketchMetrics();
   if (!canvas || !metrics) return;
-  const ratio = Math.min(window.devicePixelRatio || 1, 2);
-  canvas.width = Math.round(metrics.rect.width * ratio);
-  canvas.height = Math.round(metrics.rect.height * ratio);
-  const ctx = canvas.getContext("2d");
-  ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+  if (state.designDraft.step === "left-temple" || state.designDraft.step === "right-temple") {
+    drawTempleSketch(state.designDraft.step === "right-temple");
+    return;
+  }
+  const { ctx, colors } = prepareDesignDrawingCanvas(canvas, metrics.rect);
   const { rect, p, scale, centerX, centerY, leftCenterX, rightCenterX } = metrics;
-  ctx.fillStyle = "#222932";
-  ctx.fillRect(0, 0, rect.width, rect.height);
-  ctx.strokeStyle = "rgba(160, 183, 201, .12)";
+  ctx.strokeStyle = colors.grid;
   ctx.lineWidth = 1;
   const grid = Math.max(22, 10 * scale);
   for (let x = centerX % grid; x < rect.width; x += grid) {
@@ -1249,30 +1482,39 @@ function drawDesignSketch() {
     ctx.lineTo(rect.width, y);
     ctx.stroke();
   }
-  ctx.strokeStyle = "rgba(142, 202, 220, .58)";
+  ctx.strokeStyle = colors.axis;
   ctx.beginPath();
   ctx.moveTo(centerX, 0);
   ctx.lineTo(centerX, rect.height);
   ctx.moveTo(0, centerY);
   ctx.lineTo(rect.width, centerY);
   ctx.stroke();
-  drawSketchProfile(ctx, leftCenterX, metrics, p.rim_thickness, "rgba(74, 114, 135, .32)", "#79bfd5", true);
-  drawSketchProfile(ctx, rightCenterX, metrics, p.rim_thickness, "rgba(74, 114, 135, .32)", "#79bfd5");
-  drawSketchProfile(ctx, leftCenterX, metrics, 0, "#222932", "#a5d4e0", true);
-  drawSketchProfile(ctx, rightCenterX, metrics, 0, "#222932", "#a5d4e0");
-  ctx.strokeStyle = "#79bfd5";
+  drawSketchProfile(ctx, leftCenterX, metrics, p.rim_thickness, colors.fill, colors.stroke, true);
+  drawSketchProfile(ctx, rightCenterX, metrics, p.rim_thickness, colors.fill, colors.stroke);
+  drawSketchProfile(ctx, leftCenterX, metrics, 0, colors.background, colors.text, true);
+  drawSketchProfile(ctx, rightCenterX, metrics, 0, colors.background, colors.text);
+  ctx.strokeStyle = colors.stroke;
   ctx.lineWidth = Math.max(2, p.rim_thickness * scale);
   ctx.beginPath();
   ctx.moveTo(leftCenterX + p.lens_width * scale * 0.45, centerY - p.lens_height * scale * 0.25);
   ctx.lineTo(rightCenterX - p.lens_width * scale * 0.45, centerY - p.lens_height * scale * 0.25);
   ctx.stroke();
+  const hingeSize = 6 * scale;
+  ctx.fillStyle = colors.accent;
+  ctx.fillRect(centerX - p.head_width * scale / 2, centerY - hingeSize / 2, hingeSize, hingeSize);
+  ctx.fillRect(centerX + p.head_width * scale / 2 - hingeSize, centerY - hingeSize / 2, hingeSize, hingeSize);
+  ctx.fillStyle = colors.muted;
+  ctx.font = "600 11px Inter, Arial, sans-serif";
+  ctx.textAlign = "center";
+  ctx.fillText("FRONT HINGE LEFT", centerX - p.head_width * scale / 2 + hingeSize / 2, centerY + hingeSize + 16);
+  ctx.fillText("FRONT HINGE RIGHT", centerX + p.head_width * scale / 2 - hingeSize / 2, centerY + hingeSize + 16);
   normalizeDesignSketch(state.designDraft.sketch).points.forEach((_, index) => {
     const point = sketchScreenPoint(index, metrics);
     ctx.beginPath();
     ctx.arc(point.x, point.y, index === designSketchSelectedIndex ? 6 : 4.5, 0, Math.PI * 2);
-    ctx.fillStyle = index === designSketchSelectedIndex ? "#ff741f" : "#f0f4f6";
+    ctx.fillStyle = index === designSketchSelectedIndex ? colors.accent : colors.text;
     ctx.fill();
-    ctx.strokeStyle = "#222932";
+    ctx.strokeStyle = colors.background;
     ctx.lineWidth = 1.5;
     ctx.stroke();
   });
@@ -1282,6 +1524,18 @@ function drawDesignSketch() {
   sketchDimension(ctx, centerX - p.bridge_width * scale / 2, bridgeY, centerX + p.bridge_width * scale / 2, bridgeY, `${formatNumber(p.bridge_width)} mm bridge`);
   const heightX = rightCenterX + (p.lens_width / 2 + p.rim_thickness + 12) * scale;
   sketchDimension(ctx, heightX, centerY - p.lens_height * scale / 2, heightX, centerY + p.lens_height * scale / 2, `${formatNumber(p.lens_height)} mm`);
+  ctx.fillStyle = colors.fill;
+  ctx.strokeStyle = colors.stroke;
+  ctx.lineWidth = 1;
+  ctx.fillRect(32, rect.height - 86, 215, 54);
+  ctx.strokeRect(32, rect.height - 86, 215, 54);
+  ctx.fillStyle = colors.text;
+  ctx.font = "700 11px Inter, Arial, sans-serif";
+  ctx.textAlign = "left";
+  ctx.fillText("LENS SEAT", 44, rect.height - 62);
+  ctx.fillStyle = colors.muted;
+  ctx.font = "500 11px Inter, Arial, sans-serif";
+  ctx.fillText("1.20 mm width / 0.35 mm recess / 1 mm acrylic", 44, rect.height - 44);
 }
 
 function updateDesignCamera() {
@@ -1327,7 +1581,12 @@ function renderDesignPreview(options = {}) {
   [-1, 1].forEach((side) => {
     addDesignRim(side * center, p, outerLensWidth, frameMaterial, definition);
     addDesignLens(side * center, p, lensMaterial, definition);
-    addDesignTemple(side, p, outerLensWidth, frameMaterial, detailMaterial, style);
+    addDesignTemple(side, p, outerLensWidth, frameMaterial, detailMaterial, style, definition);
+    addDesignHingeAsset(
+      side < 0 ? "frontLeft" : "frontRight",
+      designHingeDatum(side, p),
+      frameMaterial
+    );
   });
   if (style.browBar) addDesignBar(p.head_width, p.lens_height / 2 + p.rim_thickness * 0.72, p.rim_thickness * 1.05, p.frame_depth * 0.95, frameMaterial, p);
   addDesignBar(p.bridge_width + p.rim_thickness * 2.35, p.lens_height * 0.08, p.rim_thickness * 1.15, p.frame_depth, frameMaterial, p);
@@ -1380,29 +1639,42 @@ function designEdgeOperation(p, definition) {
 }
 
 function addDesignRim(x, p, outerWidth, material, definition, target = designModelGroup) {
-  const outer = designProfilePath(outerWidth, p.lens_height, definition, p.rim_thickness);
-  outer.holes.push(designProfilePath(p.lens_width, p.lens_height, definition, 0, true));
+  const features = normalizeDesignFeatures(definition?.features, p);
+  const construction = normalizeDesignConstruction(definition?.construction);
   const edge = designEdgeOperation(p, definition);
-  const geometry = new THREE.ExtrudeGeometry(outer, {
-    depth: normalizeDesignFeatures(definition?.features, p).extrude.depth,
-    bevelEnabled: edge.amount > 0,
-    bevelThickness: Math.max(0.01, edge.amount),
-    bevelSize: Math.max(0.01, edge.amount),
-    bevelSegments: edge.segments
-  });
-  geometry.center();
-  const rim = new THREE.Mesh(geometry, material);
-  rim.position.x = x;
-  rim.scale.x = x < 0 ? -1 : 1;
-  target.add(rim);
+  const addLayer = (innerExpansion, depth, z, edgeEnabled) => {
+    const outer = designProfilePath(outerWidth, p.lens_height, definition, p.rim_thickness);
+    outer.holes.push(designProfilePath(p.lens_width, p.lens_height, definition, innerExpansion, true));
+    const geometry = new THREE.ExtrudeGeometry(outer, {
+      depth,
+      bevelEnabled: edgeEnabled && edge.amount > 0,
+      bevelThickness: Math.max(0.01, edge.amount),
+      bevelSize: Math.max(0.01, edge.amount),
+      bevelSegments: edge.segments
+    });
+    geometry.center();
+    const layer = new THREE.Mesh(geometry, material);
+    layer.position.set(x, 0, z);
+    layer.scale.x = x < 0 ? -1 : 1;
+    target.add(layer);
+  };
+  if (features.lensRecess.enabled) {
+    const seatDepth = Math.min(construction.lensSeatDepth, features.extrude.depth - 0.2);
+    addLayer(0, features.extrude.depth - seatDepth, -seatDepth / 2, false);
+    addLayer(construction.lensSeatWidth, seatDepth, features.extrude.depth / 2 - seatDepth / 2, false);
+  } else {
+    addLayer(0, features.extrude.depth, 0, true);
+  }
 }
 
 function addDesignLens(x, p, material, definition, target = designModelGroup) {
-  const shape = designProfilePath(p.lens_width - 0.4, p.lens_height - 0.4, definition);
-  const geometry = new THREE.ExtrudeGeometry(shape, { depth: Math.max(0.8, p.frame_depth * 0.36), bevelEnabled: false });
+  const construction = normalizeDesignConstruction(definition?.construction);
+  const seatingOverlap = Math.max(0, construction.lensSeatWidth - 0.15);
+  const shape = designProfilePath(p.lens_width, p.lens_height, definition, seatingOverlap);
+  const geometry = new THREE.ExtrudeGeometry(shape, { depth: construction.lensThickness, bevelEnabled: false });
   geometry.center();
   const lens = new THREE.Mesh(geometry, material);
-  lens.position.set(x, 0, p.frame_depth * 0.18);
+  lens.position.set(x, 0, p.frame_depth / 2 - construction.lensSeatDepth + construction.lensThickness / 2);
   lens.scale.x = x < 0 ? -1 : 1;
   target.add(lens);
 }
@@ -1414,20 +1686,43 @@ function addDesignBar(width, y, height, depth, material, p, target = designModel
   target.add(bar);
 }
 
-function addDesignTemple(side, p, outerLensWidth, frameMaterial, detailMaterial, style, target = designModelGroup) {
-  const hingeX = side * (p.head_width / 2 + p.hinge_width / 2);
+function designHingeDatum(side, p) {
+  return new THREE.Vector3(side * p.head_width / 2, p.lens_height * 0.27 - 3, -p.frame_depth / 2);
+}
+
+function effectiveTempleConstruction(definition, p) {
+  const construction = normalizeDesignConstruction(definition?.construction);
+  const authoredLength = construction.templeStraight + construction.templeHook;
+  return {
+    ...construction,
+    templeStraight: THREE.MathUtils.clamp(
+      construction.templeStraight + p.temple_length - authoredLength,
+      35,
+      120
+    )
+  };
+}
+
+function addDesignTemple(side, p, outerLensWidth, frameMaterial, detailMaterial, style, definition, target = designModelGroup) {
+  const construction = effectiveTempleConstruction(definition, p);
   const temple = new THREE.Group();
-  temple.position.set(hingeX, p.lens_height * 0.27, -p.frame_depth * 0.05);
+  temple.position.copy(designHingeDatum(side, p));
   temple.rotation.y = side * THREE.MathUtils.degToRad(p.temple_spread);
-  const hinge = new THREE.Mesh(roundedPrismGeometry(p.hinge_width, p.rim_thickness * 1.7, p.frame_depth * 1.2, p.rim_thickness * 0.32, p.bevel * 0.55), frameMaterial);
-  temple.add(hinge);
-  const armWidth = p.rim_thickness * 1.28;
-  const arm = new THREE.Mesh(roundedPrismGeometry(armWidth, p.rim_thickness * 1.08, p.temple_length, p.rim_thickness * 0.32, p.bevel * 0.5), frameMaterial);
-  arm.position.set(side * p.hinge_width * 0.34, 0, -p.temple_length / 2 - p.frame_depth * 0.5);
+  addDesignHingeAsset(side < 0 ? "templeLeft" : "templeRight", new THREE.Vector3(), frameMaterial, temple);
+  const armWidth = Math.max(3.2, p.frame_depth * 0.64);
+  const straight = construction.templeStraight;
+  const hookLength = construction.templeHook;
+  const hookAngle = THREE.MathUtils.degToRad(construction.templeHookAngle);
+  const arm = new THREE.Mesh(roundedPrismGeometry(armWidth, construction.templeBarHeight, straight, Math.min(2, construction.templeBarHeight * 0.3), p.bevel * 0.5), frameMaterial);
+  arm.position.set(side * p.hinge_width * 0.34, 0, -straight / 2 - 3);
   temple.add(arm);
-  const hook = new THREE.Mesh(roundedPrismGeometry(armWidth * 1.04, p.rim_thickness * 1.08, Math.max(1, p.temple_drop), p.rim_thickness * 0.32, p.bevel * 0.5), frameMaterial);
-  hook.position.set(side * p.hinge_width * 0.34, -p.temple_drop * 0.28, -p.temple_length - p.frame_depth * 0.5 - p.temple_drop * 0.28);
-  hook.rotation.x = THREE.MathUtils.degToRad(-28);
+  const hook = new THREE.Mesh(roundedPrismGeometry(armWidth, construction.templeBarHeight, hookLength, Math.min(2, construction.templeBarHeight * 0.3), p.bevel * 0.5), frameMaterial);
+  hook.position.set(
+    side * p.hinge_width * 0.34,
+    -Math.sin(hookAngle) * hookLength / 2,
+    -straight - 3 - Math.cos(hookAngle) * hookLength / 2
+  );
+  hook.rotation.x = -hookAngle;
   temple.add(hook);
   if (style.templePattern === "ribs") {
     for (let index = 0; index < 5; index += 1) {
@@ -1444,7 +1739,8 @@ function addDesignTemple(side, p, outerLensWidth, frameMaterial, detailMaterial,
       temple.add(dot);
     }
   }
-  if (style.templeText) addDesignTextMark(style.templeText, side, p, temple, detailMaterial);
+  const templeText = side < 0 ? style.leftTempleText : style.rightTempleText;
+  if (templeText) addDesignTextMark(templeText, side, p, temple, detailMaterial);
   target.add(temple);
 }
 
@@ -1745,6 +2041,10 @@ function bindUi() {
   els.designOperationsPanel?.addEventListener("change", handleDesignOperationChange);
   els.designFeaturesPanel?.addEventListener("input", handleDesignOperationChange);
   els.designFeaturesPanel?.addEventListener("change", handleDesignOperationChange);
+  els.designRightTemplePanel?.addEventListener("input", handleDesignOperationChange);
+  els.designRightTemplePanel?.addEventListener("change", handleDesignOperationChange);
+  els.designAssemblyPanel?.addEventListener("input", handleDesignOperationChange);
+  els.designAssemblyPanel?.addEventListener("change", handleDesignOperationChange);
   els.designViewSketch?.addEventListener("click", () => setDesignView("sketch"));
   els.designView3d?.addEventListener("click", () => setDesignView("3d"));
   els.addSketchPoint?.addEventListener("click", addDesignSketchPoint);
@@ -1918,14 +2218,22 @@ function buildDesignControls() {
   if (els.designTempleControls) els.designTempleControls.innerHTML = renderGroup(designParameterGroups.temples);
   if (els.designPublicParameters) {
     const exposed = normalizeDesignPublicParameters(state.designDraft.publicParameters);
+    const ranges = normalizeDesignSliderRanges(state.designDraft.sliderRanges);
     els.designPublicParameters.innerHTML = designPublicParameterKeys.map((key) => {
-      const [, label] = findParam(key);
+      const [, label, , , , step, unit] = findParam(key);
+      const range = ranges[key];
       return `
-        <label class="design-public-toggle">
-          <input type="checkbox" data-public-design-param="${escapeHtml(key)}"${exposed.includes(key) ? " checked" : ""} />
-          <span>${escapeHtml(label)}</span>
-          <small>slider</small>
-        </label>
+        <article class="design-public-item${exposed.includes(key) ? " active" : ""}">
+          <label class="design-public-toggle">
+            <input type="checkbox" data-public-design-param="${escapeHtml(key)}"${exposed.includes(key) ? " checked" : ""} />
+            <span>${escapeHtml(label)}</span>
+            <small>slider</small>
+          </label>
+          <div class="design-public-range" aria-label="${escapeHtml(label)} range">
+            <label><span>Min</span><input type="number" step="${step}" value="${range.min}" data-public-range-param="${escapeHtml(key)}" data-public-range-bound="min" /><small>${escapeHtml(unit)}</small></label>
+            <label><span>Max</span><input type="number" step="${step}" value="${range.max}" data-public-range-param="${escapeHtml(key)}" data-public-range-bound="max" /><small>${escapeHtml(unit)}</small></label>
+          </div>
+        </article>
       `;
     }).join("");
   }
@@ -1948,6 +2256,7 @@ function syncDesignFields() {
   if (els.designLensShape) els.designLensShape.value = style.lensShape;
   if (els.designTemplePattern) els.designTemplePattern.value = style.templePattern;
   if (els.designTempleText) els.designTempleText.value = style.templeText;
+  if (els.designRightTempleText) els.designRightTempleText.value = style.rightTempleText;
   if (els.designBrowBar) els.designBrowBar.checked = style.browBar;
   if (els.designFrameColor) els.designFrameColor.value = style.frameColor;
   if (els.designLensColor) els.designLensColor.value = style.lensColor;
@@ -1961,6 +2270,12 @@ function syncDesignFields() {
   if (els.designChamferAmount) els.designChamferAmount.value = String(features.chamfer.amount);
   if (els.designLensRecessEnabled) els.designLensRecessEnabled.checked = features.lensRecess.enabled;
   if (els.designLensRecessDepth) els.designLensRecessDepth.value = String(features.lensRecess.depth);
+  const construction = normalizeDesignConstruction(draft.construction);
+  if (els.designTempleStraight) els.designTempleStraight.value = String(construction.templeStraight);
+  if (els.designTempleHook) els.designTempleHook.value = String(construction.templeHook);
+  if (els.designTempleHookAngle) els.designTempleHookAngle.value = String(construction.templeHookAngle);
+  if (els.designTempleBarHeight) els.designTempleBarHeight.value = String(construction.templeBarHeight);
+  renderDesignProductionChecks();
 }
 
 function syncDesignCode() {
@@ -1969,16 +2284,45 @@ function syncDesignCode() {
   if (els.designScadCode) els.designScadCode.value = state.designDraft.code;
 }
 
+function renderDesignProductionChecks() {
+  if (!els.designProductionChecks) return;
+  const p = designGeometryParams(state.designDraft.params);
+  const features = normalizeDesignFeatures(state.designDraft.features, state.designDraft.params);
+  const construction = normalizeDesignConstruction(state.designDraft.construction);
+  const hingeReady = ["frontLeft", "frontRight", "templeLeft", "templeRight"].every((key) => Boolean(designHingeLibrary[key]));
+  const backingWidth = p.rim_thickness - construction.lensSeatWidth;
+  const backWall = features.extrude.depth - construction.lensSeatDepth;
+  const checks = [
+    { label: "Hinge interface", value: hingeReady ? "FL-H1 ready" : "Files unavailable", ready: hingeReady },
+    { label: "Lens pocket backing", value: `${formatNumber(backingWidth)} mm`, ready: backingWidth >= 1.5 },
+    { label: "Front back wall", value: `${formatNumber(backWall)} mm`, ready: backWall >= 2.4 },
+    { label: "Temple body height", value: `${formatNumber(construction.templeBarHeight)} mm`, ready: construction.templeBarHeight >= 4 }
+  ];
+  els.designProductionChecks.innerHTML = checks.map((check) => `
+    <div class="${check.ready ? "ready" : "review"}">
+      <span>${escapeHtml(check.label)}</span>
+      <strong>${escapeHtml(check.value)}</strong>
+      <em>${check.ready ? "Ready" : "Review"}</em>
+    </div>
+  `).join("");
+}
+
 function switchDesignTab(mode) {
-  const nextMode = ["sketch", "features", "code"].includes(mode) ? mode : "sketch";
+  const nextMode = ["front", "left-temple", "right-temple", "assembly", "code"].includes(mode) ? mode : "front";
+  state.designDraft.step = nextMode;
   els.designTabs.forEach((button) => {
     const active = button.dataset.designTab === nextMode;
     button.classList.toggle("active", active);
     button.setAttribute("aria-selected", String(active));
   });
-  if (els.designOperationsPanel) els.designOperationsPanel.hidden = nextMode !== "sketch";
-  if (els.designFeaturesPanel) els.designFeaturesPanel.hidden = nextMode !== "features";
+  if (els.designOperationsPanel) els.designOperationsPanel.hidden = nextMode !== "front";
+  if (els.designFeaturesPanel) els.designFeaturesPanel.hidden = nextMode !== "left-temple";
+  if (els.designRightTemplePanel) els.designRightTemplePanel.hidden = nextMode !== "right-temple";
+  if (els.designAssemblyPanel) els.designAssemblyPanel.hidden = nextMode !== "assembly";
   if (els.designCodePanel) els.designCodePanel.hidden = nextMode !== "code";
+  if (nextMode === "assembly") setDesignView("3d");
+  else if (nextMode !== "code") setDesignView("sketch");
+  else drawDesignSketch();
 }
 
 function handleDesignProjectCopyChange() {
@@ -2000,6 +2344,27 @@ function handleDesignOperationChange(event) {
     if (event.target.checked) selected.add(publicParam);
     else selected.delete(publicParam);
     state.designDraft.publicParameters = normalizeDesignPublicParameters([...selected]);
+    event.target.closest(".design-public-item")?.classList.toggle("active", event.target.checked);
+  }
+  const rangeParam = event.target.dataset.publicRangeParam;
+  if (rangeParam) {
+    state.designDraft.sliderRanges = normalizeDesignSliderRanges({
+      ...state.designDraft.sliderRanges,
+      [rangeParam]: {
+        ...state.designDraft.sliderRanges?.[rangeParam],
+        [event.target.dataset.publicRangeBound]: Number(event.target.value)
+      }
+    });
+  }
+  if ([els.designTempleStraight, els.designTempleHook, els.designTempleHookAngle, els.designTempleBarHeight].includes(event.target)) {
+    state.designDraft.construction = normalizeDesignConstruction({
+      ...state.designDraft.construction,
+      templeStraight: els.designTempleStraight?.value,
+      templeHook: els.designTempleHook?.value,
+      templeHookAngle: els.designTempleHookAngle?.value,
+      templeBarHeight: els.designTempleBarHeight?.value
+    });
+    state.designDraft.params.temple_length = state.designDraft.construction.templeStraight + state.designDraft.construction.templeHook;
   }
   const features = normalizeDesignFeatures({
     extrude: { enabled: els.designExtrudeEnabled?.checked, depth: els.designExtrudeDepth?.value },
@@ -2019,6 +2384,8 @@ function handleDesignOperationChange(event) {
     lensShape: els.designLensShape?.value,
     templePattern: els.designTemplePattern?.value,
     templeText: els.designTempleText?.value,
+    leftTempleText: els.designTempleText?.value,
+    rightTempleText: els.designRightTempleText?.value,
     browBar: Boolean(els.designBrowBar?.checked),
     frameColor: els.designFrameColor?.value,
     lensColor: els.designLensColor?.value,
@@ -2026,6 +2393,7 @@ function handleDesignOperationChange(event) {
   });
   state.designDraft.manualCode = false;
   syncDesignCode();
+  renderDesignProductionChecks();
   renderDesignPreview({ fitView: false });
   setDesignNote("");
 }
@@ -2075,7 +2443,9 @@ function removeDesignSketchPoint() {
 
 function parseDesignCode(source) {
   const style = { ...state.designDraft.style };
-  const textValue = source.match(/(?:^|\n)\s*temple_text\s*=\s*"([^"]*)"\s*;/)?.[1];
+  const legacyTextValue = source.match(/(?:^|\n)\s*temple_text\s*=\s*"([^"]*)"\s*;/)?.[1];
+  const leftTextValue = source.match(/(?:^|\n)\s*left_temple_text\s*=\s*"([^"]*)"\s*;/)?.[1] ?? legacyTextValue;
+  const rightTextValue = source.match(/(?:^|\n)\s*right_temple_text\s*=\s*"([^"]*)"\s*;/)?.[1] ?? legacyTextValue;
   const patternValue = source.match(/(?:^|\n)\s*temple_pattern\s*=\s*"([^"]*)"\s*;/)?.[1];
   const shapeValue = source.match(/(?:^|\n)\s*lens_shape\s*=\s*"([^"]*)"\s*;/)?.[1];
   const browValue = source.match(/(?:^|\n)\s*brow_bar_enabled\s*=\s*(true|false)\s*;/)?.[1];
@@ -2089,6 +2459,9 @@ function parseDesignCode(source) {
     .map((match) => [Number(match[1]), Number(match[2])]);
   const publicSource = source.match(/(?:^|\n)\s*customer_sliders\s*=\s*\[([\s\S]*?)\]\s*;/)?.[1] || "";
   const publicParameters = [...publicSource.matchAll(/"([^"]+)"/g)].map((match) => match[1]);
+  const rangeSource = source.match(/(?:^|\n)\s*customer_slider_ranges\s*=\s*\[([\s\S]*?)\]\s*;/)?.[1] || "";
+  const sliderRanges = Object.fromEntries([...rangeSource.matchAll(/\[\s*"([^"]+)"\s*,\s*(-?\d*\.?\d+)\s*,\s*(-?\d*\.?\d+)/g)]
+    .map((match) => [match[1], { min: Number(match[2]), max: Number(match[3]) }]));
   const readBool = (key, fallback) => {
     const value = source.match(new RegExp(`(?:^|\\n)\\s*${key}\\s*=\\s*(true|false)\\s*;`))?.[1];
     return value === undefined ? fallback : value === "true";
@@ -2102,6 +2475,14 @@ function parseDesignCode(source) {
     params: { ...state.designDraft.params, ...parseScadParameters(source) },
     sketch: normalizeDesignSketch({ points: parsedPoints.length >= 4 ? parsedPoints : state.designDraft.sketch.points }),
     publicParameters: normalizeDesignPublicParameters(publicParameters.length ? publicParameters : state.designDraft.publicParameters),
+    sliderRanges: normalizeDesignSliderRanges(Object.keys(sliderRanges).length ? sliderRanges : state.designDraft.sliderRanges),
+    construction: normalizeDesignConstruction({
+      ...state.designDraft.construction,
+      templeStraight: readNumber("temple_straight", state.designDraft.construction?.templeStraight),
+      templeHook: readNumber("temple_hook", state.designDraft.construction?.templeHook),
+      templeHookAngle: readNumber("temple_hook_angle", state.designDraft.construction?.templeHookAngle),
+      templeBarHeight: readNumber("temple_bar_height", state.designDraft.construction?.templeBarHeight)
+    }),
     features: normalizeDesignFeatures({
       extrude: {
         enabled: readBool("extrude_enabled", currentFeatures.extrude.enabled),
@@ -2122,7 +2503,9 @@ function parseDesignCode(source) {
     }, state.designDraft.params),
     style: normalizeDesignStyle({
       ...style,
-      templeText: textValue === undefined ? style.templeText : textValue,
+      templeText: leftTextValue === undefined ? style.templeText : leftTextValue,
+      leftTempleText: leftTextValue === undefined ? style.leftTempleText : leftTextValue,
+      rightTempleText: rightTextValue === undefined ? style.rightTempleText : rightTextValue,
       templePattern: patternValue || style.templePattern,
       lensShape: shapeValue || style.lensShape,
       browBar: browValue === undefined ? style.browBar : browValue === "true",
@@ -2142,7 +2525,10 @@ function applyDesignCode() {
   state.designDraft.style = parsed.style;
   state.designDraft.sketch = parsed.sketch;
   state.designDraft.features = parsed.features;
+  state.designDraft.construction = parsed.construction;
   state.designDraft.publicParameters = parsed.publicParameters;
+  state.designDraft.sliderRanges = parsed.sliderRanges;
+  state.designDraft.params.temple_length = parsed.construction.templeStraight + parsed.construction.templeHook;
   state.designDraft.params.frame_depth = parsed.features.extrude.depth;
   state.designDraft.params.bevel = parsed.features.chamfer.enabled
     ? parsed.features.chamfer.amount
@@ -2158,17 +2544,33 @@ function resetDesignDraft() {
   state.designDraft = createDefaultDesignDraft();
   designSketchSelectedIndex = 0;
   buildDesignControls();
-  switchDesignTab("sketch");
+  switchDesignTab("front");
   setDesignView("sketch");
   renderDesignPreview({ fitView: true });
   setDesignNote("New design ready.");
 }
 
-function exportDesignScad() {
+async function exportDesignScad() {
   handleDesignProjectCopyChange();
   const source = state.designDraft.manualCode ? els.designScadCode.value : buildDesignScad(state.designDraft);
-  downloadText(`${slugify(state.designDraft.name)}.scad`, source, "application/scad");
-  setDesignNote("OpenSCAD project downloaded.");
+  const projectRoot = slugify(state.designDraft.name) || "frame-lab-design";
+  const files = { [`${projectRoot}.scad`]: strToU8(source) };
+
+  try {
+    await Promise.all(
+      Object.values(designHingeAssetManifest).map(async (assetUrl) => {
+        const response = await fetch(assetUrl);
+        if (!response.ok) throw new Error(`Could not include ${assetUrl}.`);
+        files[assetUrl.replace(/^\.\//, "")] = new Uint8Array(await response.arrayBuffer());
+      })
+    );
+    const bundle = zipSync(files);
+    downloadBlob(`${projectRoot}-design-kit.zip`, new Blob([bundle], { type: "application/zip" }));
+    setDesignNote("OpenSCAD project kit downloaded with the production hinge library.");
+  } catch (error) {
+    downloadText(`${projectRoot}.scad`, source, "application/scad");
+    setDesignNote("Source downloaded. The hinge library could not be included.");
+  }
 }
 
 function setDesignNote(message) {
@@ -2368,8 +2770,11 @@ function loadPublishedDesignIntoLab(model) {
     style: normalizeDesignStyle(definition),
     sketch: definition.sketch,
     features: definition.features,
+    construction: definition.construction,
     publicParameters: definition.publicParameters,
+    sliderRanges: definition.sliderRanges,
     collectionId: model.id,
+    step: "front",
     view: "sketch",
     code: storedCode,
     manualCode: Boolean(storedCode.trim())
@@ -2379,7 +2784,7 @@ function loadPublishedDesignIntoLab(model) {
     state.designDraft.code = storedCode;
     els.designScadCode.value = storedCode;
   }
-  switchDesignTab("sketch");
+  switchDesignTab("front");
   setDesignView("sketch");
   navigateToView("design-lab");
   renderDesignPreview({ fitView: true });
@@ -3023,10 +3428,14 @@ function applyTranslations() {
 
 function buildControls() {
   els.controls.innerHTML = "";
-  const activeKeys = state.activeParametricDesign
-    ? new Set(normalizeParametricDesign(state.activeParametricDesign).publicParameters)
-    : visibleParameterKeys;
+  const definition = state.activeParametricDesign ? normalizeParametricDesign(state.activeParametricDesign) : null;
+  const activeKeys = definition ? new Set(definition.publicParameters) : visibleParameterKeys;
+  const sliderRanges = definition?.sliderRanges;
   parameterSchema.filter(([key]) => activeKeys.has(key)).forEach(([key, label, hint, min, max, step, unit]) => {
+    const range = sliderRanges?.[key];
+    const rangeMin = range?.min ?? min;
+    const rangeMax = range?.max ?? max;
+    const rangeStep = range?.step ?? step;
     const translated = getParameterText(key, label, hint);
     const row = document.createElement("div");
     row.className = "control";
@@ -3035,7 +3444,7 @@ function buildControls() {
         <span>${translated.label}</span>
         <small>${translated.hint}</small>
       </label>
-      <input id="${key}" data-param="${key}" type="range" min="${min}" max="${max}" step="${step}" value="${state.params[key]}" />
+      <input id="${key}" data-param="${key}" type="range" min="${rangeMin}" max="${rangeMax}" step="${rangeStep}" value="${state.params[key]}" />
       <output id="${key}Output">${formatValue(state.params[key], unit)}</output>
     `;
     els.controls.append(row);
@@ -3963,7 +4372,13 @@ function renderPublishedDesignPreview() {
   [-1, 1].forEach((side) => {
     addDesignRim(side * center, p, outerLensWidth, frameMaterial, definition, modelGroup);
     addDesignLens(side * center, p, lensMaterial, definition, modelGroup);
-    addDesignTemple(side, p, outerLensWidth, frameMaterial, detailMaterial, style, modelGroup);
+    addDesignTemple(side, p, outerLensWidth, frameMaterial, detailMaterial, style, definition, modelGroup);
+    addDesignHingeAsset(
+      side < 0 ? "frontLeft" : "frontRight",
+      designHingeDatum(side, p),
+      frameMaterial,
+      modelGroup
+    );
   });
   if (style.browBar) addDesignBar(p.head_width, p.lens_height / 2 + p.rim_thickness * 0.72, p.rim_thickness * 1.05, p.frame_depth * 0.95, frameMaterial, p, modelGroup);
   addDesignBar(p.bridge_width + p.rim_thickness * 2.35, p.lens_height * 0.08, p.rim_thickness * 1.15, p.frame_depth, frameMaterial, p, modelGroup);
@@ -4287,6 +4702,12 @@ function selectModel(id, options = {}) {
   state.scadSource = model.scadSource;
   state.params = { ...structuredClone(defaultParams), ...model.params };
   state.activeParametricDesign = model.design ? normalizeParametricDesign(model.design) : null;
+  if (state.activeParametricDesign) {
+    Object.entries(state.activeParametricDesign.sliderRanges).forEach(([key, range]) => {
+      if (!state.activeParametricDesign.publicParameters.includes(key)) return;
+      state.params[key] = THREE.MathUtils.clamp(Number(state.params[key]) || range.min, range.min, range.max);
+    });
+  }
   rebuildComponentLibrary();
   repairAssemblyForActiveModel(model);
   applyAssemblyToParams();
@@ -6106,11 +6527,17 @@ function buildDesignScad(draft = state.designDraft) {
   const definition = designDefinitionFromDraft(draft);
   const style = normalizeDesignStyle(definition);
   const features = normalizeDesignFeatures(definition.features, p);
-  const text = style.templeText.replaceAll("\\", "\\\\").replaceAll("\"", "\\\"");
+  const construction = normalizeDesignConstruction(definition.construction);
+  const leftText = style.leftTempleText.replaceAll("\\", "\\\\").replaceAll("\"", "\\\"");
+  const rightText = style.rightTempleText.replaceAll("\\", "\\\\").replaceAll("\"", "\\\"");
   const profilePoints = normalizeDesignSketch(definition.sketch).points
     .map(([x, y]) => `[${formatNumber(x)}, ${formatNumber(y)}]`)
     .join(", ");
   const publicParameters = definition.publicParameters.map((key) => `"${key}"`).join(", ");
+  const customerRanges = definition.publicParameters.map((key) => {
+    const range = definition.sliderRanges[key];
+    return `["${key}", ${formatNumber(range.min)}, ${formatNumber(range.max)}, ${formatNumber(range.step)}]`;
+  }).join(", ");
   const paramLines = parameterSchema
     .map(([key, label, , min, max, step]) => `${key} = ${formatNumber(p[key])}; // [${min}:${step}:${max}] ${label}`)
     .join("\n");
@@ -6120,13 +6547,15 @@ function buildDesignScad(draft = state.designDraft) {
 ${paramLines}
 lens_shape = "${style.lensShape}";
 temple_pattern = "${style.templePattern}";
-temple_text = "${text}";
+left_temple_text = "${leftText}";
+right_temple_text = "${rightText}";
 brow_bar_enabled = ${style.browBar ? "true" : "false"};
 frame_color = "${style.frameColor}";
 lens_color = "${style.lensColor}";
 detail_color = "${style.detailColor}";
 profile_points = [${profilePoints}];
 customer_sliders = [${publicParameters}]; // Exposed controls in Frame Lab.
+customer_slider_ranges = [${customerRanges}]; // Safe customer adjustment limits.
 extrude_enabled = ${features.extrude.enabled ? "true" : "false"};
 extrude_depth = ${formatNumber(features.extrude.depth)};
 fillet_enabled = ${features.fillet.enabled ? "true" : "false"};
@@ -6134,7 +6563,16 @@ fillet_radius = ${formatNumber(features.fillet.radius)};
 chamfer_enabled = ${features.chamfer.enabled ? "true" : "false"};
 chamfer_amount = ${formatNumber(features.chamfer.amount)};
 lens_recess_enabled = ${features.lensRecess.enabled ? "true" : "false"};
-lens_recess_depth = ${formatNumber(features.lensRecess.depth)};
+lens_thickness = ${formatNumber(construction.lensThickness)};
+lens_seat_width = ${formatNumber(construction.lensSeatWidth)};
+lens_seat_depth = ${formatNumber(construction.lensSeatDepth)};
+hinge_standard = "${construction.hingeStandard}";
+temple_straight = ${formatNumber(construction.templeStraight)};
+temple_hook = ${formatNumber(construction.templeHook)};
+temple_hook_angle = ${formatNumber(construction.templeHookAngle)};
+temple_bar_height = ${formatNumber(construction.templeBarHeight)};
+authored_temple_length = temple_straight + temple_hook;
+active_temple_straight = max(35, temple_straight + temple_length - authored_temple_length);
 
 outer_lens_width = (head_width - bridge_width) / 2;
 opening_width = min(lens_width, outer_lens_width - rim_thickness * 2.12);
@@ -6177,13 +6615,31 @@ module rim(cx=0) {
 }
 
 module lens_insert(cx=0) {
-  translate([cx, 0, lens_recess_enabled ? extrude_depth/2 - lens_recess_depth/2 : extrude_depth*0.2])
+  translate([cx, 0, extrude_depth/2 - lens_seat_depth + lens_thickness/2])
   scale([cx < 0 ? -1 : 1, 1, 1])
-  linear_extrude(height=lens_recess_enabled ? lens_recess_depth : max(1, extrude_depth*0.36), center=true, convexity=6)
-  lens_profile([opening_width-0.4, lens_height-0.4], false);
+  linear_extrude(height=lens_thickness, center=true, convexity=6)
+  offset(delta=lens_seat_width - 0.15) lens_profile([opening_width, lens_height], false);
 }
 
-module front() {
+module lens_seat_cut(cx=0) {
+  translate([cx, 0, extrude_depth/2 - lens_seat_depth])
+  scale([cx < 0 ? -1 : 1, 1, 1])
+  linear_extrude(height=lens_seat_depth + 0.02, center=false, convexity=6)
+  difference() {
+    offset(delta=lens_seat_width) lens_profile([opening_width, lens_height], false);
+    lens_profile([opening_width, lens_height], false);
+  }
+}
+
+module front_hinge(side=1) {
+  translate([side*head_width/2, lens_height*0.27 - 3, -extrude_depth/2])
+  if (side < 0)
+    import("assets/hinges/front-hinge-left.3mf");
+  else
+    import("assets/hinges/front-hinge-right.3mf");
+}
+
+module front_body() {
   union() {
     rim(-lens_center);
     rim(lens_center);
@@ -6197,6 +6653,16 @@ module front() {
       rotate([0, 0, side*10])
       soft_bar([nose_pad_width, rim_thickness*1.45, frame_depth*0.72], rim_thickness*0.35);
   }
+}
+
+module front() {
+  difference() {
+    front_body();
+    lens_seat_cut(-lens_center);
+    lens_seat_cut(lens_center);
+  }
+  front_hinge(-1);
+  front_hinge(1);
 }
 
 module temple_pattern_relief(side=1) {
@@ -6215,25 +6681,33 @@ module temple_pattern_cutout(side=1) {
 }
 
 module temple_mark(side=1) {
-  if (temple_text != "")
+  text_value = side < 0 ? left_temple_text : right_temple_text;
+  if (text_value != "")
     translate([side*(hinge_width*0.34 + rim_thickness*0.67), -rim_thickness*0.56, -56])
     rotate([90, side > 0 ? 90 : -90, 0])
     linear_extrude(height=0.45)
-    text(temple_text, size=4, halign="center", valign="center");
+    text(text_value, size=4, halign="center", valign="center");
+}
+
+module temple_hinge(side=1) {
+  if (side < 0)
+    import("assets/hinges/temple-hinge-left.3mf");
+  else
+    import("assets/hinges/temple-hinge-right.3mf");
 }
 
 module temple(side=1) {
-  hinge_x = side * (head_width/2 + hinge_width/2);
-  translate([hinge_x, lens_height*0.27, -frame_depth*0.05])
+  hinge_x = side * head_width/2;
+  translate([hinge_x, lens_height*0.27 - 3, -frame_depth/2])
   rotate([0, side*temple_spread, 0])
   difference() {
     union() {
-      soft_bar([hinge_width, rim_thickness*1.7, frame_depth*1.2], rim_thickness*0.32);
-      translate([side*hinge_width*0.34, 0, -temple_length/2 - frame_depth*0.5])
-        soft_bar([rim_thickness*1.28, rim_thickness*1.08, temple_length], rim_thickness*0.32);
-      translate([side*hinge_width*0.34, -temple_drop*0.28, -temple_length - frame_depth*0.5 - temple_drop*0.28])
-        rotate([-28, 0, 0])
-        soft_bar([rim_thickness*1.34, rim_thickness*1.08, max(1,temple_drop)], rim_thickness*0.32);
+      temple_hinge(side);
+      translate([side*hinge_width*0.34, 0, -active_temple_straight/2 - 3])
+        soft_bar([frame_depth*0.64, temple_bar_height, active_temple_straight], min(2,temple_bar_height*0.3));
+      translate([side*hinge_width*0.34, -sin(temple_hook_angle)*temple_hook/2, -active_temple_straight - 3 - cos(temple_hook_angle)*temple_hook/2])
+        rotate([-temple_hook_angle, 0, 0])
+        soft_bar([frame_depth*0.64, temple_bar_height, temple_hook], min(2,temple_bar_height*0.3));
       temple_pattern_relief(side);
       temple_mark(side);
     }
@@ -6679,7 +7153,7 @@ function formatValue(value, unit) {
 }
 
 function formatNumber(value) {
-  return Number(value).toFixed(Number.isInteger(Number(value)) ? 0 : 1);
+  return Number(value).toFixed(2).replace(/\.?0+$/, "");
 }
 
 function log(message) {

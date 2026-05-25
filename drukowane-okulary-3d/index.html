@@ -453,56 +453,61 @@
             </div>
           </div>
           <div class="design-view-switch" role="group" aria-label="Design view">
-            <button id="designViewSketch" type="button" class="active">Sketch</button>
-            <button id="designView3d" type="button">3D</button>
+            <button id="designViewSketch" type="button" class="active">Drawing</button>
+            <button id="designView3d" type="button">Assembly 3D</button>
           </div>
           <div class="design-stage-footer">
-            <span id="designDimensions">148 mm frame / 18 mm bridge / 145 mm temple</span>
-            <span id="designViewHint">Drag profile points to define the lens opening</span>
+            <span id="designDimensions">150 mm frame / 18 mm bridge / 95 mm temple</span>
+            <span id="designViewHint">Drag profile points to define the front opening</span>
           </div>
         </section>
         <aside class="design-sidebar" aria-label="Parametric collection authoring">
           <header class="design-sidebar-head">
             <p class="eyebrow">New collection template</p>
-            <h2>Technical frame creator</h2>
+            <h2>Production frame creator</h2>
             <input id="designName" type="text" value="My custom frame" maxlength="120" aria-label="Project name" />
             <textarea id="designDescription" rows="2" maxlength="260" placeholder="Short gallery description" aria-label="Gallery description"></textarea>
           </header>
           <div class="design-tabs" role="tablist" aria-label="Design mode">
-            <button type="button" class="active" data-design-tab="sketch" role="tab" aria-selected="true">Sketch</button>
-            <button type="button" data-design-tab="features" role="tab" aria-selected="false">Features</button>
+            <button type="button" class="active" data-design-tab="front" role="tab" aria-selected="true">Front</button>
+            <button type="button" data-design-tab="left-temple" role="tab" aria-selected="false">Left temple</button>
+            <button type="button" data-design-tab="right-temple" role="tab" aria-selected="false">Right temple</button>
+            <button type="button" data-design-tab="assembly" role="tab" aria-selected="false">Assembly</button>
             <button type="button" data-design-tab="code" role="tab" aria-selected="false">Code</button>
           </div>
           <section id="designOperationsPanel" class="design-operations" role="tabpanel">
             <section class="design-control-section">
               <div class="design-section-heading">
-                <h3>Technical profile</h3>
+                <h3>Front drawing</h3>
                 <div class="design-sketch-actions">
                   <button id="addSketchPoint" type="button" class="compact">+ Point</button>
                   <button id="removeSketchPoint" type="button" class="compact">Remove</button>
                 </div>
               </div>
-              <p class="design-note">Draw one lens opening. The opposite side is mirrored automatically.</p>
+              <p class="design-note">Draw one closed lens opening. The second opening and the acrylic lenses are generated automatically.</p>
+              <div class="design-interface-spec">
+                <strong>FL hinge standard</strong>
+                <span>Front Hinge Left + Right</span>
+                <small>Fixed 6 x 6 x 6 mm mounting bodies</small>
+              </div>
             </section>
             <section class="design-control-section">
               <h3>Front dimensions</h3>
               <div id="designFrontControls" class="design-controls"></div>
             </section>
             <section class="design-control-section">
-              <h3>Fit dimensions</h3>
-              <div id="designTempleControls" class="design-controls"></div>
+              <h3>Lens retention</h3>
+              <div class="design-interface-metrics">
+                <div><strong>1.00 mm</strong><small>Acrylic lens</small></div>
+                <div><strong>1.20 mm</strong><small>Seat width</small></div>
+                <div><strong>0.35 mm</strong><small>Recess depth</small></div>
+              </div>
+              <p class="design-note">A retaining seat is cut around every closed lens opening in the front body.</p>
             </section>
-            <section class="design-control-section">
-              <h3>Customer sliders</h3>
-              <p class="design-note">Choose which dimensions the customer can adjust after this design is published.</p>
-              <div id="designPublicParameters" class="design-public-parameters"></div>
-            </section>
-          </section>
-          <section id="designFeaturesPanel" class="design-operations" role="tabpanel" hidden>
             <section class="design-control-section design-feature-stack">
-              <h3>Operations</h3>
+              <h3>Front operations</h3>
               <label class="design-feature enabled">
-                <span><strong>Sketch</strong><small>Technical lens profile</small></span>
+                <span><strong>Profile</strong><small>Mirrored front outline</small></span>
                 <em>Base</em>
               </label>
               <label class="design-feature">
@@ -520,14 +525,11 @@
                 <input id="designChamferEnabled" type="checkbox" />
                 <input id="designChamferAmount" type="number" min="0" max="2.4" step="0.1" value="0.4" aria-label="Chamfer amount" />
               </label>
-              <label class="design-feature">
-                <span><strong>Lens recess</strong><small>Seat for a lens insert</small></span>
-                <input id="designLensRecessEnabled" type="checkbox" checked />
-                <input id="designLensRecessDepth" type="number" min="0.4" max="3" step="0.1" value="1" aria-label="Lens recess depth" />
-              </label>
+              <input id="designLensRecessEnabled" type="checkbox" checked hidden />
+              <input id="designLensRecessDepth" type="number" value="0.35" hidden />
             </section>
             <section class="design-control-section design-details">
-              <h3>Details and material</h3>
+              <h3>Profile preset</h3>
               <label>
                 <span>Starting profile</span>
                 <select id="designLensShape" class="component-select">
@@ -536,6 +538,80 @@
                   <option value="sharp">Architectural</option>
                 </select>
               </label>
+              <label class="design-toggle">
+                <input id="designBrowBar" type="checkbox" checked />
+                <span>Upper brow support</span>
+              </label>
+            </section>
+          </section>
+          <section id="designFeaturesPanel" class="design-operations" role="tabpanel" hidden>
+            <section class="design-control-section">
+              <h3>Left temple drawing</h3>
+              <div class="design-interface-spec">
+                <strong>Temple Hinge Left</strong>
+                <span>Production connector included</span>
+                <small>4.5 x 6.25 x 3.6 mm supplied body</small>
+              </div>
+              <p class="design-note">The arm begins at the supplied hinge. Drag the orange handles in the drawing or enter dimensions below.</p>
+            </section>
+            <section class="design-control-section">
+              <h3>Temple dimensions</h3>
+              <div id="designTempleControls" class="design-controls"></div>
+              <div class="design-construction-grid">
+                <label><span>Straight</span><input id="designTempleStraight" type="number" min="35" max="120" step="1" value="65" /><small>mm</small></label>
+                <label><span>Hook</span><input id="designTempleHook" type="number" min="10" max="60" step="1" value="30" /><small>mm</small></label>
+                <label><span>Angle</span><input id="designTempleHookAngle" type="number" min="10" max="75" step="1" value="45" /><small>deg</small></label>
+                <label><span>Height</span><input id="designTempleBarHeight" type="number" min="3" max="10" step="0.1" value="5.4" /><small>mm</small></label>
+              </div>
+            </section>
+            <section class="design-control-section design-details">
+              <h3>Left side detail</h3>
+              <label class="design-text-field">
+                <span>Left temple text</span>
+                <input id="designTempleText" type="text" maxlength="24" placeholder="Optional engraving" />
+              </label>
+            </section>
+          </section>
+          <section id="designRightTemplePanel" class="design-operations" role="tabpanel" hidden>
+            <section class="design-control-section">
+              <h3>Right temple</h3>
+              <div class="design-interface-spec">
+                <strong>Temple Hinge Right</strong>
+                <span>Mirrored fit from left side</span>
+                <small>Geometry inherits the validated left temple path</small>
+              </div>
+              <p class="design-note">The mechanical geometry stays symmetric. Add separate right-side detail so engraving is readable, not mirrored.</p>
+            </section>
+            <section class="design-control-section design-details">
+              <h3>Right side detail</h3>
+              <label class="design-text-field">
+                <span>Right temple text</span>
+                <input id="designRightTempleText" type="text" maxlength="24" placeholder="Optional engraving" />
+              </label>
+            </section>
+          </section>
+          <section id="designAssemblyPanel" class="design-operations" role="tabpanel" hidden>
+            <section class="design-control-section">
+              <h3>Ready assembly</h3>
+              <div class="design-assembly-checks">
+                <span>Front hinges</span><strong>Included</strong>
+                <span>Temple hinges</span><strong>Included</strong>
+                <span>Acrylic lenses</span><strong>Generated</strong>
+                <span>Lens seat</span><strong>1.2 x 0.35 mm</strong>
+              </div>
+            </section>
+            <section class="design-control-section">
+              <h3>Production checks</h3>
+              <div id="designProductionChecks" class="design-production-checks"></div>
+              <p class="design-note">Print and test one hinge sample before releasing a new frame.</p>
+            </section>
+            <section class="design-control-section">
+              <h3>Customer sliders</h3>
+              <p class="design-note">Choose dimensions exposed to the customer when this frame is published.</p>
+              <div id="designPublicParameters" class="design-public-parameters"></div>
+            </section>
+            <section class="design-control-section design-details">
+              <h3>Appearance</h3>
               <label>
                 <span>Temple pattern</span>
                 <select id="designTemplePattern" class="component-select">
@@ -543,14 +619,6 @@
                   <option value="ribs">Ribs</option>
                   <option value="perforated">Perforated</option>
                 </select>
-              </label>
-              <label class="design-text-field">
-                <span>Temple text</span>
-                <input id="designTempleText" type="text" maxlength="24" placeholder="Optional engraving" />
-              </label>
-              <label class="design-toggle">
-                <input id="designBrowBar" type="checkbox" checked />
-                <span>Upper brow support</span>
               </label>
               <div class="design-colors">
                 <label><span>Frame</span><input id="designFrameColor" type="color" value="#ff741f" /></label>
@@ -572,7 +640,7 @@
             <div id="designSubmissionStatus" class="design-submission-status"></div>
             <div class="design-submit-actions">
               <button id="resetDesign" type="button">Reset</button>
-              <button id="downloadDesignScad" type="button">.scad</button>
+              <button id="downloadDesignScad" type="button">Project .zip</button>
               <button id="saveDesignCollection" type="button" class="accent" hidden>Save collection</button>
               <button id="submitDesign" type="button" class="accent">Submit for review</button>
             </div>

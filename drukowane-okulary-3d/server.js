@@ -800,11 +800,29 @@ function sanitizeParametricDesign(style = {}) {
     const number = Number(next);
     return Number.isFinite(number) ? Math.max(min, Math.min(max, number)) : fallback;
   };
+  const sliderLimits = {
+    head_width: [118, 172, 1],
+    bridge_width: [12, 30, 0.5],
+    lens_width: [40, 64, 0.5],
+    lens_height: [28, 50, 0.5],
+    rim_thickness: [2.5, 9, 0.1],
+    temple_length: [70, 180, 1],
+    temple_drop: [0, 42, 1],
+    temple_spread: [0, 28, 0.5]
+  };
+  const sliderRanges = Object.fromEntries(Object.entries(sliderLimits).map(([key, [min, max, step]]) => {
+    const source = style.sliderRanges?.[key] || {};
+    const first = value(source.min, min, max, min);
+    const second = value(source.max, min, max, max);
+    return [key, { min: Math.min(first, second), max: Math.max(first, second), step }];
+  }));
   return {
     type: "parametric-openscad",
     lensShape: ["soft-square", "round", "sharp"].includes(style.lensShape) ? style.lensShape : "soft-square",
     templePattern: ["none", "ribs", "perforated"].includes(style.templePattern) ? style.templePattern : "none",
     templeText: cleanText(style.templeText, "", 24),
+    leftTempleText: cleanText(style.leftTempleText ?? style.templeText, "", 24),
+    rightTempleText: cleanText(style.rightTempleText ?? style.templeText, "", 24),
     browBar: style.browBar !== false,
     frameColor: color("frameColor", "#ff741f"),
     lensColor: color("lensColor", "#202529"),
@@ -831,12 +849,23 @@ function sanitizeParametricDesign(style = {}) {
       },
       lensRecess: {
         enabled: style.features?.lensRecess?.enabled !== false,
-        depth: value(style.features?.lensRecess?.depth, 0.4, 3, 1)
+        depth: value(style.features?.lensRecess?.depth, 0.1, 3, 0.35)
       }
+    },
+    construction: {
+      hingeStandard: "FL-H1",
+      lensThickness: 1,
+      lensSeatWidth: 1.2,
+      lensSeatDepth: 0.35,
+      templeStraight: value(style.construction?.templeStraight, 35, 120, 65),
+      templeHook: value(style.construction?.templeHook, 10, 60, 30),
+      templeHookAngle: value(style.construction?.templeHookAngle, 10, 75, 45),
+      templeBarHeight: value(style.construction?.templeBarHeight, 3, 10, 5.4)
     },
     publicParameters: [...new Set(Array.isArray(style.publicParameters)
       ? style.publicParameters.filter((key) => validParameterKeys.has(key))
-      : ["head_width", "bridge_width", "temple_length"])]
+      : ["head_width", "bridge_width", "temple_length"])],
+    sliderRanges
   };
 }
 
@@ -848,7 +877,7 @@ function sanitizeDesignParams(params = {}) {
     lens_height: [28, 50],
     rim_thickness: [2.5, 9],
     frame_depth: [3, 12],
-    temple_length: [115, 175],
+    temple_length: [70, 180],
     temple_drop: [0, 42],
     temple_spread: [0, 28],
     nose_pad_width: [3, 14],
