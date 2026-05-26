@@ -800,6 +800,15 @@ function sanitizeParametricDesign(style = {}) {
     const number = Number(next);
     return Number.isFinite(number) ? Math.max(min, Math.min(max, number)) : fallback;
   };
+  const suppliedRadii = Array.isArray(style.sketch?.cornerRadii) ? style.sketch.cornerRadii : [];
+  const defaultCornerRadii = [5, 2.5, 5, 4, 6, 6, 4, 5];
+  const pointCount = sketchPoints.length >= 4 ? sketchPoints.length : defaultCornerRadii.length;
+  const cornerRadii = Array.from({ length: pointCount }, (_, index) => value(
+    suppliedRadii[index],
+    0,
+    16,
+    pointCount === defaultCornerRadii.length ? defaultCornerRadii[index] : 0
+  ));
   const sliderLimits = {
     head_width: [118, 172, 1],
     bridge_width: [12, 30, 0.5],
@@ -823,7 +832,7 @@ function sanitizeParametricDesign(style = {}) {
     templeText: cleanText(style.templeText, "", 24),
     leftTempleText: cleanText(style.leftTempleText ?? style.templeText, "", 24),
     rightTempleText: cleanText(style.rightTempleText ?? style.templeText, "", 24),
-    browBar: style.browBar !== false,
+    browBar: false,
     frameColor: color("frameColor", "#ff741f"),
     lensColor: color("lensColor", "#202529"),
     detailColor: color("detailColor", "#e59a62"),
@@ -832,16 +841,17 @@ function sanitizeParametricDesign(style = {}) {
       points: sketchPoints.length >= 4 ? sketchPoints : [
         [-0.42, 0.5], [0.36, 0.5], [0.5, 0.34], [0.47, -0.3],
         [0.34, -0.5], [-0.38, -0.5], [-0.5, -0.3], [-0.5, 0.3]
-      ]
+      ],
+      cornerRadii
     },
     features: {
       extrude: {
         enabled: style.features?.extrude?.enabled !== false,
-        depth: value(style.features?.extrude?.depth, 3, 12, 5.8)
+        depth: value(style.features?.extrude?.depth, 3, 12, 3)
       },
       fillet: {
-        enabled: style.features?.fillet?.enabled !== false,
-        radius: value(style.features?.fillet?.radius, 0, 2.4, 0.55)
+        enabled: Boolean(style.features?.fillet?.enabled),
+        radius: value(style.features?.fillet?.radius, 0, 2.4, 0.3)
       },
       chamfer: {
         enabled: Boolean(style.features?.chamfer?.enabled),

@@ -160,12 +160,8 @@ const designParameterGroups = {
   front: [
     ["head_width", "Frame width"],
     ["bridge_width", "Bridge opening"],
-    ["lens_width", "Lens opening"],
     ["lens_height", "Lens height"],
-    ["rim_thickness", "Rim thickness"],
-    ["corner_radius", "Sketch rounding"],
-    ["nose_pad_width", "Nose support width"],
-    ["nose_pad_drop", "Nose support height"]
+    ["rim_thickness", "Rim thickness"]
   ],
   temples: [
     ["temple_spread", "Opening angle"]
@@ -177,7 +173,7 @@ const defaultDesignStyle = {
   templeText: "",
   leftTempleText: "",
   rightTempleText: "",
-  browBar: true,
+  browBar: false,
   frameColor: "#ff741f",
   lensColor: "#202529",
   detailColor: "#e59a62"
@@ -192,11 +188,11 @@ const defaultDesignSketchPoints = [
   [-0.5, -0.3],
   [-0.5, 0.3]
 ];
+const defaultDesignSketchRadii = [5, 2.5, 5, 4, 6, 6, 4, 5];
 const defaultDesignPublicParameters = ["head_width", "bridge_width", "temple_length"];
 const designPublicParameterKeys = [
   "head_width",
   "bridge_width",
-  "lens_width",
   "lens_height",
   "rim_thickness",
   "temple_length",
@@ -728,6 +724,9 @@ const els = {
   designProductionChecks: document.querySelector("#designProductionChecks"),
   addSketchPoint: document.querySelector("#addSketchPoint"),
   removeSketchPoint: document.querySelector("#removeSketchPoint"),
+  designSelectedCornerLabel: document.querySelector("#designSelectedCornerLabel"),
+  designSelectedCornerRadius: document.querySelector("#designSelectedCornerRadius"),
+  designSharpCorner: document.querySelector("#designSharpCorner"),
   designViewSketch: document.querySelector("#designViewSketch"),
   designView3d: document.querySelector("#designView3d"),
   designViewHint: document.querySelector("#designViewHint"),
@@ -957,20 +956,23 @@ function setupScene() {
 }
 
 function createDefaultDesignDraft() {
+  const params = {
+    ...structuredClone(defaultParams),
+    head_width: 148,
+    bridge_width: 18,
+    lens_width: 59,
+    lens_height: 38,
+    rim_thickness: 3,
+    frame_depth: 3,
+    temple_length: defaultDesignConstruction.templeStraight + defaultDesignConstruction.templeHook
+  };
   return {
     name: "My custom frame",
     description: "",
-    params: {
-      ...structuredClone(defaultParams),
-      head_width: 148,
-      bridge_width: 18,
-      lens_width: 51,
-      lens_height: 38,
-      temple_length: defaultDesignConstruction.templeStraight + defaultDesignConstruction.templeHook
-    },
+    params,
     style: structuredClone(defaultDesignStyle),
-    sketch: { points: structuredClone(defaultDesignSketchPoints), symmetric: true },
-    features: createDefaultDesignFeatures(),
+    sketch: { points: structuredClone(defaultDesignSketchPoints), cornerRadii: structuredClone(defaultDesignSketchRadii), symmetric: true },
+    features: createDefaultDesignFeatures(params),
     construction: normalizeDesignConstruction(),
     publicParameters: [...defaultDesignPublicParameters],
     sliderRanges: normalizeDesignSliderRanges(),
@@ -991,7 +993,7 @@ function normalizeDesignStyle(style = {}) {
     templeText: leftTempleText,
     leftTempleText,
     rightTempleText,
-    browBar: style.browBar !== false,
+    browBar: false,
     frameColor: sanitizeHexColor(style.frameColor, defaultDesignStyle.frameColor),
     lensColor: sanitizeHexColor(style.lensColor, defaultDesignStyle.lensColor),
     detailColor: sanitizeHexColor(style.detailColor, defaultDesignStyle.detailColor)
@@ -1001,7 +1003,7 @@ function normalizeDesignStyle(style = {}) {
 function createDefaultDesignFeatures(params = defaultParams) {
   return {
     extrude: { enabled: true, depth: Number(params.frame_depth) || defaultParams.frame_depth },
-    fillet: { enabled: true, radius: Number(params.bevel) || defaultParams.bevel },
+    fillet: { enabled: false, radius: Math.min(0.3, Number(params.bevel) || defaultParams.bevel) },
     chamfer: { enabled: false, amount: 0.4 },
     lensRecess: { enabled: true, depth: defaultDesignConstruction.lensSeatDepth }
   };
@@ -1014,9 +1016,19 @@ function normalizeDesignSketch(sketch = {}) {
     const y = THREE.MathUtils.clamp(Number(Array.isArray(point) ? point[1] : point?.y) || 0, -0.7, 0.7);
     return [x, y];
   });
+  const suppliedRadii = Array.isArray(sketch.cornerRadii) ? sketch.cornerRadii : null;
+  const fallbackRadii = points.length === defaultDesignSketchPoints.length
+    ? defaultDesignSketchRadii
+    : Array.from({ length: points.length }, () => 0);
+  const cornerRadii = points.map((_, index) => THREE.MathUtils.clamp(
+    Number(suppliedRadii?.[index] ?? fallbackRadii[index] ?? 0) || 0,
+    0,
+    16
+  ));
   return {
     symmetric: sketch.symmetric !== false,
-    points: points.length >= 4 ? points : structuredClone(defaultDesignSketchPoints)
+    points: points.length >= 4 ? points : structuredClone(defaultDesignSketchPoints),
+    cornerRadii: points.length >= 4 ? cornerRadii : structuredClone(defaultDesignSketchRadii)
   };
 }
 
@@ -1114,8 +1126,7 @@ function designGeometryParams(params = state.designDraft.params) {
   parameterSchema.forEach(([key, , , min, max]) => {
     values[key] = THREE.MathUtils.clamp(Number(values[key]) || defaultParams[key], min, max);
   });
-  const availableOpening = Math.max(28, (values.head_width - values.bridge_width) / 2 - values.rim_thickness * 2.12);
-  values.lens_width = Math.min(values.lens_width, availableOpening);
+  values.lens_width = Math.max(20, (values.head_width - values.bridge_width) / 2 - values.rim_thickness * 2);
   return values;
 }
 
@@ -1165,8 +1176,7 @@ function addDesignHingeAsset(key, position, material, target = designModelGroup)
     child.material = material;
     child.geometry.computeVertexNormals();
   });
-  // CAD Z is the screw axis; rotate both halves into the eyewear assembly Y axis.
-  hinge.rotation.x = -Math.PI / 2;
+  // Assets are authored in their assembly orientation with the screw bore facing up.
   hinge.position.copy(position);
   target.add(hinge);
   return true;
@@ -1221,6 +1231,7 @@ function setupDesignSketch() {
     designSketchDragIndex = index;
     designSketchSelectedIndex = index;
     els.designSketchCanvas.setPointerCapture(event.pointerId);
+    syncDesignSelectedCornerField();
     drawDesignSketch();
   });
   els.designSketchCanvas.addEventListener("pointermove", (event) => {
@@ -1347,7 +1358,8 @@ function sketchScreenPoint(index, metrics) {
 }
 
 function drawSketchProfile(ctx, centerX, metrics, expansion, fill, stroke, mirror = false) {
-  const points = normalizeDesignSketch(state.designDraft.sketch).points;
+  const sketch = normalizeDesignSketch(state.designDraft.sketch);
+  const points = sketch.points;
   const width = metrics.lensWidth + expansion * 2;
   const height = metrics.lensHeight + expansion * 2;
   const shapedPoints = points.map(([x, y]) => ({
@@ -1355,7 +1367,7 @@ function drawSketchProfile(ctx, centerX, metrics, expansion, fill, stroke, mirro
     y: metrics.centerY - y * height * metrics.scale
   }));
   ctx.beginPath();
-  traceRoundedPolygon(ctx, shapedPoints, metrics.p.corner_radius * metrics.scale);
+  traceRoundedPolygon(ctx, shapedPoints, sketch.cornerRadii.map((radius) => (radius + Math.max(0, expansion)) * metrics.scale));
   if (fill) {
     ctx.fillStyle = fill;
     ctx.fill();
@@ -1517,10 +1529,10 @@ function drawDesignSketch() {
   drawSketchProfile(ctx, leftCenterX, metrics, 0, colors.background, colors.text, true);
   drawSketchProfile(ctx, rightCenterX, metrics, 0, colors.background, colors.text);
   ctx.strokeStyle = colors.stroke;
-  ctx.lineWidth = Math.max(2, p.rim_thickness * scale);
+  ctx.lineWidth = Math.max(2, Math.min(p.rim_thickness * 0.8, 3) * scale);
   ctx.beginPath();
-  ctx.moveTo(leftCenterX + p.lens_width * scale * 0.45, centerY - p.lens_height * scale * 0.25);
-  ctx.lineTo(rightCenterX - p.lens_width * scale * 0.45, centerY - p.lens_height * scale * 0.25);
+  ctx.moveTo(leftCenterX + (p.lens_width / 2 + p.rim_thickness * 0.3) * scale, centerY - p.lens_height * scale * 0.18);
+  ctx.lineTo(rightCenterX - (p.lens_width / 2 + p.rim_thickness * 0.3) * scale, centerY - p.lens_height * scale * 0.18);
   ctx.stroke();
   const construction = normalizeDesignConstruction(state.designDraft.construction);
   const hingeSize = 6 * scale;
@@ -1609,7 +1621,7 @@ function renderDesignPreview(options = {}) {
     metalness: 0.04,
     transmission: 0.24
   });
-  const outerLensWidth = (p.head_width - p.bridge_width) / 2;
+  const outerLensWidth = p.lens_width + p.rim_thickness * 2;
   const center = p.bridge_width / 2 + outerLensWidth / 2;
   [-1, 1].forEach((side) => {
     addDesignRim(side * center, p, outerLensWidth, frameMaterial, definition);
@@ -1621,15 +1633,7 @@ function renderDesignPreview(options = {}) {
       frameMaterial
     );
   });
-  if (style.browBar) addDesignBar(p.head_width, p.lens_height / 2 + p.rim_thickness * 0.72, p.rim_thickness * 1.05, p.frame_depth * 0.95, frameMaterial, p);
-  addDesignBar(p.bridge_width + p.rim_thickness * 2.35, p.lens_height * 0.08, p.rim_thickness * 1.15, p.frame_depth, frameMaterial, p);
-  [-1, 1].forEach((side) => {
-    const geometry = roundedPrismGeometry(p.nose_pad_width, p.rim_thickness * 1.45, p.frame_depth * 0.72, p.rim_thickness * 0.35, p.bevel * 0.45);
-    const pad = new THREE.Mesh(geometry, frameMaterial);
-    pad.position.set(side * (p.bridge_width / 2 + p.nose_pad_width / 2), -p.lens_height / 4 - p.nose_pad_drop / 4, -p.frame_depth * 0.35);
-    pad.rotation.z = side * THREE.MathUtils.degToRad(10);
-    designModelGroup.add(pad);
-  });
+  addDesignBar(p.bridge_width + p.rim_thickness * 0.8, p.lens_height * 0.18, Math.min(3, p.rim_thickness * 0.8), p.frame_depth, frameMaterial, p);
   const centerPoint = new THREE.Box3().setFromObject(designModelGroup).getCenter(new THREE.Vector3());
   designModelGroup.children.forEach((child) => child.position.sub(centerPoint));
   if (fitView) {
@@ -1648,12 +1652,13 @@ function designCornerRadius(p, style, outer = false) {
   return p.corner_radius + (outer ? p.rim_thickness * 0.9 : 0);
 }
 
-function traceRoundedPolygon(path, points, radius) {
+function traceRoundedPolygon(path, points, radii = 0) {
   const corners = points.map((point, index) => {
     const previous = points[(index - 1 + points.length) % points.length];
     const next = points[(index + 1) % points.length];
     const previousLength = Math.hypot(previous.x - point.x, previous.y - point.y);
     const nextLength = Math.hypot(next.x - point.x, next.y - point.y);
+    const radius = Array.isArray(radii) ? Number(radii[index]) || 0 : Number(radii) || 0;
     const distance = Math.min(Math.max(0, radius), previousLength * 0.42, nextLength * 0.42);
     return {
       point,
@@ -1685,8 +1690,10 @@ function designProfilePath(width, height, definition, expansion = 0, asHole = fa
   const vertical = height + expansion * 2;
   const points = sketch.points.map(([x, y]) => new THREE.Vector2(x * horizontal, y * vertical));
   const ordered = asHole ? [...points].reverse() : points;
+  const radii = sketch.cornerRadii.map((radius) => radius + Math.max(0, expansion));
+  const orderedRadii = asHole ? [...radii].reverse() : radii;
   const path = asHole ? new THREE.Path() : new THREE.Shape();
-  traceRoundedPolygon(path, ordered, Math.max(0, cornerRadius + expansion * 0.12));
+  traceRoundedPolygon(path, ordered, orderedRadii);
   return path;
 }
 
@@ -1702,7 +1709,7 @@ function addDesignRim(x, p, outerWidth, material, definition, target = designMod
   const construction = normalizeDesignConstruction(definition?.construction);
   const edge = designEdgeOperation(p, definition);
   const addLayer = (innerExpansion, depth, z, edgeEnabled) => {
-    const outer = designProfilePath(outerWidth, p.lens_height, definition, p.rim_thickness, false, p.corner_radius);
+    const outer = designProfilePath(p.lens_width, p.lens_height, definition, p.rim_thickness, false, p.corner_radius);
     outer.holes.push(designProfilePath(p.lens_width, p.lens_height, definition, innerExpansion, true, p.corner_radius));
     const geometry = new THREE.ExtrudeGeometry(outer, {
       depth,
@@ -1755,8 +1762,8 @@ function designHingeDatum(side, p, definition = state.designDraft) {
   const construction = normalizeDesignConstruction(definition?.construction);
   return new THREE.Vector3(
     side * (p.head_width / 2 + construction.hingeMountOffset),
-    construction.hingeMountHeight - 3,
-    p.frame_depth / 2
+    construction.hingeMountHeight,
+    0
   );
 }
 
@@ -2129,6 +2136,7 @@ function bindUi() {
   els.designView3d?.addEventListener("click", () => setDesignView("3d"));
   els.addSketchPoint?.addEventListener("click", addDesignSketchPoint);
   els.removeSketchPoint?.addEventListener("click", removeDesignSketchPoint);
+  els.designSharpCorner?.addEventListener("click", () => updateSelectedDesignCorner(0));
   els.designName?.addEventListener("input", handleDesignProjectCopyChange);
   els.designDescription?.addEventListener("input", handleDesignProjectCopyChange);
   els.regenerateDesignCode?.addEventListener("click", () => {
@@ -2369,7 +2377,25 @@ function syncDesignFields() {
   if (els.designTempleCornerRadius) els.designTempleCornerRadius.value = String(construction.templeCornerRadius);
   if (els.designTempleTextureDepth) els.designTempleTextureDepth.value = String(construction.templeTextureDepth);
   if (els.designTemplePatternSpacing) els.designTemplePatternSpacing.value = String(construction.templePatternSpacing);
+  syncDesignSelectedCornerField();
   renderDesignProductionChecks();
+}
+
+function syncDesignSelectedCornerField() {
+  const sketch = normalizeDesignSketch(state.designDraft.sketch);
+  designSketchSelectedIndex = Math.max(0, Math.min(designSketchSelectedIndex, sketch.points.length - 1));
+  if (els.designSelectedCornerLabel) els.designSelectedCornerLabel.textContent = `Point ${designSketchSelectedIndex + 1} radius`;
+  if (els.designSelectedCornerRadius) els.designSelectedCornerRadius.value = String(sketch.cornerRadii[designSketchSelectedIndex] || 0);
+}
+
+function updateSelectedDesignCorner(radius) {
+  const sketch = normalizeDesignSketch(state.designDraft.sketch);
+  sketch.cornerRadii[designSketchSelectedIndex] = THREE.MathUtils.clamp(Number(radius) || 0, 0, 16);
+  state.designDraft.sketch = sketch;
+  state.designDraft.manualCode = false;
+  syncDesignSelectedCornerField();
+  syncDesignCode();
+  renderDesignPreview({ fitView: false });
 }
 
 function syncDesignCode() {
@@ -2452,6 +2478,11 @@ function handleDesignOperationChange(event) {
       }
     });
   }
+  if (event.target === els.designSelectedCornerRadius) {
+    updateSelectedDesignCorner(event.target.value);
+    setDesignNote("");
+    return;
+  }
   if ([
     els.designLensSlotWidth,
     els.designLensCaptureDepth,
@@ -2495,7 +2526,7 @@ function handleDesignOperationChange(event) {
   state.designDraft.params.frame_depth = features.extrude.depth;
   state.designDraft.params.bevel = features.chamfer.enabled ? features.chamfer.amount : features.fillet.enabled ? features.fillet.radius : 0;
   if (event.target === els.designLensShape) {
-    state.designDraft.sketch = { symmetric: true, points: designProfilePreset(els.designLensShape.value) };
+    state.designDraft.sketch = { symmetric: true, ...designProfilePreset(els.designLensShape.value) };
     designSketchSelectedIndex = 0;
   }
   state.designDraft.style = normalizeDesignStyle({
@@ -2505,7 +2536,7 @@ function handleDesignOperationChange(event) {
     templeText: els.designTempleText?.value,
     leftTempleText: els.designTempleText?.value,
     rightTempleText: els.designRightTempleText?.value,
-    browBar: Boolean(els.designBrowBar?.checked),
+    browBar: false,
     frameColor: els.designFrameColor?.value,
     lensColor: els.designLensColor?.value,
     detailColor: els.designDetailColor?.value
@@ -2520,15 +2551,17 @@ function handleDesignOperationChange(event) {
 
 function designProfilePreset(shape) {
   if (shape === "round") {
-    return Array.from({ length: 12 }, (_, index) => {
+    const points = Array.from({ length: 12 }, (_, index) => {
       const angle = Math.PI / 2 - index * Math.PI * 2 / 12;
       return [Math.cos(angle) * 0.5, Math.sin(angle) * 0.5];
     });
+    return { points, cornerRadii: Array.from({ length: points.length }, () => 2) };
   }
   if (shape === "sharp") {
-    return [[-0.48, 0.5], [0.48, 0.5], [0.5, 0.34], [0.45, -0.5], [-0.43, -0.5], [-0.5, 0.31]];
+    const points = [[-0.48, 0.5], [0.48, 0.5], [0.5, 0.34], [0.45, -0.5], [-0.43, -0.5], [-0.5, 0.31]];
+    return { points, cornerRadii: Array.from({ length: points.length }, () => 0) };
   }
-  return structuredClone(defaultDesignSketchPoints);
+  return { points: structuredClone(defaultDesignSketchPoints), cornerRadii: structuredClone(defaultDesignSketchRadii) };
 }
 
 function addDesignSketchPoint() {
@@ -2540,9 +2573,11 @@ function addDesignSketchPoint() {
   const second = sketch.points[nextIndex];
   const point = [(first[0] + second[0]) / 2, (first[1] + second[1]) / 2];
   sketch.points.splice(nextIndex, 0, point);
+  sketch.cornerRadii.splice(nextIndex, 0, 0);
   state.designDraft.sketch = sketch;
   designSketchSelectedIndex = nextIndex;
   state.designDraft.manualCode = false;
+  syncDesignSelectedCornerField();
   syncDesignCode();
   renderDesignPreview({ fitView: false });
 }
@@ -2554,9 +2589,11 @@ function removeDesignSketchPoint() {
     return;
   }
   sketch.points.splice(Math.min(designSketchSelectedIndex, sketch.points.length - 1), 1);
+  sketch.cornerRadii.splice(Math.min(designSketchSelectedIndex, sketch.cornerRadii.length - 1), 1);
   designSketchSelectedIndex = Math.max(0, Math.min(designSketchSelectedIndex, sketch.points.length - 1));
   state.designDraft.sketch = sketch;
   state.designDraft.manualCode = false;
+  syncDesignSelectedCornerField();
   syncDesignCode();
   renderDesignPreview({ fitView: false });
 }
@@ -2577,6 +2614,8 @@ function parseDesignCode(source) {
   const profileSource = source.match(/(?:^|\n)\s*profile_points\s*=\s*\[([\s\S]*?)\]\s*;/)?.[1] || "";
   const parsedPoints = [...profileSource.matchAll(/\[\s*(-?\d*\.?\d+)\s*,\s*(-?\d*\.?\d+)\s*\]/g)]
     .map((match) => [Number(match[1]), Number(match[2])]);
+  const cornerRadiusSource = source.match(/(?:^|\n)\s*profile_corner_radii\s*=\s*\[([\s\S]*?)\]\s*;/)?.[1] || "";
+  const parsedCornerRadii = [...cornerRadiusSource.matchAll(/-?\d*\.?\d+/g)].map((match) => Number(match[0]));
   const publicSource = source.match(/(?:^|\n)\s*customer_sliders\s*=\s*\[([\s\S]*?)\]\s*;/)?.[1] || "";
   const publicParameters = [...publicSource.matchAll(/"([^"]+)"/g)].map((match) => match[1]);
   const rangeSource = source.match(/(?:^|\n)\s*customer_slider_ranges\s*=\s*\[([\s\S]*?)\]\s*;/)?.[1] || "";
@@ -2593,7 +2632,10 @@ function parseDesignCode(source) {
   const currentFeatures = normalizeDesignFeatures(state.designDraft.features, state.designDraft.params);
   return {
     params: { ...state.designDraft.params, ...parseScadParameters(source) },
-    sketch: normalizeDesignSketch({ points: parsedPoints.length >= 4 ? parsedPoints : state.designDraft.sketch.points }),
+    sketch: normalizeDesignSketch({
+      points: parsedPoints.length >= 4 ? parsedPoints : state.designDraft.sketch.points,
+      cornerRadii: parsedCornerRadii.length ? parsedCornerRadii : state.designDraft.sketch.cornerRadii
+    }),
     publicParameters: normalizeDesignPublicParameters(publicParameters.length ? publicParameters : state.designDraft.publicParameters),
     sliderRanges: normalizeDesignSliderRanges(Object.keys(sliderRanges).length ? sliderRanges : state.designDraft.sliderRanges),
     construction: normalizeDesignConstruction({
@@ -4496,7 +4538,7 @@ function renderPublishedDesignPreview() {
   const frameMaterial = new THREE.MeshStandardMaterial({ color: style.frameColor, roughness: 0.37, metalness: 0.035 });
   const detailMaterial = new THREE.MeshStandardMaterial({ color: style.detailColor, roughness: 0.42, metalness: 0.02 });
   const lensMaterial = new THREE.MeshPhysicalMaterial({ color: style.lensColor, transparent: true, opacity: 0.62, roughness: 0.16, transmission: 0.24 });
-  const outerLensWidth = (p.head_width - p.bridge_width) / 2;
+  const outerLensWidth = p.lens_width + p.rim_thickness * 2;
   const center = p.bridge_width / 2 + outerLensWidth / 2;
   [-1, 1].forEach((side) => {
     addDesignRim(side * center, p, outerLensWidth, frameMaterial, definition, modelGroup);
@@ -4509,16 +4551,7 @@ function renderPublishedDesignPreview() {
       modelGroup
     );
   });
-  if (style.browBar) addDesignBar(p.head_width, p.lens_height / 2 + p.rim_thickness * 0.72, p.rim_thickness * 1.05, p.frame_depth * 0.95, frameMaterial, p, modelGroup);
-  addDesignBar(p.bridge_width + p.rim_thickness * 2.35, p.lens_height * 0.08, p.rim_thickness * 1.15, p.frame_depth, frameMaterial, p, modelGroup);
-  const padGeometry = roundedPrismGeometry(p.nose_pad_width, p.rim_thickness * 1.45, p.frame_depth * 0.72, p.rim_thickness * 0.35, p.bevel * 0.45);
-  [-1, 1].forEach((side) => {
-    const pad = new THREE.Mesh(padGeometry, detailMaterial);
-    pad.position.set(side * (p.bridge_width / 2 + p.nose_pad_width / 2), -p.lens_height / 4 - p.nose_pad_drop / 4, -p.frame_depth * 0.35);
-    pad.rotation.z = side * THREE.MathUtils.degToRad(10);
-    modelGroup.add(pad);
-  });
-  addTriangles(padGeometry, 2);
+  addDesignBar(p.bridge_width + p.rim_thickness * 0.8, p.lens_height * 0.18, Math.min(3, p.rim_thickness * 0.8), p.frame_depth, frameMaterial, p, modelGroup);
   centerObjectForViewerPivot(modelGroup);
   modelBasePosition.copy(modelGroup.position);
   applyViewerTransform();
@@ -6651,6 +6684,42 @@ glasses();
 `;
 }
 
+function sampleDesignProfile(sketch, p) {
+  const points = sketch.points.map(([x, y]) => ({ x: x * p.lens_width, y: y * p.lens_height }));
+  const corners = points.map((point, index) => {
+    const previous = points[(index - 1 + points.length) % points.length];
+    const next = points[(index + 1) % points.length];
+    const previousLength = Math.hypot(previous.x - point.x, previous.y - point.y);
+    const nextLength = Math.hypot(next.x - point.x, next.y - point.y);
+    const distance = Math.min(sketch.cornerRadii[index] || 0, previousLength * 0.42, nextLength * 0.42);
+    return {
+      point,
+      start: {
+        x: point.x + (previous.x - point.x) * distance / Math.max(previousLength, 0.001),
+        y: point.y + (previous.y - point.y) * distance / Math.max(previousLength, 0.001)
+      },
+      end: {
+        x: point.x + (next.x - point.x) * distance / Math.max(nextLength, 0.001),
+        y: point.y + (next.y - point.y) * distance / Math.max(nextLength, 0.001)
+      }
+    };
+  });
+  const path = [];
+  corners.forEach((corner, index) => {
+    path.push(corner.start);
+    for (let step = 1; step <= 4; step += 1) {
+      const t = step / 4;
+      const inverse = 1 - t;
+      path.push({
+        x: inverse * inverse * corner.start.x + 2 * inverse * t * corner.point.x + t * t * corner.end.x,
+        y: inverse * inverse * corner.start.y + 2 * inverse * t * corner.point.y + t * t * corner.end.y
+      });
+    }
+    path.push(corners[(index + 1) % corners.length].start);
+  });
+  return path.map((point) => [point.x / p.lens_width, point.y / p.lens_height]);
+}
+
 function buildDesignScad(draft = state.designDraft) {
   const p = designGeometryParams(draft.params);
   const definition = designDefinitionFromDraft(draft);
@@ -6659,7 +6728,12 @@ function buildDesignScad(draft = state.designDraft) {
   const construction = normalizeDesignConstruction(definition.construction);
   const leftText = style.leftTempleText.replaceAll("\\", "\\\\").replaceAll("\"", "\\\"");
   const rightText = style.rightTempleText.replaceAll("\\", "\\\\").replaceAll("\"", "\\\"");
-  const profilePoints = normalizeDesignSketch(definition.sketch).points
+  const sketch = normalizeDesignSketch(definition.sketch);
+  const profilePoints = sketch.points
+    .map(([x, y]) => `[${formatNumber(x)}, ${formatNumber(y)}]`)
+    .join(", ");
+  const profileCornerRadii = sketch.cornerRadii.map((radius) => formatNumber(radius)).join(", ");
+  const profilePath = sampleDesignProfile(sketch, p)
     .map(([x, y]) => `[${formatNumber(x)}, ${formatNumber(y)}]`)
     .join(", ");
   const publicParameters = definition.publicParameters.map((key) => `"${key}"`).join(", ");
@@ -6683,6 +6757,8 @@ frame_color = "${style.frameColor}";
 lens_color = "${style.lensColor}";
 detail_color = "${style.detailColor}";
 profile_points = [${profilePoints}];
+profile_corner_radii = [${profileCornerRadii}]; // Radius at each authored drawing point.
+profile_path = [${profilePath}]; // Local corner fillets resolved from the drawing.
 customer_sliders = [${publicParameters}]; // Exposed controls in Frame Lab.
 customer_slider_ranges = [${customerRanges}]; // Safe customer adjustment limits.
 extrude_enabled = ${features.extrude.enabled ? "true" : "false"};
@@ -6712,8 +6788,8 @@ active_temple_straight = max(35, temple_straight + temple_length - authored_temp
 max_lens_channel_offset = max(0, (extrude_depth - lens_seat_width)/2 - 0.45);
 active_lens_channel_offset = min(max(lens_channel_offset, -max_lens_channel_offset), max_lens_channel_offset);
 
-outer_lens_width = (head_width - bridge_width) / 2;
-opening_width = min(lens_width, outer_lens_width - rim_thickness * 2.12);
+opening_width = max(20, (head_width - bridge_width)/2 - rim_thickness*2);
+outer_lens_width = opening_width + rim_thickness*2;
 lens_center = bridge_width / 2 + outer_lens_width / 2;
 
 module rounded_rect(size=[10,10], radius=2) {
@@ -6722,22 +6798,10 @@ module rounded_rect(size=[10,10], radius=2) {
 }
 
 module drawn_profile(size=[10,10]) {
-  polygon([for (point = profile_points) [point[0] * size[0], point[1] * size[1]]]);
-}
-
-module finished_profile() {
-  if (fillet_enabled)
-    offset(r=fillet_radius) offset(delta=-fillet_radius) children();
-  else if (chamfer_enabled)
-    offset(delta=chamfer_amount, chamfer=true)
-    offset(delta=-chamfer_amount, chamfer=true) children();
-  else children();
+  polygon([for (point = profile_path) [point[0] * size[0], point[1] * size[1]]]);
 }
 
 module lens_profile(size=[10,10], outer=false) {
-  rounded = max(0, corner_radius + (outer ? rim_thickness * 0.15 : 0));
-  finished_profile()
-  offset(r=rounded) offset(delta=-rounded)
   drawn_profile(size);
 }
 
@@ -6751,7 +6815,7 @@ module rim(cx=0) {
   scale([cx < 0 ? -1 : 1, 1, 1])
   linear_extrude(height=extrude_enabled ? extrude_depth : 0.2, center=true, convexity=10)
   difference() {
-    lens_profile([outer_lens_width, lens_height + rim_thickness*2.05], true);
+    offset(delta=rim_thickness) lens_profile([opening_width, lens_height], false);
     lens_profile([opening_width, lens_height], false);
   }
 }
@@ -6774,8 +6838,7 @@ module lens_seat_cut(cx=0) {
 }
 
 module front_hinge(side=1) {
-  translate([side*(head_width/2 + hinge_mount_offset), hinge_mount_height - 3, extrude_depth/2])
-  rotate([-90, 0, 0])
+  translate([side*(head_width/2 + hinge_mount_offset), hinge_mount_height, 0])
   if (side < 0)
     import("assets/hinges/front-hinge-left.3mf");
   else
@@ -6786,15 +6849,8 @@ module front_body() {
   union() {
     rim(-lens_center);
     rim(lens_center);
-    if (brow_bar_enabled)
-      translate([0, lens_height/2 + rim_thickness*0.72, 0.05])
-      soft_bar([head_width, rim_thickness*1.05, frame_depth*0.95], rim_thickness*0.44);
-    translate([0, lens_height*0.08, 0])
-      soft_bar([bridge_width + rim_thickness*2.35, rim_thickness*1.15, frame_depth], rim_thickness*0.35);
-    for (side=[-1,1])
-      translate([side*(bridge_width/2 + nose_pad_width/2), -lens_height/4 - nose_pad_drop/4, -frame_depth*0.35])
-      rotate([0, 0, side*10])
-      soft_bar([nose_pad_width, rim_thickness*1.45, frame_depth*0.72], rim_thickness*0.35);
+    translate([0, lens_height*0.18, 0])
+      soft_bar([bridge_width + rim_thickness*0.8, min(3, rim_thickness*0.8), extrude_depth], min(1, rim_thickness*0.3));
   }
 }
 
@@ -6838,7 +6894,6 @@ module temple_mark(side=1) {
 }
 
 module temple_hinge(side=1) {
-  rotate([-90, 0, 0])
   if (side < 0)
     import("assets/hinges/temple-hinge-left.3mf");
   else
@@ -6847,7 +6902,7 @@ module temple_hinge(side=1) {
 
 module temple(side=1) {
   hinge_x = side * (head_width/2 + hinge_mount_offset);
-  translate([hinge_x, hinge_mount_height - 3, extrude_depth/2])
+  translate([hinge_x, hinge_mount_height, 0])
   rotate([0, side*temple_spread, 0])
   difference() {
     union() {

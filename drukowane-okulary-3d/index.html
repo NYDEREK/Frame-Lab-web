@@ -488,12 +488,23 @@
               <div class="design-interface-spec">
                 <strong>FL hinge standard</strong>
                 <span>Front Hinge Left + Right</span>
-                <small>Fixed 6 x 6 x 6 mm mounting bodies</small>
+                <small>Vertical screw bore / top access</small>
               </div>
             </section>
             <section class="design-control-section">
               <h3>Front dimensions</h3>
               <div id="designFrontControls" class="design-controls"></div>
+              <p class="design-note">The lens opening is resolved from overall width, bridge and rim thickness to keep the drawn front dimensionally consistent.</p>
+            </section>
+            <section class="design-control-section">
+              <div class="design-section-heading">
+                <h3>Selected corner</h3>
+                <button id="designSharpCorner" type="button" class="compact">Sharp</button>
+              </div>
+              <p class="design-note">Select a point in the drawing and round only that corner.</p>
+              <div class="design-construction-grid">
+                <label><span id="designSelectedCornerLabel">Point 1 radius</span><input id="designSelectedCornerRadius" type="number" min="0" max="16" step="0.5" value="0" /><small>mm</small></label>
+              </div>
             </section>
             <section class="design-control-section">
               <h3>Lens channel</h3>
@@ -527,12 +538,12 @@
               <label class="design-feature">
                 <span><strong>Extrude</strong><small>Frame body depth</small></span>
                 <input id="designExtrudeEnabled" type="checkbox" checked />
-                <input id="designExtrudeDepth" type="number" min="3" max="12" step="0.1" value="5.8" aria-label="Extrude depth" />
+                <input id="designExtrudeDepth" type="number" min="3" max="12" step="0.1" value="3" aria-label="Extrude depth" />
               </label>
               <label class="design-feature">
-                <span><strong>Fillet</strong><small>Rounded printable edge</small></span>
-                <input id="designFilletEnabled" type="checkbox" checked />
-                <input id="designFilletRadius" type="number" min="0" max="2.4" step="0.1" value="0.6" aria-label="Fillet radius" />
+                <span><strong>Edge finish</strong><small>Optional print edge softening</small></span>
+                <input id="designFilletEnabled" type="checkbox" />
+                <input id="designFilletRadius" type="number" min="0" max="2.4" step="0.1" value="0.3" aria-label="Fillet radius" />
               </label>
               <label class="design-feature">
                 <span><strong>Chamfer</strong><small>Planar edge break</small></span>
@@ -551,10 +562,6 @@
                   <option value="round">Round</option>
                   <option value="sharp">Architectural</option>
                 </select>
-              </label>
-              <label class="design-toggle">
-                <input id="designBrowBar" type="checkbox" checked />
-                <span>Upper brow support</span>
               </label>
             </section>
           </section>
