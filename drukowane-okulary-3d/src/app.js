@@ -221,7 +221,8 @@ const defaultDesignConstruction = {
 };
 // The visible front remains planar: a side landing carries the mechanical hinge behind it.
 const designHingePadSize = 6;
-const designHingePadOverlap = 0.35;
+// Keep the supplied hinge landing bonded to enough of the printed front body.
+const designHingePadOverlap = 1;
 const designHingeRearOverlap = 0.2;
 // FL-H1 temple bounds after vertical-bore rotation; the authored arm grows from its rear face.
 const designTempleBarCenterY = 2.8;
@@ -1125,8 +1126,9 @@ function normalizeDesignConstruction(construction = {}) {
     lensSeatDepth: bounded("lensSeatDepth", 0.15, 1.2),
     lensClearance: bounded("lensClearance", 0, 0.6),
     lensChannelOffset: bounded("lensChannelOffset", -1, 1),
-    hingeMountHeight: bounded("hingeMountHeight", -12, 22),
-    hingeMountOffset: bounded("hingeMountOffset", -4, 8),
+    // Keep the complete 6 mm landing bonded to the planar front profile.
+    hingeMountHeight: bounded("hingeMountHeight", -12, 12),
+    hingeMountOffset: bounded("hingeMountOffset", -4, 0),
     bridgeJoinRadius: bounded("bridgeJoinRadius", 0, 4),
     templeStraight: bounded("templeStraight", 35, 120),
     templeHook: bounded("templeHook", 10, 60),
@@ -1592,43 +1594,13 @@ function drawDesignSketch() {
   ctx.moveTo(0, centerY);
   ctx.lineTo(rect.width, centerY);
   ctx.stroke();
-  drawSketchProfile(ctx, leftCenterX, metrics, p.rim_thickness, colors.fill, colors.stroke, true);
-  drawSketchProfile(ctx, rightCenterX, metrics, p.rim_thickness, colors.fill, colors.stroke);
-  drawSketchProfile(ctx, leftCenterX, metrics, 0, colors.background, colors.text, true);
-  drawSketchProfile(ctx, rightCenterX, metrics, 0, colors.background, colors.text);
-  ctx.strokeStyle = colors.stroke;
   const construction = normalizeDesignConstruction(state.designDraft.construction);
-  const bridge = designBridgeMetrics(p, state.designDraft);
-  const bridgeHeight = bridge.height;
-  const bridgeWidth = bridge.width;
-  const bridgeX = centerX - bridgeWidth * scale / 2;
-  const bridgeYTop = centerY - (bridge.centerY + bridgeHeight / 2) * scale;
-  ctx.fillStyle = colors.fill;
-  ctx.strokeStyle = colors.stroke;
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.roundRect(
-    bridgeX,
-    bridgeYTop,
-    bridgeWidth * scale,
-    bridgeHeight * scale,
-    bridge.radius * scale
-  );
-  ctx.fill();
-  ctx.beginPath();
-  ctx.moveTo(bridgeX + bridge.radius * scale, bridgeYTop);
-  ctx.lineTo(bridgeX + bridgeWidth * scale - bridge.radius * scale, bridgeYTop);
-  ctx.moveTo(bridgeX + bridge.radius * scale, bridgeYTop + bridgeHeight * scale);
-  ctx.lineTo(bridgeX + bridgeWidth * scale - bridge.radius * scale, bridgeYTop + bridgeHeight * scale);
-  ctx.stroke();
+  drawDesignFrontPlanarProfile(ctx, metrics, colors);
   const hingeSize = designHingePadSize * scale;
   const hingeY = centerY - construction.hingeMountHeight * scale;
   const hingeDatumDistance = p.head_width / 2 - designHingePadOverlap + construction.hingeMountOffset;
   const hingeLeftX = centerX - hingeDatumDistance * scale;
   const hingeRightX = centerX + hingeDatumDistance * scale;
-  ctx.fillStyle = colors.accent;
-  ctx.fillRect(hingeLeftX - hingeSize, hingeY - hingeSize, hingeSize, hingeSize);
-  ctx.fillRect(hingeRightX, hingeY - hingeSize, hingeSize, hingeSize);
   ctx.fillStyle = colors.muted;
   ctx.font = "600 11px Inter, Arial, sans-serif";
   ctx.textAlign = "center";
@@ -1704,10 +1676,9 @@ function renderDesignPreview(options = {}) {
   });
   const outerLensWidth = p.lens_width + p.rim_thickness * 2;
   const center = p.bridge_width / 2 + outerLensWidth / 2;
+  addDesignFrontBody(p, frameMaterial, definition);
   [-1, 1].forEach((side) => {
-    addDesignRim(side * center, p, outerLensWidth, frameMaterial, definition);
     addDesignLens(side * center, p, lensMaterial, definition);
-    addDesignHingePad(side, p, frameMaterial, definition);
     addDesignTemple(side, p, outerLensWidth, frameMaterial, detailMaterial, style, definition);
     addDesignHingeAsset(
       side < 0 ? "frontRight" : "frontLeft",
@@ -1715,7 +1686,6 @@ function renderDesignPreview(options = {}) {
       frameMaterial
     );
   });
-  addDesignBridge(p, frameMaterial, definition);
   const centerPoint = new THREE.Box3().setFromObject(designModelGroup).getCenter(new THREE.Vector3());
   designModelGroup.children.forEach((child) => child.position.sub(centerPoint));
   if (fitView) {
@@ -1836,6 +1806,110 @@ function traceRoundedPolygon(path, points, radii = 0) {
   path.closePath();
 }
 
+function sampledRoundedPolygon(points, radii = 0, segmentCount = 8) {
+  const corners = roundedPolygonCorners(points, radii);
+  const samples = [];
+  corners.forEach((corner, index) => {
+    if (!index) samples.push([corner.start.x, corner.start.y]);
+    for (let step = 1; step <= segmentCount; step += 1) {
+      const t = step / segmentCount;
+      const inverse = 1 - t;
+      samples.push([
+        inverse * inverse * corner.start.x + 2 * inverse * t * corner.point.x + t * t * corner.end.x,
+        inverse * inverse * corner.start.y + 2 * inverse * t * corner.point.y + t * t * corner.end.y
+      ]);
+    }
+    const next = corners[(index + 1) % corners.length];
+    samples.push([next.start.x, next.start.y]);
+  });
+  return samples;
+}
+
+function designLensCenter(p) {
+  return p.bridge_width / 2 + (p.lens_width + p.rim_thickness * 2) / 2;
+}
+
+function designOutlineRing(centerX, p, definition, expansion, mirror = false) {
+  const outline = designProfileOutline(p.lens_width, p.lens_height, definition, expansion);
+  const points = outline.points.map(({ x, y }) => ({
+    x: centerX + (mirror ? -x : x),
+    y
+  }));
+  return sampledRoundedPolygon(points, outline.radii);
+}
+
+function designRoundedRectRing(width, height, radius, centerX = 0, centerY = 0) {
+  const halfWidth = width / 2;
+  const halfHeight = height / 2;
+  return sampledRoundedPolygon([
+    { x: centerX - halfWidth, y: centerY + halfHeight },
+    { x: centerX + halfWidth, y: centerY + halfHeight },
+    { x: centerX + halfWidth, y: centerY - halfHeight },
+    { x: centerX - halfWidth, y: centerY - halfHeight }
+  ], Math.min(Math.max(0, radius), halfWidth, halfHeight));
+}
+
+function designFrontPlanarPolygons(p, definition, innerExpansion = 0) {
+  const construction = normalizeDesignConstruction(definition?.construction);
+  const center = designLensCenter(p);
+  const bridge = designBridgeMetrics(p, definition);
+  const leftPad = designHingePadOrigin(-1, p, definition);
+  const rightPad = designHingePadOrigin(1, p, definition);
+  const padRadius = 0.45;
+  const solids = [
+    [designOutlineRing(-center, p, definition, p.rim_thickness, true)],
+    [designOutlineRing(center, p, definition, p.rim_thickness)],
+    [designRoundedRectRing(bridge.width, bridge.height, bridge.radius, 0, bridge.centerY)],
+    [designRoundedRectRing(designHingePadSize, designHingePadSize, padRadius, leftPad.x - designHingePadSize / 2, leftPad.y + designHingePadSize / 2)],
+    [designRoundedRectRing(designHingePadSize, designHingePadSize, padRadius, rightPad.x + designHingePadSize / 2, rightPad.y + designHingePadSize / 2)]
+  ];
+  const shoulderRadius = Math.min(construction.bridgeJoinRadius, p.rim_thickness * 1.35);
+  if (shoulderRadius > 0) {
+    const shoulderX = p.bridge_width / 2 + p.rim_thickness * 0.64;
+    solids.push([designRoundedRectRing(shoulderRadius * 2, shoulderRadius * 2, shoulderRadius, -shoulderX, bridge.centerY)]);
+    solids.push([designRoundedRectRing(shoulderRadius * 2, shoulderRadius * 2, shoulderRadius, shoulderX, bridge.centerY)]);
+  }
+  const solidProfile = polygonClipping.union(...solids);
+  return polygonClipping.difference(
+    solidProfile,
+    [designOutlineRing(-center, p, definition, innerExpansion, true)],
+    [designOutlineRing(center, p, definition, innerExpansion)]
+  );
+}
+
+function ringPath(ring, path = new THREE.Shape()) {
+  path.moveTo(ring[0][0], ring[0][1]);
+  ring.slice(1).forEach(([x, y]) => path.lineTo(x, y));
+  path.closePath();
+  return path;
+}
+
+function designFrontShapes(p, definition, innerExpansion = 0) {
+  return designFrontPlanarPolygons(p, definition, innerExpansion).map((polygon) => {
+    const shape = ringPath(polygon[0]);
+    polygon.slice(1).forEach((ring) => shape.holes.push(ringPath(ring, new THREE.Path())));
+    return shape;
+  });
+}
+
+function drawDesignFrontPlanarProfile(ctx, metrics, colors) {
+  const { p, scale, centerX, centerY } = metrics;
+  const polygons = designFrontPlanarPolygons(p, state.designDraft, 0);
+  const toCanvas = ([x, y]) => ({ x: centerX + x * scale, y: centerY - y * scale });
+  ctx.beginPath();
+  polygons.forEach((polygon) => polygon.forEach((ring) => {
+    const points = ring.map(toCanvas);
+    ctx.moveTo(points[0].x, points[0].y);
+    points.slice(1).forEach((point) => ctx.lineTo(point.x, point.y));
+    ctx.closePath();
+  }));
+  ctx.fillStyle = colors.fill;
+  ctx.fill("evenodd");
+  ctx.strokeStyle = colors.stroke;
+  ctx.lineWidth = 2;
+  ctx.stroke();
+}
+
 function designProfilePath(width, height, definition, expansion = 0, asHole = false, cornerRadius = 0) {
   if (!definition?.sketch?.points?.length) {
     return roundedRectShape(width + expansion * 2, height + expansion * 2, designCornerRadius(designGeometryParams(), definition, expansion > 0));
@@ -1868,25 +1942,24 @@ function designEdgeOperation(p, definition) {
   return { amount: 0, segments: 0 };
 }
 
-function addDesignRim(x, p, outerWidth, material, definition, target = designModelGroup) {
+function addDesignFrontBody(p, material, definition, target = designModelGroup) {
   const features = normalizeDesignFeatures(definition?.features, p);
   const construction = normalizeDesignConstruction(definition?.construction);
   const edge = designEdgeOperation(p, definition);
   const addLayer = (innerExpansion, depth, z, edgeEnabled) => {
-    const outer = designProfilePath(p.lens_width, p.lens_height, definition, p.rim_thickness, false, p.corner_radius);
-    outer.holes.push(designProfilePath(p.lens_width, p.lens_height, definition, innerExpansion, true, p.corner_radius));
-    const geometry = new THREE.ExtrudeGeometry(outer, {
-      depth,
-      bevelEnabled: edgeEnabled && edge.amount > 0,
-      bevelThickness: Math.max(0.01, edge.amount),
-      bevelSize: Math.max(0.01, edge.amount),
-      bevelSegments: edge.segments
+    designFrontShapes(p, definition, innerExpansion).forEach((shape) => {
+      const geometry = new THREE.ExtrudeGeometry(shape, {
+        depth,
+        bevelEnabled: edgeEnabled && edge.amount > 0,
+        bevelThickness: Math.max(0.01, edge.amount),
+        bevelSize: Math.max(0.01, edge.amount),
+        bevelSegments: edge.segments
+      });
+      geometry.center();
+      const layer = new THREE.Mesh(geometry, material);
+      layer.position.z = z;
+      target.add(layer);
     });
-    geometry.center();
-    const layer = new THREE.Mesh(geometry, material);
-    layer.position.set(x, 0, z);
-    layer.scale.x = x < 0 ? -1 : 1;
-    target.add(layer);
   };
   if (features.lensRecess.enabled) {
     const depth = features.extrude.depth;
@@ -1915,15 +1988,6 @@ function addDesignLens(x, p, material, definition, target = designModelGroup) {
   target.add(lens);
 }
 
-function addDesignBridge(p, material, definition, target = designModelGroup) {
-  const features = normalizeDesignFeatures(definition?.features, p);
-  const bridgeSpec = designBridgeMetrics(p, definition);
-  const geometry = roundedPrismGeometry(bridgeSpec.width, bridgeSpec.height, features.extrude.depth, bridgeSpec.radius, 0);
-  const bridge = new THREE.Mesh(geometry, material);
-  bridge.position.set(0, bridgeSpec.centerY, 0);
-  target.add(bridge);
-}
-
 function designHingePadOrigin(side, p, definition = state.designDraft) {
   const construction = normalizeDesignConstruction(definition?.construction);
   return new THREE.Vector3(
@@ -1931,25 +1995,6 @@ function designHingePadOrigin(side, p, definition = state.designDraft) {
     construction.hingeMountHeight,
     0
   );
-}
-
-function addDesignHingePad(side, p, material, definition, target = designModelGroup) {
-  const features = normalizeDesignFeatures(definition?.features, p);
-  const origin = designHingePadOrigin(side, p, definition);
-  const geometry = roundedPrismGeometry(
-    designHingePadSize,
-    designHingePadSize,
-    features.extrude.depth,
-    Math.min(0.55, features.extrude.depth * 0.18),
-    0
-  );
-  const pad = new THREE.Mesh(geometry, material);
-  pad.position.set(
-    origin.x + side * designHingePadSize / 2,
-    origin.y + designHingePadSize / 2,
-    0
-  );
-  target.add(pad);
 }
 
 function designHingeDatum(side, p, definition = state.designDraft) {
@@ -4864,10 +4909,9 @@ function renderPublishedDesignPreview() {
   const lensMaterial = new THREE.MeshPhysicalMaterial({ color: style.lensColor, transparent: true, opacity: 0.62, roughness: 0.16, transmission: 0.24 });
   const outerLensWidth = p.lens_width + p.rim_thickness * 2;
   const center = p.bridge_width / 2 + outerLensWidth / 2;
+  addDesignFrontBody(p, frameMaterial, definition, modelGroup);
   [-1, 1].forEach((side) => {
-    addDesignRim(side * center, p, outerLensWidth, frameMaterial, definition, modelGroup);
     addDesignLens(side * center, p, lensMaterial, definition, modelGroup);
-    addDesignHingePad(side, p, frameMaterial, definition, modelGroup);
     addDesignTemple(side, p, outerLensWidth, frameMaterial, detailMaterial, style, definition, modelGroup);
     addDesignHingeAsset(
       side < 0 ? "frontRight" : "frontLeft",
@@ -4876,7 +4920,6 @@ function renderPublishedDesignPreview() {
       modelGroup
     );
   });
-  addDesignBridge(p, frameMaterial, definition, modelGroup);
   centerObjectForViewerPivot(modelGroup);
   modelBasePosition.copy(modelGroup.position);
   applyViewerTransform();
@@ -7130,9 +7173,9 @@ temple_corner_radius = ${formatNumber(construction.templeCornerRadius)};
 temple_texture_depth = ${formatNumber(construction.templeTextureDepth)};
 temple_pattern_spacing = ${formatNumber(construction.templePatternSpacing)};
 temple_bar_center_y = ${formatNumber(designTempleBarCenterY)}; // Center of FL-H1 temple body after rotation.
-temple_blend_start_z = ${formatNumber(designTempleBlendStartZ)}; // Inside the FL-H1 hinge body.
-temple_arm_join_overlap = ${formatNumber(designTempleArmJoinOverlap)}; // Solid overlap with the supplied hinge body.
-temple_arm_start_z = temple_blend_start_z + temple_arm_join_overlap;
+temple_hinge_rear_z = ${formatNumber(designTempleHingeRearZ)}; // Rear face of FL-H1 temple body after orientation.
+temple_arm_join_overlap = ${formatNumber(designTempleArmJoinOverlap)}; // Solid overlap into the supplied hinge body.
+temple_arm_start_z = temple_hinge_rear_z + temple_arm_join_overlap;
 authored_temple_length = temple_straight + temple_hook;
 active_temple_straight = max(35, temple_straight + temple_length - authored_temple_length);
 max_lens_channel_offset = max(0, (extrude_depth - lens_seat_width)/2 - 0.45);
@@ -7216,6 +7259,13 @@ module bridge_profile() {
     rounded_rect([bridge_width + 2*(rim_thickness + min(bridge_join_radius, min(3, rim_thickness*0.8)/2)), min(3, rim_thickness*0.8)], min(bridge_join_radius, min(3, rim_thickness*0.8)/2));
 }
 
+module bridge_shoulder(side=1) {
+  shoulder_radius = min(bridge_join_radius, rim_thickness*1.35);
+  if (shoulder_radius > 0)
+    translate([side*(bridge_width/2 + rim_thickness*0.64), lens_height*0.18])
+      rounded_rect([shoulder_radius*2, shoulder_radius*2], shoulder_radius);
+}
+
 module hinge_pad_profile(side=1) {
   pad_x = side*(head_width/2 - hinge_pad_overlap + hinge_mount_offset + hinge_pad_size/2);
   translate([pad_x, hinge_mount_height + hinge_pad_size/2])
@@ -7223,25 +7273,16 @@ module hinge_pad_profile(side=1) {
 }
 
 module front_planar_profile() {
-  // Join the nose bridge and hinge lands in 2D before extrusion so the front is one printable face.
-  if (bridge_join_radius > 0)
-    offset(r=bridge_join_radius)
-    offset(delta=-bridge_join_radius)
-    union() {
-      rim_profile(-lens_center);
-      rim_profile(lens_center);
-      bridge_profile();
-      hinge_pad_profile(-1);
-      hinge_pad_profile(1);
-    }
-  else
-    union() {
-      rim_profile(-lens_center);
-      rim_profile(lens_center);
-      bridge_profile();
-      hinge_pad_profile(-1);
-      hinge_pad_profile(1);
-    }
+  // All front interfaces are joined before extrusion, matching the Design Lab preview.
+  union() {
+    rim_profile(-lens_center);
+    rim_profile(lens_center);
+    bridge_profile();
+    bridge_shoulder(-1);
+    bridge_shoulder(1);
+    hinge_pad_profile(-1);
+    hinge_pad_profile(1);
+  }
 }
 
 module front_body() {
