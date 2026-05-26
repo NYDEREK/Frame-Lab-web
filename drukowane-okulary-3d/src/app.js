@@ -1,4 +1,5 @@
 import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
+import polygonClipping from "polygon-clipping";
 import * as THREE from "three";
 import { STLLoader } from "three/addons/loaders/STLLoader.js";
 import { ThreeMFLoader } from "three/addons/loaders/3MFLoader.js";
@@ -222,13 +223,11 @@ const defaultDesignConstruction = {
 const designHingePadSize = 6;
 const designHingePadOverlap = 0.35;
 const designHingeRearOverlap = 0.2;
-// FL-H1 temple geometry bounds after vertical-bore rotation; align the arm through its body.
+// FL-H1 temple bounds after vertical-bore rotation; the authored arm grows from its rear face.
 const designTempleBarCenterY = 2.8;
-const designTempleHingeBodyWidth = 4.1;
-const designTempleHingeBodyHeight = 3.2;
-const designTempleBlendStartZ = -6.4;
-const designTempleBarStartZ = -10;
-const designTempleArmJoinOverlap = 0.35;
+const designTempleHingeRearZ = -7.5;
+const designTempleArmJoinOverlap = 0.45;
+const designTempleProfileStartZ = designTempleHingeRearZ + designTempleArmJoinOverlap;
 const designHingeAssetManifest = {
   frontLeft: "./assets/hinges/front-hinge-left.3mf",
   frontRight: "./assets/hinges/front-hinge-right.3mf",
@@ -1045,7 +1044,7 @@ function normalizeDesignSketch(sketch = {}) {
   const cornerRadii = points.map((_, index) => THREE.MathUtils.clamp(
     Number(suppliedRadii?.[index] ?? fallbackRadii[index] ?? 0) || 0,
     0,
-    16
+    30
   ));
   return {
     symmetric: sketch.symmetric !== false,
@@ -1055,10 +1054,11 @@ function normalizeDesignSketch(sketch = {}) {
 }
 
 function designTempleProfileFromConstruction(construction = defaultDesignConstruction) {
-  const height = Number(construction.templeBarHeight) || defaultDesignConstruction.templeBarHeight;
-  const straight = Number(construction.templeStraight) || defaultDesignConstruction.templeStraight;
-  const hook = Number(construction.templeHook) || defaultDesignConstruction.templeHook;
-  const angle = THREE.MathUtils.degToRad(Number(construction.templeHookAngle) || defaultDesignConstruction.templeHookAngle);
+  const numberOrDefault = (value, fallback) => Number.isFinite(Number(value)) ? Number(value) : fallback;
+  const height = numberOrDefault(construction.templeBarHeight, defaultDesignConstruction.templeBarHeight);
+  const straight = numberOrDefault(construction.templeStraight, defaultDesignConstruction.templeStraight);
+  const hook = numberOrDefault(construction.templeHook, defaultDesignConstruction.templeHook);
+  const angle = THREE.MathUtils.degToRad(numberOrDefault(construction.templeHookAngle, defaultDesignConstruction.templeHookAngle));
   const tipX = straight + hook * Math.cos(angle);
   const tipY = -hook * Math.sin(angle);
   return {
@@ -1185,7 +1185,8 @@ function designDefinitionFromDraft(draft = state.designDraft) {
 function designGeometryParams(params = state.designDraft.params) {
   const values = { ...structuredClone(defaultParams), ...params };
   parameterSchema.forEach(([key, , , min, max]) => {
-    values[key] = THREE.MathUtils.clamp(Number(values[key]) || defaultParams[key], min, max);
+    const supplied = Number(values[key]);
+    values[key] = THREE.MathUtils.clamp(Number.isFinite(supplied) ? supplied : defaultParams[key], min, max);
   });
   values.lens_width = Math.max(20, (values.head_width - values.bridge_width) / 2 - values.rim_thickness * 2);
   return values;
@@ -1428,16 +1429,13 @@ function sketchScreenPoint(index, metrics) {
 }
 
 function drawSketchProfile(ctx, centerX, metrics, expansion, fill, stroke, mirror = false) {
-  const sketch = normalizeDesignSketch(state.designDraft.sketch);
-  const points = sketch.points;
-  const width = metrics.lensWidth + expansion * 2;
-  const height = metrics.lensHeight + expansion * 2;
-  const shapedPoints = points.map(([x, y]) => ({
-    x: centerX + (mirror ? -x : x) * width * metrics.scale,
-    y: metrics.centerY - y * height * metrics.scale
+  const outline = designProfileOutline(metrics.lensWidth, metrics.lensHeight, state.designDraft, expansion);
+  const shapedPoints = outline.points.map((point) => ({
+    x: centerX + (mirror ? -point.x : point.x) * metrics.scale,
+    y: metrics.centerY - point.y * metrics.scale
   }));
   ctx.beginPath();
-  traceRoundedPolygon(ctx, shapedPoints, sketch.cornerRadii.map((radius) => (radius + Math.max(0, expansion)) * metrics.scale));
+  traceRoundedPolygon(ctx, shapedPoints, outline.radii.map((radius) => radius * metrics.scale));
   if (fill) {
     ctx.fillStyle = fill;
     ctx.fill();
@@ -1600,10 +1598,11 @@ function drawDesignSketch() {
   drawSketchProfile(ctx, rightCenterX, metrics, 0, colors.background, colors.text);
   ctx.strokeStyle = colors.stroke;
   const construction = normalizeDesignConstruction(state.designDraft.construction);
-  const bridgeHeight = Math.max(2, Math.min(3, p.rim_thickness * 0.8));
-  const bridgeWidth = p.bridge_width + p.rim_thickness * 1.8;
+  const bridge = designBridgeMetrics(p, state.designDraft);
+  const bridgeHeight = bridge.height;
+  const bridgeWidth = bridge.width;
   const bridgeX = centerX - bridgeWidth * scale / 2;
-  const bridgeYTop = centerY - (p.lens_height * 0.18 + bridgeHeight / 2) * scale;
+  const bridgeYTop = centerY - (bridge.centerY + bridgeHeight / 2) * scale;
   ctx.fillStyle = colors.fill;
   ctx.strokeStyle = colors.stroke;
   ctx.lineWidth = 2;
@@ -1613,9 +1612,14 @@ function drawDesignSketch() {
     bridgeYTop,
     bridgeWidth * scale,
     bridgeHeight * scale,
-    Math.min(construction.bridgeJoinRadius, bridgeHeight / 2) * scale
+    bridge.radius * scale
   );
   ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(bridgeX + bridge.radius * scale, bridgeYTop);
+  ctx.lineTo(bridgeX + bridgeWidth * scale - bridge.radius * scale, bridgeYTop);
+  ctx.moveTo(bridgeX + bridge.radius * scale, bridgeYTop + bridgeHeight * scale);
+  ctx.lineTo(bridgeX + bridgeWidth * scale - bridge.radius * scale, bridgeYTop + bridgeHeight * scale);
   ctx.stroke();
   const hingeSize = designHingePadSize * scale;
   const hingeY = centerY - construction.hingeMountHeight * scale;
@@ -1730,14 +1734,83 @@ function designCornerRadius(p, style, outer = false) {
   return p.corner_radius + (outer ? p.rim_thickness * 0.9 : 0);
 }
 
-function traceRoundedPolygon(path, points, radii = 0) {
-  const corners = points.map((point, index) => {
+function polygonSignedArea(points) {
+  return points.reduce((area, point, index) => {
+    const next = points[(index + 1) % points.length];
+    return area + point.x * next.y - next.x * point.y;
+  }, 0) / 2;
+}
+
+function offsetDesignPolygon(points, distance) {
+  if (!distance) return points.map((point) => ({ ...point }));
+  const clockwise = polygonSignedArea(points) < 0;
+  const offsetNormal = (start, end) => {
+    const dx = end.x - start.x;
+    const dy = end.y - start.y;
+    const length = Math.hypot(dx, dy) || 1;
+    return clockwise
+      ? { x: -dy / length * distance, y: dx / length * distance }
+      : { x: dy / length * distance, y: -dx / length * distance };
+  };
+  return points.map((point, index) => {
+    const previous = points[(index - 1 + points.length) % points.length];
+    const next = points[(index + 1) % points.length];
+    const previousNormal = offsetNormal(previous, point);
+    const nextNormal = offsetNormal(point, next);
+    const lineA = { x: previous.x + previousNormal.x, y: previous.y + previousNormal.y };
+    const directionA = { x: point.x - previous.x, y: point.y - previous.y };
+    const lineB = { x: point.x + nextNormal.x, y: point.y + nextNormal.y };
+    const directionB = { x: next.x - point.x, y: next.y - point.y };
+    const cross = directionA.x * directionB.y - directionA.y * directionB.x;
+    if (Math.abs(cross) < 0.00001) {
+      return {
+        x: point.x + (previousNormal.x + nextNormal.x) / 2,
+        y: point.y + (previousNormal.y + nextNormal.y) / 2
+      };
+    }
+    const t = ((lineB.x - lineA.x) * directionB.y - (lineB.y - lineA.y) * directionB.x) / cross;
+    return {
+      x: lineA.x + directionA.x * t,
+      y: lineA.y + directionA.y * t
+    };
+  });
+}
+
+function designProfileOutline(width, height, definition, expansion = 0) {
+  const sketch = normalizeDesignSketch(definition?.sketch);
+  const distance = Math.max(0, Number(expansion) || 0);
+  const points = offsetDesignPolygon(
+    sketch.points.map(([x, y]) => ({ x: x * width, y: y * height })),
+    distance
+  );
+  return {
+    points,
+    radii: sketch.cornerRadii.map((radius) => Math.max(0, radius + distance))
+  };
+}
+
+function roundedPolygonCorners(points, radii = 0) {
+  return points.map((point, index) => {
     const previous = points[(index - 1 + points.length) % points.length];
     const next = points[(index + 1) % points.length];
     const previousLength = Math.hypot(previous.x - point.x, previous.y - point.y);
     const nextLength = Math.hypot(next.x - point.x, next.y - point.y);
     const radius = Array.isArray(radii) ? Number(radii[index]) || 0 : Number(radii) || 0;
-    const distance = Math.min(Math.max(0, radius), previousLength * 0.42, nextLength * 0.42);
+    const previousDirection = {
+      x: (previous.x - point.x) / Math.max(previousLength, 0.001),
+      y: (previous.y - point.y) / Math.max(previousLength, 0.001)
+    };
+    const nextDirection = {
+      x: (next.x - point.x) / Math.max(nextLength, 0.001),
+      y: (next.y - point.y) / Math.max(nextLength, 0.001)
+    };
+    const interiorAngle = Math.acos(THREE.MathUtils.clamp(
+      previousDirection.x * nextDirection.x + previousDirection.y * nextDirection.y,
+      -0.999999,
+      0.999999
+    ));
+    const tangentDistance = Math.max(0, radius) / Math.max(Math.tan(interiorAngle / 2), 0.001);
+    const distance = Math.min(tangentDistance, previousLength * 0.49, nextLength * 0.49);
     return {
       point,
       start: {
@@ -1750,29 +1823,42 @@ function traceRoundedPolygon(path, points, radii = 0) {
       }
     };
   });
+}
+
+function traceRoundedPolygon(path, points, radii = 0) {
+  const corners = roundedPolygonCorners(points, radii);
   path.moveTo(corners[0].start.x, corners[0].start.y);
-  corners.forEach((corner) => {
+  corners.forEach((corner, index) => {
     path.quadraticCurveTo(corner.point.x, corner.point.y, corner.end.x, corner.end.y);
-    const next = corners[(corners.indexOf(corner) + 1) % corners.length];
+    const next = corners[(index + 1) % corners.length];
     path.lineTo(next.start.x, next.start.y);
   });
   path.closePath();
 }
 
 function designProfilePath(width, height, definition, expansion = 0, asHole = false, cornerRadius = 0) {
-  const sketch = normalizeDesignSketch(definition?.sketch);
   if (!definition?.sketch?.points?.length) {
     return roundedRectShape(width + expansion * 2, height + expansion * 2, designCornerRadius(designGeometryParams(), definition, expansion > 0));
   }
-  const horizontal = width + expansion * 2;
-  const vertical = height + expansion * 2;
-  const points = sketch.points.map(([x, y]) => new THREE.Vector2(x * horizontal, y * vertical));
+  const outline = designProfileOutline(width, height, definition, expansion);
+  const points = outline.points.map(({ x, y }) => new THREE.Vector2(x, y));
   const ordered = asHole ? [...points].reverse() : points;
-  const radii = sketch.cornerRadii.map((radius) => radius + Math.max(0, expansion));
-  const orderedRadii = asHole ? [...radii].reverse() : radii;
+  const orderedRadii = asHole ? [...outline.radii].reverse() : outline.radii;
   const path = asHole ? new THREE.Path() : new THREE.Shape();
   traceRoundedPolygon(path, ordered, orderedRadii);
   return path;
+}
+
+function designBridgeMetrics(p, definition = state.designDraft) {
+  const construction = normalizeDesignConstruction(definition?.construction);
+  const height = Math.max(2, Math.min(3, p.rim_thickness * 0.8));
+  const radius = Math.min(construction.bridgeJoinRadius, height / 2);
+  return {
+    height,
+    radius,
+    centerY: p.lens_height * 0.18,
+    width: p.bridge_width + 2 * (p.rim_thickness + radius)
+  };
 }
 
 function designEdgeOperation(p, definition) {
@@ -1830,14 +1916,11 @@ function addDesignLens(x, p, material, definition, target = designModelGroup) {
 }
 
 function addDesignBridge(p, material, definition, target = designModelGroup) {
-  const construction = normalizeDesignConstruction(definition?.construction);
   const features = normalizeDesignFeatures(definition?.features, p);
-  const width = p.bridge_width + p.rim_thickness * 1.8;
-  const height = Math.max(2, Math.min(3, p.rim_thickness * 0.8));
-  const radius = Math.min(construction.bridgeJoinRadius, height / 2);
-  const geometry = roundedPrismGeometry(width, height, features.extrude.depth, radius, 0);
+  const bridgeSpec = designBridgeMetrics(p, definition);
+  const geometry = roundedPrismGeometry(bridgeSpec.width, bridgeSpec.height, features.extrude.depth, bridgeSpec.radius, 0);
   const bridge = new THREE.Mesh(geometry, material);
-  bridge.position.set(0, p.lens_height * 0.18, 0);
+  bridge.position.set(0, bridgeSpec.centerY, 0);
   target.add(bridge);
 }
 
@@ -1919,19 +2002,7 @@ function addDesignTemple(side, p, outerLensWidth, frameMaterial, detailMaterial,
   addDesignHingeAsset(side < 0 ? "templeRight" : "templeLeft", new THREE.Vector3(), frameMaterial, temple);
   const armWidth = construction.templeDepth;
   const attachX = side * 2.5;
-  const armStartZ = designTempleBarStartZ + designTempleArmJoinOverlap;
-  const cornerRadius = Math.min(construction.templeCornerRadius, armWidth / 2, construction.templeBarHeight / 2);
-  const transition = new THREE.Mesh(roundedTransitionGeometry(
-    designTempleHingeBodyWidth,
-    designTempleHingeBodyHeight,
-    armWidth,
-    construction.templeBarHeight,
-    designTempleBlendStartZ - designTempleBarStartZ,
-    Math.min(1, designTempleHingeBodyHeight / 2),
-    cornerRadius
-  ), frameMaterial);
-  transition.position.set(attachX, designTempleBarCenterY, (designTempleBlendStartZ + designTempleBarStartZ) / 2);
-  temple.add(transition);
+  const armStartZ = designTempleProfileStartZ;
   const profile = new THREE.Mesh(designTempleProfileGeometry(definition, p), frameMaterial);
   profile.position.set(attachX, designTempleBarCenterY, armStartZ);
   temple.add(profile);
@@ -1994,7 +2065,7 @@ function addDesignTextMark(text, side, p, temple, color, armWidth) {
   mark.position.set(
     side * (2.5 + armWidth / 2 + 0.03),
     designTempleBarCenterY,
-    designTempleBarStartZ + designTempleArmJoinOverlap - 40
+    designTempleProfileStartZ - 40
   );
   mark.rotation.y = side < 0 ? -Math.PI / 2 : Math.PI / 2;
   mark.renderOrder = 4;
@@ -2559,7 +2630,7 @@ function syncDesignSelectedCornerField() {
 
 function updateSelectedDesignCorner(radius) {
   const sketch = normalizeDesignSketch(state.designDraft.sketch);
-  sketch.cornerRadii[designSketchSelectedIndex] = THREE.MathUtils.clamp(Number(radius) || 0, 0, 16);
+  sketch.cornerRadii[designSketchSelectedIndex] = THREE.MathUtils.clamp(Number(radius) || 0, 0, 30);
   state.designDraft.sketch = sketch;
   state.designDraft.manualCode = false;
   syncDesignSelectedCornerField();
@@ -4918,41 +4989,6 @@ function roundedPrismGeometry(width, height, depth, radius, bevel) {
   return geometry;
 }
 
-function roundedTransitionGeometry(startWidth, startHeight, endWidth, endHeight, depth, startRadius, endRadius) {
-  const pointsPerCorner = 4;
-  const section = (width, height, radius, z) => {
-    const boundedRadius = Math.min(Math.max(0.01, radius), width / 2, height / 2);
-    const corners = [
-      [width / 2 - boundedRadius, height / 2 - boundedRadius, 0],
-      [-width / 2 + boundedRadius, height / 2 - boundedRadius, Math.PI / 2],
-      [-width / 2 + boundedRadius, -height / 2 + boundedRadius, Math.PI],
-      [width / 2 - boundedRadius, -height / 2 + boundedRadius, Math.PI * 1.5]
-    ];
-    return corners.flatMap(([cx, cy, startAngle]) => Array.from({ length: pointsPerCorner }, (_, index) => {
-      const angle = startAngle + index / (pointsPerCorner - 1) * Math.PI / 2;
-      return new THREE.Vector3(cx + Math.cos(angle) * boundedRadius, cy + Math.sin(angle) * boundedRadius, z);
-    }));
-  };
-  const front = section(startWidth, startHeight, startRadius, depth / 2);
-  const back = section(endWidth, endHeight, endRadius, -depth / 2);
-  const positions = [...front, ...back, new THREE.Vector3(0, 0, depth / 2), new THREE.Vector3(0, 0, -depth / 2)];
-  const verticesPerSection = front.length;
-  const frontCenter = verticesPerSection * 2;
-  const backCenter = frontCenter + 1;
-  const indices = [];
-  for (let index = 0; index < verticesPerSection; index += 1) {
-    const next = (index + 1) % verticesPerSection;
-    indices.push(index, verticesPerSection + next, next, index, verticesPerSection + index, verticesPerSection + next);
-    indices.push(frontCenter, index, next);
-    indices.push(backCenter, verticesPerSection + next, verticesPerSection + index);
-  }
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions.flatMap(({ x, y, z }) => [x, y, z]), 3));
-  geometry.setIndex(indices);
-  geometry.computeVertexNormals();
-  return geometry;
-}
-
 function renderMeshObject(object) {
   const clone = object.clone(true);
   const material = new THREE.MeshStandardMaterial({
@@ -6975,24 +7011,7 @@ glasses();
 
 function sampleDesignProfile(sketch, p) {
   const points = sketch.points.map(([x, y]) => ({ x: x * p.lens_width, y: y * p.lens_height }));
-  const corners = points.map((point, index) => {
-    const previous = points[(index - 1 + points.length) % points.length];
-    const next = points[(index + 1) % points.length];
-    const previousLength = Math.hypot(previous.x - point.x, previous.y - point.y);
-    const nextLength = Math.hypot(next.x - point.x, next.y - point.y);
-    const distance = Math.min(sketch.cornerRadii[index] || 0, previousLength * 0.42, nextLength * 0.42);
-    return {
-      point,
-      start: {
-        x: point.x + (previous.x - point.x) * distance / Math.max(previousLength, 0.001),
-        y: point.y + (previous.y - point.y) * distance / Math.max(previousLength, 0.001)
-      },
-      end: {
-        x: point.x + (next.x - point.x) * distance / Math.max(nextLength, 0.001),
-        y: point.y + (next.y - point.y) * distance / Math.max(nextLength, 0.001)
-      }
-    };
-  });
+  const corners = roundedPolygonCorners(points, sketch.cornerRadii);
   const path = [];
   corners.forEach((corner, index) => {
     path.push(corner.start);
@@ -7011,24 +7030,7 @@ function sampleDesignProfile(sketch, p) {
 
 function sampleDesignTempleProfile(sketch) {
   const points = sketch.points.map(([x, y]) => ({ x, y }));
-  const corners = points.map((point, index) => {
-    const previous = points[(index - 1 + points.length) % points.length];
-    const next = points[(index + 1) % points.length];
-    const previousLength = Math.hypot(previous.x - point.x, previous.y - point.y);
-    const nextLength = Math.hypot(next.x - point.x, next.y - point.y);
-    const distance = Math.min(sketch.cornerRadii[index] || 0, previousLength * 0.42, nextLength * 0.42);
-    return {
-      point,
-      start: {
-        x: point.x + (previous.x - point.x) * distance / Math.max(previousLength, 0.001),
-        y: point.y + (previous.y - point.y) * distance / Math.max(previousLength, 0.001)
-      },
-      end: {
-        x: point.x + (next.x - point.x) * distance / Math.max(nextLength, 0.001),
-        y: point.y + (next.y - point.y) * distance / Math.max(nextLength, 0.001)
-      }
-    };
-  });
+  const corners = roundedPolygonCorners(points, sketch.cornerRadii);
   const path = [];
   corners.forEach((corner, index) => {
     path.push(corner.start);
@@ -7128,12 +7130,9 @@ temple_corner_radius = ${formatNumber(construction.templeCornerRadius)};
 temple_texture_depth = ${formatNumber(construction.templeTextureDepth)};
 temple_pattern_spacing = ${formatNumber(construction.templePatternSpacing)};
 temple_bar_center_y = ${formatNumber(designTempleBarCenterY)}; // Center of FL-H1 temple body after rotation.
-temple_hinge_body_width = ${formatNumber(designTempleHingeBodyWidth)};
-temple_hinge_body_height = ${formatNumber(designTempleHingeBodyHeight)};
 temple_blend_start_z = ${formatNumber(designTempleBlendStartZ)}; // Inside the FL-H1 hinge body.
-temple_bar_start_z = ${formatNumber(designTempleBarStartZ)}; // End of the blended transition.
-temple_arm_join_overlap = ${formatNumber(designTempleArmJoinOverlap)}; // Solid overlap at the blend-to-arm join.
-temple_arm_start_z = temple_bar_start_z + temple_arm_join_overlap;
+temple_arm_join_overlap = ${formatNumber(designTempleArmJoinOverlap)}; // Solid overlap with the supplied hinge body.
+temple_arm_start_z = temple_blend_start_z + temple_arm_join_overlap;
 authored_temple_length = temple_straight + temple_hook;
 active_temple_straight = max(35, temple_straight + temple_length - authored_temple_length);
 max_lens_channel_offset = max(0, (extrude_depth - lens_seat_width)/2 - 0.45);
@@ -7214,7 +7213,7 @@ module hinge_pad(side=1) {
 
 module bridge_profile() {
   translate([0, lens_height*0.18])
-    rounded_rect([bridge_width + rim_thickness*1.8, min(3, rim_thickness*0.8)], min(bridge_join_radius, min(3, rim_thickness*0.8)/2));
+    rounded_rect([bridge_width + 2*(rim_thickness + min(bridge_join_radius, min(3, rim_thickness*0.8)/2)), min(3, rim_thickness*0.8)], min(bridge_join_radius, min(3, rim_thickness*0.8)/2));
 }
 
 module hinge_pad_profile(side=1) {
@@ -7300,15 +7299,6 @@ module temple_hinge(side=1) {
     import("assets/hinges/temple-hinge-left.3mf");
 }
 
-module temple_blend(side=1) {
-  hull() {
-    translate([side*2.5, temple_bar_center_y, temple_blend_start_z])
-      soft_bar([temple_hinge_body_width, temple_hinge_body_height, 0.35], min(1, temple_hinge_body_height/2));
-    translate([side*2.5, temple_bar_center_y, temple_bar_start_z])
-      soft_bar([temple_depth, temple_bar_height, 0.35], temple_corner_radius);
-  }
-}
-
 module temple_profile_body(side=1) {
   translate([side*2.5, temple_bar_center_y, temple_arm_start_z])
   rotate([0, 90, 0])
@@ -7323,7 +7313,6 @@ module temple(side=1) {
   difference() {
     union() {
       temple_hinge(side);
-      temple_blend(side);
       temple_profile_body(side);
       temple_pattern_relief(side);
       temple_mark(side);

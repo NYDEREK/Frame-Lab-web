@@ -21,6 +21,7 @@
       {
         "imports": {
           "fflate": "https://unpkg.com/fflate@0.8.2/esm/browser.js",
+          "polygon-clipping": "https://unpkg.com/polygon-clipping@0.15.7/dist/polygon-clipping.esm.js",
           "three": "https://unpkg.com/three@0.164.1/build/three.module.js",
           "three/addons/": "https://unpkg.com/three@0.164.1/examples/jsm/"
         }
@@ -503,7 +504,7 @@
               </div>
               <p class="design-note">Select a point in the drawing and round only that corner.</p>
               <div class="design-construction-grid">
-                <label><span id="designSelectedCornerLabel">Point 1 radius</span><input id="designSelectedCornerRadius" type="number" min="0" max="16" step="0.5" value="0" /><small>mm</small></label>
+                <label><span id="designSelectedCornerLabel">Point 1 radius</span><input id="designSelectedCornerRadius" type="number" min="0" max="30" step="0.5" value="0" /><small>mm</small></label>
               </div>
             </section>
             <section class="design-control-section">
