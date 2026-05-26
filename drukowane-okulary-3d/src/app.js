@@ -208,16 +208,20 @@ const defaultDesignConstruction = {
   lensChannelOffset: 0,
   hingeMountHeight: 10,
   hingeMountOffset: 0,
+  bridgeJoinRadius: 1.2,
   templeStraight: 65,
   templeHook: 30,
   templeHookAngle: 45,
   templeBarHeight: 5.4,
+  templeDepth: 3.6,
   templeCornerRadius: 1.4,
   templeTextureDepth: 0.45,
   templePatternSpacing: 9
 };
-// The standard hinge is inset into the rim so exported parts share printable material.
-const designHingeJoinOverlap = 1.25;
+// The visible front remains planar: a side landing carries the mechanical hinge behind it.
+const designHingePadSize = 6;
+const designHingePadOverlap = 0.35;
+const designHingeRearOverlap = 0.2;
 // FL-H1 temple geometry bounds after vertical-bore rotation; align the arm through its body.
 const designTempleBarCenterY = 2.8;
 const designTempleHingeBodyWidth = 4.1;
@@ -733,9 +737,14 @@ const els = {
   designProductionChecks: document.querySelector("#designProductionChecks"),
   addSketchPoint: document.querySelector("#addSketchPoint"),
   removeSketchPoint: document.querySelector("#removeSketchPoint"),
+  addTemplePoint: document.querySelector("#addTemplePoint"),
+  removeTemplePoint: document.querySelector("#removeTemplePoint"),
   designSelectedCornerLabel: document.querySelector("#designSelectedCornerLabel"),
   designSelectedCornerRadius: document.querySelector("#designSelectedCornerRadius"),
   designSharpCorner: document.querySelector("#designSharpCorner"),
+  designTempleSharpCorner: document.querySelector("#designTempleSharpCorner"),
+  designTempleSelectedCornerLabel: document.querySelector("#designTempleSelectedCornerLabel"),
+  designTempleSelectedCornerRadius: document.querySelector("#designTempleSelectedCornerRadius"),
   designViewSketch: document.querySelector("#designViewSketch"),
   designView3d: document.querySelector("#designView3d"),
   designViewHint: document.querySelector("#designViewHint"),
@@ -756,10 +765,12 @@ const els = {
   designLensChannelSummary: document.querySelector("#designLensChannelSummary"),
   designHingeMountHeight: document.querySelector("#designHingeMountHeight"),
   designHingeMountOffset: document.querySelector("#designHingeMountOffset"),
+  designBridgeJoinRadius: document.querySelector("#designBridgeJoinRadius"),
   designTempleStraight: document.querySelector("#designTempleStraight"),
   designTempleHook: document.querySelector("#designTempleHook"),
   designTempleHookAngle: document.querySelector("#designTempleHookAngle"),
   designTempleBarHeight: document.querySelector("#designTempleBarHeight"),
+  designTempleDepth: document.querySelector("#designTempleDepth"),
   designTempleCornerRadius: document.querySelector("#designTempleCornerRadius"),
   designTempleTextureDepth: document.querySelector("#designTempleTextureDepth"),
   designTemplePatternSpacing: document.querySelector("#designTemplePatternSpacing"),
@@ -881,7 +892,8 @@ let designModelGroup;
 let designDragState = null;
 let designSketchDragIndex = -1;
 let designSketchSelectedIndex = 0;
-let designTempleDragHandle = "";
+let designTempleSketchDragIndex = -1;
+let designTempleSketchSelectedIndex = 0;
 let designHingeLibrary = {};
 let designCameraDistance = 260;
 let designZoomScale = 1;
@@ -981,6 +993,7 @@ function createDefaultDesignDraft() {
     params,
     style: structuredClone(defaultDesignStyle),
     sketch: { points: structuredClone(defaultDesignSketchPoints), cornerRadii: structuredClone(defaultDesignSketchRadii), symmetric: true },
+    templeSketch: designTempleProfileFromConstruction(defaultDesignConstruction),
     features: createDefaultDesignFeatures(params),
     construction: normalizeDesignConstruction(),
     publicParameters: [...defaultDesignPublicParameters],
@@ -1041,6 +1054,39 @@ function normalizeDesignSketch(sketch = {}) {
   };
 }
 
+function designTempleProfileFromConstruction(construction = defaultDesignConstruction) {
+  const height = Number(construction.templeBarHeight) || defaultDesignConstruction.templeBarHeight;
+  const straight = Number(construction.templeStraight) || defaultDesignConstruction.templeStraight;
+  const hook = Number(construction.templeHook) || defaultDesignConstruction.templeHook;
+  const angle = THREE.MathUtils.degToRad(Number(construction.templeHookAngle) || defaultDesignConstruction.templeHookAngle);
+  const tipX = straight + hook * Math.cos(angle);
+  const tipY = -hook * Math.sin(angle);
+  return {
+    points: [
+      [0, height / 2],
+      [Math.max(2, straight - 3), height / 2],
+      [straight, height / 2 - 0.35],
+      [tipX, tipY + height / 2],
+      [tipX, tipY - height / 2],
+      [straight, -height / 2],
+      [0, -height / 2]
+    ],
+    cornerRadii: [0.5, 1.3, 2, Math.min(2.2, height / 2), Math.min(2.2, height / 2), 1.6, 0.5]
+  };
+}
+
+function normalizeDesignTempleSketch(sketch = {}, construction = defaultDesignConstruction) {
+  const fallback = designTempleProfileFromConstruction(construction);
+  const supplied = Array.isArray(sketch.points) ? sketch.points : fallback.points;
+  const points = supplied.slice(0, 24).map((point) => [
+    THREE.MathUtils.clamp(Number(Array.isArray(point) ? point[0] : point?.x) || 0, 0, 150),
+    THREE.MathUtils.clamp(Number(Array.isArray(point) ? point[1] : point?.y) || 0, -80, 20)
+  ]);
+  const suppliedRadii = Array.isArray(sketch.cornerRadii) ? sketch.cornerRadii : fallback.cornerRadii;
+  const cornerRadii = points.map((_, index) => THREE.MathUtils.clamp(Number(suppliedRadii[index]) || 0, 0, 12));
+  return points.length >= 4 ? { points, cornerRadii } : fallback;
+}
+
 function normalizeDesignFeatures(features = {}, params = defaultParams) {
   const defaults = createDefaultDesignFeatures(params);
   const clamp = (value, min, max, fallback) => {
@@ -1081,10 +1127,12 @@ function normalizeDesignConstruction(construction = {}) {
     lensChannelOffset: bounded("lensChannelOffset", -1, 1),
     hingeMountHeight: bounded("hingeMountHeight", -12, 22),
     hingeMountOffset: bounded("hingeMountOffset", -4, 8),
+    bridgeJoinRadius: bounded("bridgeJoinRadius", 0, 4),
     templeStraight: bounded("templeStraight", 35, 120),
     templeHook: bounded("templeHook", 10, 60),
     templeHookAngle: bounded("templeHookAngle", 10, 75),
     templeBarHeight: bounded("templeBarHeight", 3, 10),
+    templeDepth: bounded("templeDepth", 2.4, 6),
     templeCornerRadius: bounded("templeCornerRadius", 0, 4),
     templeTextureDepth: bounded("templeTextureDepth", 0.2, 1.2),
     templePatternSpacing: bounded("templePatternSpacing", 5, 18)
@@ -1107,24 +1155,28 @@ function normalizeDesignSliderRanges(ranges = {}) {
 }
 
 function normalizeParametricDesign(design = {}) {
+  const construction = normalizeDesignConstruction(design.construction);
   return {
     type: "parametric-openscad",
     ...normalizeDesignStyle(design),
     sketch: normalizeDesignSketch(design.sketch),
+    templeSketch: normalizeDesignTempleSketch(design.templeSketch, construction),
     features: normalizeDesignFeatures(design.features),
-    construction: normalizeDesignConstruction(design.construction),
+    construction,
     publicParameters: normalizeDesignPublicParameters(design.publicParameters),
     sliderRanges: normalizeDesignSliderRanges(design.sliderRanges)
   };
 }
 
 function designDefinitionFromDraft(draft = state.designDraft) {
+  const construction = normalizeDesignConstruction(draft.construction);
   return {
     type: "parametric-openscad",
     ...normalizeDesignStyle(draft.style),
     sketch: normalizeDesignSketch(draft.sketch),
+    templeSketch: normalizeDesignTempleSketch(draft.templeSketch, construction),
     features: normalizeDesignFeatures(draft.features, draft.params),
-    construction: normalizeDesignConstruction(draft.construction),
+    construction,
     publicParameters: normalizeDesignPublicParameters(draft.publicParameters),
     sliderRanges: normalizeDesignSliderRanges(draft.sliderRanges)
   };
@@ -1231,9 +1283,22 @@ function setupDesignSketch() {
       if (!metrics) return;
       const rect = els.designSketchCanvas.getBoundingClientRect();
       const point = { x: event.clientX - rect.left, y: event.clientY - rect.top };
-      if (Math.hypot(point.x - metrics.end.x, point.y - metrics.end.y) <= 18) designTempleDragHandle = "end";
-      else if (Math.hypot(point.x - metrics.knee.x, point.y - metrics.knee.y) <= 18) designTempleDragHandle = "knee";
-      if (designTempleDragHandle) els.designSketchCanvas.setPointerCapture(event.pointerId);
+      let closest = -1;
+      let distance = 16;
+      metrics.screenPoints.forEach((handle, index) => {
+        const nextDistance = Math.hypot(point.x - handle.x, point.y - handle.y);
+        if (nextDistance < distance) {
+          closest = index;
+          distance = nextDistance;
+        }
+      });
+      if (closest >= 0) {
+        designTempleSketchDragIndex = closest;
+        designTempleSketchSelectedIndex = closest;
+        syncDesignTempleSelectedCornerField();
+        els.designSketchCanvas.setPointerCapture(event.pointerId);
+        drawDesignSketch();
+      }
       return;
     }
     const index = locatePoint(event);
@@ -1245,23 +1310,19 @@ function setupDesignSketch() {
     drawDesignSketch();
   });
   els.designSketchCanvas.addEventListener("pointermove", (event) => {
-    if (designTempleDragHandle) {
+    if (designTempleSketchDragIndex >= 0) {
       const metrics = templeSketchMetrics();
       const rect = els.designSketchCanvas.getBoundingClientRect();
       if (!metrics || !rect) return;
-      const x = event.clientX - rect.left;
-      const y = event.clientY - rect.top;
-      const construction = normalizeDesignConstruction(state.designDraft.construction);
-      if (designTempleDragHandle === "knee") {
-        construction.templeStraight = THREE.MathUtils.clamp((x - metrics.start.x) / metrics.scale, 35, 120);
-      } else {
-        const dx = Math.max(1, x - metrics.knee.x);
-        const dy = Math.max(1, y - metrics.knee.y);
-        construction.templeHook = THREE.MathUtils.clamp(Math.hypot(dx, dy) / metrics.scale, 10, 60);
-        construction.templeHookAngle = THREE.MathUtils.clamp(THREE.MathUtils.radToDeg(Math.atan2(dy, dx)), 10, 75);
-      }
-      state.designDraft.construction = construction;
-      state.designDraft.params.temple_length = construction.templeStraight + construction.templeHook;
+      const profile = normalizeDesignTempleSketch(state.designDraft.templeSketch, state.designDraft.construction);
+      const nextX = THREE.MathUtils.clamp((event.clientX - rect.left - metrics.origin.x) / metrics.scale, 0, 150);
+      const nextY = THREE.MathUtils.clamp((metrics.origin.y - (event.clientY - rect.top)) / metrics.scale, -80, 20);
+      profile.points[designTempleSketchDragIndex] = [
+        designTempleSketchDragIndex === 0 || designTempleSketchDragIndex === profile.points.length - 1 ? 0 : nextX,
+        nextY
+      ];
+      state.designDraft.templeSketch = profile;
+      state.designDraft.params.temple_length = Math.max(...profile.points.map(([x]) => x));
       state.designDraft.manualCode = false;
       syncDesignFields();
       syncDesignCode();
@@ -1286,7 +1347,7 @@ function setupDesignSketch() {
   });
   const finish = () => {
     designSketchDragIndex = -1;
-    designTempleDragHandle = "";
+    designTempleSketchDragIndex = -1;
   };
   els.designSketchCanvas.addEventListener("pointerup", finish);
   els.designSketchCanvas.addEventListener("pointercancel", finish);
@@ -1345,18 +1406,17 @@ function templeSketchMetrics() {
   const rect = els.designSketchCanvas.getBoundingClientRect();
   if (!rect.width || !rect.height) return null;
   const c = normalizeDesignConstruction(state.designDraft.construction);
+  const profile = normalizeDesignTempleSketch(state.designDraft.templeSketch, c);
   const usableWidth = Math.max(100, rect.width - 156);
   const usableHeight = Math.max(100, rect.height - 180);
-  const totalWidth = c.templeStraight + c.templeHook * Math.cos(THREE.MathUtils.degToRad(c.templeHookAngle));
-  const totalHeight = c.templeHook * Math.sin(THREE.MathUtils.degToRad(c.templeHookAngle)) + 20;
+  const totalWidth = Math.max(...profile.points.map(([x]) => x), 1);
+  const top = Math.max(...profile.points.map(([, y]) => y));
+  const bottom = Math.min(...profile.points.map(([, y]) => y));
+  const totalHeight = top - bottom + 18;
   const scale = Math.min(usableWidth / Math.max(100, totalWidth), usableHeight / Math.max(45, totalHeight));
-  const start = { x: 86, y: rect.height * 0.46 };
-  const knee = { x: start.x + c.templeStraight * scale, y: start.y };
-  const end = {
-    x: knee.x + c.templeHook * Math.cos(THREE.MathUtils.degToRad(c.templeHookAngle)) * scale,
-    y: knee.y + c.templeHook * Math.sin(THREE.MathUtils.degToRad(c.templeHookAngle)) * scale
-  };
-  return { rect, construction: c, scale, start, knee, end };
+  const origin = { x: 86, y: Math.max(180, rect.height * 0.38) };
+  const screenPoints = profile.points.map(([x, y]) => ({ x: origin.x + x * scale, y: origin.y - y * scale }));
+  return { rect, construction: c, profile, scale, origin, screenPoints, totalWidth, top, bottom };
 }
 
 function sketchScreenPoint(index, metrics) {
@@ -1462,59 +1522,59 @@ function drawTempleSketch(mirrored = false) {
   const metrics = templeSketchMetrics();
   if (!canvas || !metrics) return;
   const { ctx, colors } = prepareDesignDrawingCanvas(canvas, metrics.rect);
-  const { construction: c, start, knee, end, scale, rect } = metrics;
+  const { construction: c, profile, screenPoints, origin, scale, rect, totalWidth } = metrics;
   const flipX = (x) => mirrored ? rect.width - x : x;
   const point = ({ x, y }) => ({ x: flipX(x), y });
-  const a = point(start);
-  const b = point(knee);
-  const d = point(end);
+  const displayPoints = screenPoints.map(point);
+  const a = displayPoints[0];
   ctx.strokeStyle = colors.axis;
   ctx.beginPath();
-  ctx.moveTo(0, start.y);
-  ctx.lineTo(rect.width, start.y);
+  ctx.moveTo(0, origin.y);
+  ctx.lineTo(rect.width, origin.y);
   ctx.stroke();
   ctx.fillStyle = colors.fill;
   ctx.strokeStyle = colors.stroke;
-  ctx.lineWidth = Math.max(6, c.templeBarHeight * scale);
+  ctx.lineWidth = 2;
   ctx.lineJoin = "round";
-  ctx.lineCap = "round";
   ctx.beginPath();
-  ctx.moveTo(a.x, a.y);
-  ctx.lineTo(b.x, b.y);
-  ctx.lineTo(d.x, d.y);
+  traceRoundedPolygon(ctx, displayPoints, profile.cornerRadii.map((radius) => radius * scale));
+  ctx.fill();
   ctx.stroke();
   const hingeLength = 6.25 * scale;
-  const hingeHeight = 4.5 * scale;
+  const hingeHeight = 6 * scale;
   ctx.fillStyle = colors.accent;
-  ctx.fillRect(a.x - (mirrored ? 0 : hingeLength), a.y - hingeHeight / 2, hingeLength, hingeHeight);
+  const hingeCenterY = origin.y;
+  ctx.fillRect(a.x - (mirrored ? 0 : hingeLength), hingeCenterY - hingeHeight / 2, hingeLength, hingeHeight);
   ctx.beginPath();
-  ctx.arc(a.x - (mirrored ? -hingeLength * 0.52 : hingeLength * 0.52), a.y, Math.max(2.5, hingeHeight * 0.17), 0, Math.PI * 2);
+  ctx.arc(a.x - (mirrored ? -hingeLength * 0.52 : hingeLength * 0.52), hingeCenterY, Math.max(2.5, hingeHeight * 0.17), 0, Math.PI * 2);
   ctx.fillStyle = colors.background;
   ctx.fill();
   ctx.strokeStyle = colors.text;
   ctx.lineWidth = 1.2;
   ctx.stroke();
   if (!mirrored) {
-    [b, d].forEach((handle) => {
+    displayPoints.forEach((handle, index) => {
       ctx.beginPath();
-      ctx.arc(handle.x, handle.y, 7, 0, Math.PI * 2);
-      ctx.fillStyle = colors.accent;
+      ctx.arc(handle.x, handle.y, index === designTempleSketchSelectedIndex ? 7 : 5, 0, Math.PI * 2);
+      ctx.fillStyle = index === designTempleSketchSelectedIndex ? colors.accent : colors.text;
       ctx.fill();
       ctx.strokeStyle = colors.text;
       ctx.lineWidth = 1.5;
       ctx.stroke();
     });
   }
-  const upperY = start.y - 58;
-  sketchDimension(ctx, a.x, upperY, b.x, upperY, `${formatNumber(c.templeStraight)} mm straight`);
-  sketchDimension(ctx, b.x, end.y + 45, d.x, end.y + 45, `${formatNumber(c.templeHook)} mm / ${formatNumber(c.templeHookAngle)} deg`);
+  const straightX = origin.x + c.templeStraight * scale;
+  const upperY = origin.y - metrics.top * scale - 48;
+  sketchDimension(ctx, point({ x: origin.x, y: upperY }).x, upperY, point({ x: straightX, y: upperY }).x, upperY, `${formatNumber(c.templeStraight)} mm datum`);
+  const lowerY = origin.y - metrics.bottom * scale + 42;
+  sketchDimension(ctx, point({ x: origin.x, y: lowerY }).x, lowerY, point({ x: origin.x + totalWidth * scale, y: lowerY }).x, lowerY, `${formatNumber(totalWidth)} mm profile`);
   ctx.fillStyle = colors.text;
   ctx.font = "700 13px Inter, Arial, sans-serif";
   ctx.textAlign = mirrored ? "right" : "left";
   ctx.fillText(mirrored ? "TEMPLE HINGE RIGHT / MIRRORED PATH" : "TEMPLE HINGE LEFT / DATUM", mirrored ? rect.width - 38 : 38, 188);
   ctx.font = "500 12px Inter, Arial, sans-serif";
   ctx.fillStyle = colors.muted;
-  ctx.fillText(`${formatNumber(c.templeBarHeight)} mm bar height`, mirrored ? rect.width - 38 : 38, 208);
+  ctx.fillText("Closed extruded profile / select a vertex to round it", mirrored ? rect.width - 38 : 38, 208);
 }
 
 function drawDesignSketch() {
@@ -1539,31 +1599,37 @@ function drawDesignSketch() {
   drawSketchProfile(ctx, leftCenterX, metrics, 0, colors.background, colors.text, true);
   drawSketchProfile(ctx, rightCenterX, metrics, 0, colors.background, colors.text);
   ctx.strokeStyle = colors.stroke;
-  ctx.lineWidth = Math.max(2, Math.min(p.rim_thickness * 0.8, 3) * scale);
-  ctx.beginPath();
-  ctx.moveTo(leftCenterX + (p.lens_width / 2 + p.rim_thickness * 0.3) * scale, centerY - p.lens_height * scale * 0.18);
-  ctx.lineTo(rightCenterX - (p.lens_width / 2 + p.rim_thickness * 0.3) * scale, centerY - p.lens_height * scale * 0.18);
-  ctx.stroke();
   const construction = normalizeDesignConstruction(state.designDraft.construction);
-  const hingeSize = 6 * scale;
+  const bridgeHeight = Math.max(2, Math.min(3, p.rim_thickness * 0.8));
+  const bridgeWidth = p.bridge_width + p.rim_thickness * 1.8;
+  const bridgeX = centerX - bridgeWidth * scale / 2;
+  const bridgeYTop = centerY - (p.lens_height * 0.18 + bridgeHeight / 2) * scale;
+  ctx.fillStyle = colors.fill;
+  ctx.strokeStyle = colors.stroke;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.roundRect(
+    bridgeX,
+    bridgeYTop,
+    bridgeWidth * scale,
+    bridgeHeight * scale,
+    Math.min(construction.bridgeJoinRadius, bridgeHeight / 2) * scale
+  );
+  ctx.fill();
+  ctx.stroke();
+  const hingeSize = designHingePadSize * scale;
   const hingeY = centerY - construction.hingeMountHeight * scale;
-  const hingeDatumDistance = p.head_width / 2 - designHingeJoinOverlap + construction.hingeMountOffset;
+  const hingeDatumDistance = p.head_width / 2 - designHingePadOverlap + construction.hingeMountOffset;
   const hingeLeftX = centerX - hingeDatumDistance * scale;
   const hingeRightX = centerX + hingeDatumDistance * scale;
   ctx.fillStyle = colors.accent;
-  ctx.fillRect(hingeLeftX - hingeSize, hingeY - hingeSize / 2, hingeSize, hingeSize);
-  ctx.fillRect(hingeRightX, hingeY - hingeSize / 2, hingeSize, hingeSize);
-  ctx.fillStyle = colors.background;
-  [hingeLeftX - hingeSize / 2, hingeRightX + hingeSize / 2].forEach((x) => {
-    ctx.beginPath();
-    ctx.arc(x, hingeY, hingeSize * 0.17, 0, Math.PI * 2);
-    ctx.fill();
-  });
+  ctx.fillRect(hingeLeftX - hingeSize, hingeY - hingeSize, hingeSize, hingeSize);
+  ctx.fillRect(hingeRightX, hingeY - hingeSize, hingeSize, hingeSize);
   ctx.fillStyle = colors.muted;
   ctx.font = "600 11px Inter, Arial, sans-serif";
   ctx.textAlign = "center";
-  ctx.fillText("LH", hingeLeftX - hingeSize / 2, hingeY + hingeSize + 15);
-  ctx.fillText("RH", hingeRightX + hingeSize / 2, hingeY + hingeSize + 15);
+  ctx.fillText("LH PAD", hingeLeftX - hingeSize / 2, hingeY + 15);
+  ctx.fillText("RH PAD", hingeRightX + hingeSize / 2, hingeY + 15);
   normalizeDesignSketch(state.designDraft.sketch).points.forEach((_, index) => {
     const point = sketchScreenPoint(index, metrics);
     ctx.beginPath();
@@ -1637,6 +1703,7 @@ function renderDesignPreview(options = {}) {
   [-1, 1].forEach((side) => {
     addDesignRim(side * center, p, outerLensWidth, frameMaterial, definition);
     addDesignLens(side * center, p, lensMaterial, definition);
+    addDesignHingePad(side, p, frameMaterial, definition);
     addDesignTemple(side, p, outerLensWidth, frameMaterial, detailMaterial, style, definition);
     addDesignHingeAsset(
       side < 0 ? "frontRight" : "frontLeft",
@@ -1644,7 +1711,7 @@ function renderDesignPreview(options = {}) {
       frameMaterial
     );
   });
-  addDesignBar(p.bridge_width + p.rim_thickness * 0.8, p.lens_height * 0.18, Math.min(3, p.rim_thickness * 0.8), p.frame_depth, frameMaterial, p);
+  addDesignBridge(p, frameMaterial, definition);
   const centerPoint = new THREE.Box3().setFromObject(designModelGroup).getCenter(new THREE.Vector3());
   designModelGroup.children.forEach((child) => child.position.sub(centerPoint));
   if (fitView) {
@@ -1762,22 +1829,51 @@ function addDesignLens(x, p, material, definition, target = designModelGroup) {
   target.add(lens);
 }
 
-function addDesignBar(width, y, height, depth, material, p, target = designModelGroup) {
-  const geometry = roundedPrismGeometry(width, height, depth, height * 0.42, p.bevel * 0.7);
-  const bar = new THREE.Mesh(geometry, material);
-  bar.position.set(0, y, 0.05);
-  target.add(bar);
+function addDesignBridge(p, material, definition, target = designModelGroup) {
+  const construction = normalizeDesignConstruction(definition?.construction);
+  const features = normalizeDesignFeatures(definition?.features, p);
+  const width = p.bridge_width + p.rim_thickness * 1.8;
+  const height = Math.max(2, Math.min(3, p.rim_thickness * 0.8));
+  const radius = Math.min(construction.bridgeJoinRadius, height / 2);
+  const geometry = roundedPrismGeometry(width, height, features.extrude.depth, radius, 0);
+  const bridge = new THREE.Mesh(geometry, material);
+  bridge.position.set(0, p.lens_height * 0.18, 0);
+  target.add(bridge);
+}
+
+function designHingePadOrigin(side, p, definition = state.designDraft) {
+  const construction = normalizeDesignConstruction(definition?.construction);
+  return new THREE.Vector3(
+    side * (p.head_width / 2 - designHingePadOverlap + construction.hingeMountOffset),
+    construction.hingeMountHeight,
+    0
+  );
+}
+
+function addDesignHingePad(side, p, material, definition, target = designModelGroup) {
+  const features = normalizeDesignFeatures(definition?.features, p);
+  const origin = designHingePadOrigin(side, p, definition);
+  const geometry = roundedPrismGeometry(
+    designHingePadSize,
+    designHingePadSize,
+    features.extrude.depth,
+    Math.min(0.55, features.extrude.depth * 0.18),
+    0
+  );
+  const pad = new THREE.Mesh(geometry, material);
+  pad.position.set(
+    origin.x + side * designHingePadSize / 2,
+    origin.y + designHingePadSize / 2,
+    0
+  );
+  target.add(pad);
 }
 
 function designHingeDatum(side, p, definition = state.designDraft) {
-  const construction = normalizeDesignConstruction(definition?.construction);
   const features = normalizeDesignFeatures(definition?.features, p);
-  const frontDepth = features.extrude.enabled ? features.extrude.depth : 0.2;
-  return new THREE.Vector3(
-    side * (p.head_width / 2 - designHingeJoinOverlap + construction.hingeMountOffset),
-    construction.hingeMountHeight,
-    frontDepth / 2
-  );
+  const datum = designHingePadOrigin(side, p, definition);
+  datum.z = -features.extrude.depth / 2 + designHingeRearOverlap;
+  return datum;
 }
 
 function effectiveTempleConstruction(definition, p) {
@@ -1793,16 +1889,35 @@ function effectiveTempleConstruction(definition, p) {
   };
 }
 
+function designTempleProfileGeometry(definition, p) {
+  const construction = normalizeDesignConstruction(definition?.construction);
+  const profile = normalizeDesignTempleSketch(definition?.templeSketch, construction);
+  const armWidth = construction.templeDepth;
+  const shape = new THREE.Shape();
+  traceRoundedPolygon(
+    shape,
+    profile.points.map(([x, y]) => ({ x, y })),
+    profile.cornerRadii
+  );
+  const geometry = new THREE.ExtrudeGeometry(shape, {
+    depth: armWidth,
+    bevelEnabled: p.bevel > 0,
+    bevelThickness: Math.min(0.18, p.bevel * 0.4),
+    bevelSize: Math.min(0.18, p.bevel * 0.4),
+    bevelSegments: p.bevel > 0 ? 2 : 0
+  });
+  geometry.translate(0, 0, -armWidth / 2);
+  geometry.rotateY(Math.PI / 2);
+  return geometry;
+}
+
 function addDesignTemple(side, p, outerLensWidth, frameMaterial, detailMaterial, style, definition, target = designModelGroup) {
   const construction = effectiveTempleConstruction(definition, p);
   const temple = new THREE.Group();
   temple.position.copy(designHingeDatum(side, p, definition));
   temple.rotation.y = side * THREE.MathUtils.degToRad(p.temple_spread);
   addDesignHingeAsset(side < 0 ? "templeRight" : "templeLeft", new THREE.Vector3(), frameMaterial, temple);
-  const armWidth = Math.max(3.2, p.frame_depth * 0.64);
-  const straight = construction.templeStraight;
-  const hookLength = construction.templeHook;
-  const hookAngle = THREE.MathUtils.degToRad(construction.templeHookAngle);
+  const armWidth = construction.templeDepth;
   const attachX = side * 2.5;
   const armStartZ = designTempleBarStartZ + designTempleArmJoinOverlap;
   const cornerRadius = Math.min(construction.templeCornerRadius, armWidth / 2, construction.templeBarHeight / 2);
@@ -1817,19 +1932,10 @@ function addDesignTemple(side, p, outerLensWidth, frameMaterial, detailMaterial,
   ), frameMaterial);
   transition.position.set(attachX, designTempleBarCenterY, (designTempleBlendStartZ + designTempleBarStartZ) / 2);
   temple.add(transition);
-  const arm = new THREE.Mesh(roundedPrismGeometry(armWidth, construction.templeBarHeight, straight, cornerRadius, p.bevel * 0.5), frameMaterial);
-  arm.position.set(attachX, designTempleBarCenterY, armStartZ - straight / 2);
-  temple.add(arm);
-  const joinOverlap = Math.min(construction.templeBarHeight * 0.55, hookLength * 0.16);
-  const hookDepth = hookLength + joinOverlap;
-  const hook = new THREE.Mesh(roundedPrismGeometry(armWidth, construction.templeBarHeight, hookDepth, cornerRadius, p.bevel * 0.5), frameMaterial);
-  hook.position.set(
-    attachX,
-    designTempleBarCenterY - Math.sin(hookAngle) * (hookLength - joinOverlap) / 2,
-    armStartZ - straight - Math.cos(hookAngle) * (hookLength - joinOverlap) / 2
-  );
-  hook.rotation.x = -hookAngle;
-  temple.add(hook);
+  const profile = new THREE.Mesh(designTempleProfileGeometry(definition, p), frameMaterial);
+  profile.position.set(attachX, designTempleBarCenterY, armStartZ);
+  temple.add(profile);
+  const straight = construction.templeStraight;
   if (style.templePattern === "ribs") {
     for (let z = 20; z < Math.min(straight - 5, 74); z += construction.templePatternSpacing) {
       const rib = new THREE.Mesh(roundedPrismGeometry(armWidth * 1.12, construction.templeBarHeight + construction.templeTextureDepth, 1.4, 0.35, 0.08), detailMaterial);
@@ -1854,15 +1960,45 @@ function addDesignTemple(side, p, outerLensWidth, frameMaterial, detailMaterial,
     }
   }
   const templeText = side < 0 ? style.leftTempleText : style.rightTempleText;
-  if (templeText) addDesignTextMark(templeText, side, p, temple, detailMaterial);
+  if (templeText) addDesignTextMark(templeText, side, p, temple, style.detailColor, armWidth);
   target.add(temple);
 }
 
-function addDesignTextMark(text, side, p, temple, material) {
-  const width = THREE.MathUtils.clamp(text.length * 2.7, 12, 42);
-  const plate = new THREE.Mesh(roundedPrismGeometry(p.rim_thickness * 1.34, p.rim_thickness * 1.12, width, 0.36, 0.08), material);
-  plate.position.set(side * 2.5, designTempleBarCenterY + p.rim_thickness * 0.08, designTempleBarStartZ + designTempleArmJoinOverlap - 50);
-  temple.add(plate);
+function addDesignTextMark(text, side, p, temple, color, armWidth) {
+  const canvas = document.createElement("canvas");
+  canvas.width = 512;
+  canvas.height = 96;
+  const context = canvas.getContext("2d");
+  context.clearRect(0, 0, canvas.width, canvas.height);
+  context.font = "700 54px Inter, Arial, sans-serif";
+  context.textAlign = "center";
+  context.textBaseline = "middle";
+  context.strokeStyle = "rgba(27, 17, 11, 0.62)";
+  context.lineWidth = 8;
+  context.strokeText(text, canvas.width / 2, canvas.height / 2);
+  context.fillStyle = color;
+  context.fillText(text, canvas.width / 2, canvas.height / 2);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.needsUpdate = true;
+  const material = new THREE.MeshBasicMaterial({
+    map: texture,
+    transparent: true,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+    polygonOffset: true,
+    polygonOffsetFactor: -2
+  });
+  const width = THREE.MathUtils.clamp(text.length * 3.2, 14, 46);
+  const mark = new THREE.Mesh(new THREE.PlaneGeometry(width, 5), material);
+  mark.position.set(
+    side * (2.5 + armWidth / 2 + 0.03),
+    designTempleBarCenterY,
+    designTempleBarStartZ + designTempleArmJoinOverlap - 40
+  );
+  mark.rotation.y = side < 0 ? -Math.PI / 2 : Math.PI / 2;
+  mark.renderOrder = 4;
+  temple.add(mark);
 }
 
 function bindUi() {
@@ -2164,6 +2300,9 @@ function bindUi() {
   els.addSketchPoint?.addEventListener("click", addDesignSketchPoint);
   els.removeSketchPoint?.addEventListener("click", removeDesignSketchPoint);
   els.designSharpCorner?.addEventListener("click", () => updateSelectedDesignCorner(0));
+  els.addTemplePoint?.addEventListener("click", addDesignTempleSketchPoint);
+  els.removeTemplePoint?.addEventListener("click", removeDesignTempleSketchPoint);
+  els.designTempleSharpCorner?.addEventListener("click", () => updateSelectedDesignTempleCorner(0));
   els.designName?.addEventListener("input", handleDesignProjectCopyChange);
   els.designDescription?.addEventListener("input", handleDesignProjectCopyChange);
   els.regenerateDesignCode?.addEventListener("click", () => {
@@ -2397,14 +2536,17 @@ function syncDesignFields() {
   }
   if (els.designHingeMountHeight) els.designHingeMountHeight.value = String(construction.hingeMountHeight);
   if (els.designHingeMountOffset) els.designHingeMountOffset.value = String(construction.hingeMountOffset);
+  if (els.designBridgeJoinRadius) els.designBridgeJoinRadius.value = String(construction.bridgeJoinRadius);
   if (els.designTempleStraight) els.designTempleStraight.value = String(construction.templeStraight);
   if (els.designTempleHook) els.designTempleHook.value = String(construction.templeHook);
   if (els.designTempleHookAngle) els.designTempleHookAngle.value = String(construction.templeHookAngle);
   if (els.designTempleBarHeight) els.designTempleBarHeight.value = String(construction.templeBarHeight);
+  if (els.designTempleDepth) els.designTempleDepth.value = String(construction.templeDepth);
   if (els.designTempleCornerRadius) els.designTempleCornerRadius.value = String(construction.templeCornerRadius);
   if (els.designTempleTextureDepth) els.designTempleTextureDepth.value = String(construction.templeTextureDepth);
   if (els.designTemplePatternSpacing) els.designTemplePatternSpacing.value = String(construction.templePatternSpacing);
   syncDesignSelectedCornerField();
+  syncDesignTempleSelectedCornerField();
   renderDesignProductionChecks();
 }
 
@@ -2421,6 +2563,25 @@ function updateSelectedDesignCorner(radius) {
   state.designDraft.sketch = sketch;
   state.designDraft.manualCode = false;
   syncDesignSelectedCornerField();
+  syncDesignCode();
+  renderDesignPreview({ fitView: false });
+}
+
+function syncDesignTempleSelectedCornerField() {
+  const sketch = normalizeDesignTempleSketch(state.designDraft.templeSketch, state.designDraft.construction);
+  designTempleSketchSelectedIndex = Math.max(0, Math.min(designTempleSketchSelectedIndex, sketch.points.length - 1));
+  if (els.designTempleSelectedCornerLabel) els.designTempleSelectedCornerLabel.textContent = `Point ${designTempleSketchSelectedIndex + 1} radius`;
+  if (els.designTempleSelectedCornerRadius) {
+    els.designTempleSelectedCornerRadius.value = String(sketch.cornerRadii[designTempleSketchSelectedIndex] || 0);
+  }
+}
+
+function updateSelectedDesignTempleCorner(radius) {
+  const sketch = normalizeDesignTempleSketch(state.designDraft.templeSketch, state.designDraft.construction);
+  sketch.cornerRadii[designTempleSketchSelectedIndex] = THREE.MathUtils.clamp(Number(radius) || 0, 0, 12);
+  state.designDraft.templeSketch = sketch;
+  state.designDraft.manualCode = false;
+  syncDesignTempleSelectedCornerField();
   syncDesignCode();
   renderDesignPreview({ fitView: false });
 }
@@ -2445,7 +2606,7 @@ function renderDesignProductionChecks() {
     { label: "Lens channel", value: `${formatNumber(construction.lensSeatWidth)} mm / ${formatNumber(construction.lensClearance)} mm fit`, ready: construction.lensSeatWidth >= construction.lensThickness + 0.1 },
     { label: "Front / rear lip", value: `${formatNumber(frontLip)} / ${formatNumber(rearLip)} mm`, ready: Math.min(frontLip, rearLip) >= 0.45 },
     { label: "Edge capture", value: `${formatNumber(effectiveCapture)} mm effective`, ready: effectiveCapture >= 0.15 },
-    { label: "Temple body height", value: `${formatNumber(construction.templeBarHeight)} mm`, ready: construction.templeBarHeight >= 4 }
+    { label: "Temple profile", value: `${formatNumber(construction.templeBarHeight)} x ${formatNumber(construction.templeDepth)} mm`, ready: construction.templeBarHeight >= 4 && construction.templeDepth >= 3.2 }
   ];
   els.designProductionChecks.innerHTML = checks.map((check) => `
     <div class="${check.ready ? "ready" : "review"}">
@@ -2510,6 +2671,11 @@ function handleDesignOperationChange(event) {
     setDesignNote("");
     return;
   }
+  if (event.target === els.designTempleSelectedCornerRadius) {
+    updateSelectedDesignTempleCorner(event.target.value);
+    setDesignNote("");
+    return;
+  }
   if ([
     els.designLensSlotWidth,
     els.designLensCaptureDepth,
@@ -2517,10 +2683,12 @@ function handleDesignOperationChange(event) {
     els.designLensChannelOffset,
     els.designHingeMountHeight,
     els.designHingeMountOffset,
+    els.designBridgeJoinRadius,
     els.designTempleStraight,
     els.designTempleHook,
     els.designTempleHookAngle,
     els.designTempleBarHeight,
+    els.designTempleDepth,
     els.designTempleCornerRadius,
     els.designTempleTextureDepth,
     els.designTemplePatternSpacing
@@ -2533,15 +2701,26 @@ function handleDesignOperationChange(event) {
       lensChannelOffset: els.designLensChannelOffset?.value,
       hingeMountHeight: els.designHingeMountHeight?.value,
       hingeMountOffset: els.designHingeMountOffset?.value,
+      bridgeJoinRadius: els.designBridgeJoinRadius?.value,
       templeStraight: els.designTempleStraight?.value,
       templeHook: els.designTempleHook?.value,
       templeHookAngle: els.designTempleHookAngle?.value,
       templeBarHeight: els.designTempleBarHeight?.value,
+      templeDepth: els.designTempleDepth?.value,
       templeCornerRadius: els.designTempleCornerRadius?.value,
       templeTextureDepth: els.designTempleTextureDepth?.value,
       templePatternSpacing: els.designTemplePatternSpacing?.value
     });
     state.designDraft.params.temple_length = state.designDraft.construction.templeStraight + state.designDraft.construction.templeHook;
+    if ([
+      els.designTempleStraight,
+      els.designTempleHook,
+      els.designTempleHookAngle,
+      els.designTempleBarHeight
+    ].includes(event.target)) {
+      state.designDraft.templeSketch = designTempleProfileFromConstruction(state.designDraft.construction);
+      designTempleSketchSelectedIndex = 0;
+    }
   }
   const features = normalizeDesignFeatures({
     extrude: { enabled: els.designExtrudeEnabled?.checked, depth: els.designExtrudeDepth?.value },
@@ -2625,6 +2804,39 @@ function removeDesignSketchPoint() {
   renderDesignPreview({ fitView: false });
 }
 
+function addDesignTempleSketchPoint() {
+  const sketch = normalizeDesignTempleSketch(state.designDraft.templeSketch, state.designDraft.construction);
+  if (sketch.points.length >= 24) return;
+  const index = Math.min(sketch.points.length - 1, Math.max(0, designTempleSketchSelectedIndex));
+  const nextIndex = (index + 1) % sketch.points.length;
+  const first = sketch.points[index];
+  const second = sketch.points[nextIndex];
+  sketch.points.splice(nextIndex, 0, [(first[0] + second[0]) / 2, (first[1] + second[1]) / 2]);
+  sketch.cornerRadii.splice(nextIndex, 0, 0);
+  state.designDraft.templeSketch = sketch;
+  designTempleSketchSelectedIndex = nextIndex;
+  state.designDraft.manualCode = false;
+  syncDesignTempleSelectedCornerField();
+  syncDesignCode();
+  renderDesignPreview({ fitView: false });
+}
+
+function removeDesignTempleSketchPoint() {
+  const sketch = normalizeDesignTempleSketch(state.designDraft.templeSketch, state.designDraft.construction);
+  if (sketch.points.length <= 4) {
+    setDesignNote("A closed temple profile needs at least four points.");
+    return;
+  }
+  sketch.points.splice(designTempleSketchSelectedIndex, 1);
+  sketch.cornerRadii.splice(designTempleSketchSelectedIndex, 1);
+  designTempleSketchSelectedIndex = Math.max(0, Math.min(designTempleSketchSelectedIndex, sketch.points.length - 1));
+  state.designDraft.templeSketch = sketch;
+  state.designDraft.manualCode = false;
+  syncDesignTempleSelectedCornerField();
+  syncDesignCode();
+  renderDesignPreview({ fitView: false });
+}
+
 function parseDesignCode(source) {
   const style = { ...state.designDraft.style };
   const legacyTextValue = source.match(/(?:^|\n)\s*temple_text\s*=\s*"([^"]*)"\s*;/)?.[1];
@@ -2643,6 +2855,11 @@ function parseDesignCode(source) {
     .map((match) => [Number(match[1]), Number(match[2])]);
   const cornerRadiusSource = source.match(/(?:^|\n)\s*profile_corner_radii\s*=\s*\[([\s\S]*?)\]\s*;/)?.[1] || "";
   const parsedCornerRadii = [...cornerRadiusSource.matchAll(/-?\d*\.?\d+/g)].map((match) => Number(match[0]));
+  const templeProfileSource = source.match(/(?:^|\n)\s*temple_profile_points\s*=\s*\[([\s\S]*?)\]\s*;/)?.[1] || "";
+  const parsedTemplePoints = [...templeProfileSource.matchAll(/\[\s*(-?\d*\.?\d+)\s*,\s*(-?\d*\.?\d+)\s*\]/g)]
+    .map((match) => [Number(match[1]), Number(match[2])]);
+  const templeCornerRadiusSource = source.match(/(?:^|\n)\s*temple_profile_corner_radii\s*=\s*\[([\s\S]*?)\]\s*;/)?.[1] || "";
+  const parsedTempleCornerRadii = [...templeCornerRadiusSource.matchAll(/-?\d*\.?\d+/g)].map((match) => Number(match[0]));
   const publicSource = source.match(/(?:^|\n)\s*customer_sliders\s*=\s*\[([\s\S]*?)\]\s*;/)?.[1] || "";
   const publicParameters = [...publicSource.matchAll(/"([^"]+)"/g)].map((match) => match[1]);
   const rangeSource = source.match(/(?:^|\n)\s*customer_slider_ranges\s*=\s*\[([\s\S]*?)\]\s*;/)?.[1] || "";
@@ -2663,6 +2880,10 @@ function parseDesignCode(source) {
       points: parsedPoints.length >= 4 ? parsedPoints : state.designDraft.sketch.points,
       cornerRadii: parsedCornerRadii.length ? parsedCornerRadii : state.designDraft.sketch.cornerRadii
     }),
+    templeSketch: normalizeDesignTempleSketch({
+      points: parsedTemplePoints.length >= 4 ? parsedTemplePoints : state.designDraft.templeSketch?.points,
+      cornerRadii: parsedTempleCornerRadii.length ? parsedTempleCornerRadii : state.designDraft.templeSketch?.cornerRadii
+    }, state.designDraft.construction),
     publicParameters: normalizeDesignPublicParameters(publicParameters.length ? publicParameters : state.designDraft.publicParameters),
     sliderRanges: normalizeDesignSliderRanges(Object.keys(sliderRanges).length ? sliderRanges : state.designDraft.sliderRanges),
     construction: normalizeDesignConstruction({
@@ -2673,10 +2894,12 @@ function parseDesignCode(source) {
       lensChannelOffset: readNumber("lens_channel_offset", state.designDraft.construction?.lensChannelOffset),
       hingeMountHeight: readNumber("hinge_mount_height", state.designDraft.construction?.hingeMountHeight),
       hingeMountOffset: readNumber("hinge_mount_offset", state.designDraft.construction?.hingeMountOffset),
+      bridgeJoinRadius: readNumber("bridge_join_radius", state.designDraft.construction?.bridgeJoinRadius),
       templeStraight: readNumber("temple_straight", state.designDraft.construction?.templeStraight),
       templeHook: readNumber("temple_hook", state.designDraft.construction?.templeHook),
       templeHookAngle: readNumber("temple_hook_angle", state.designDraft.construction?.templeHookAngle),
       templeBarHeight: readNumber("temple_bar_height", state.designDraft.construction?.templeBarHeight),
+      templeDepth: readNumber("temple_depth", state.designDraft.construction?.templeDepth),
       templeCornerRadius: readNumber("temple_corner_radius", state.designDraft.construction?.templeCornerRadius),
       templeTextureDepth: readNumber("temple_texture_depth", state.designDraft.construction?.templeTextureDepth),
       templePatternSpacing: readNumber("temple_pattern_spacing", state.designDraft.construction?.templePatternSpacing)
@@ -2722,6 +2945,7 @@ function applyDesignCode() {
   state.designDraft.params = parsed.params;
   state.designDraft.style = parsed.style;
   state.designDraft.sketch = parsed.sketch;
+  state.designDraft.templeSketch = parsed.templeSketch || designTempleProfileFromConstruction(parsed.construction);
   state.designDraft.features = parsed.features;
   state.designDraft.construction = parsed.construction;
   state.designDraft.publicParameters = parsed.publicParameters;
@@ -2741,6 +2965,7 @@ function applyDesignCode() {
 function resetDesignDraft() {
   state.designDraft = createDefaultDesignDraft();
   designSketchSelectedIndex = 0;
+  designTempleSketchSelectedIndex = 0;
   buildDesignControls();
   switchDesignTab("front");
   setDesignView("sketch");
@@ -2967,6 +3192,7 @@ function loadPublishedDesignIntoLab(model) {
     params,
     style: normalizeDesignStyle(definition),
     sketch: definition.sketch,
+    templeSketch: definition.templeSketch,
     features: definition.features,
     construction: definition.construction,
     publicParameters: definition.publicParameters,
@@ -4570,6 +4796,7 @@ function renderPublishedDesignPreview() {
   [-1, 1].forEach((side) => {
     addDesignRim(side * center, p, outerLensWidth, frameMaterial, definition, modelGroup);
     addDesignLens(side * center, p, lensMaterial, definition, modelGroup);
+    addDesignHingePad(side, p, frameMaterial, definition, modelGroup);
     addDesignTemple(side, p, outerLensWidth, frameMaterial, detailMaterial, style, definition, modelGroup);
     addDesignHingeAsset(
       side < 0 ? "frontRight" : "frontLeft",
@@ -4578,7 +4805,7 @@ function renderPublishedDesignPreview() {
       modelGroup
     );
   });
-  addDesignBar(p.bridge_width + p.rim_thickness * 0.8, p.lens_height * 0.18, Math.min(3, p.rim_thickness * 0.8), p.frame_depth, frameMaterial, p, modelGroup);
+  addDesignBridge(p, frameMaterial, definition, modelGroup);
   centerObjectForViewerPivot(modelGroup);
   modelBasePosition.copy(modelGroup.position);
   applyViewerTransform();
@@ -6782,6 +7009,42 @@ function sampleDesignProfile(sketch, p) {
   return path.map((point) => [point.x / p.lens_width, point.y / p.lens_height]);
 }
 
+function sampleDesignTempleProfile(sketch) {
+  const points = sketch.points.map(([x, y]) => ({ x, y }));
+  const corners = points.map((point, index) => {
+    const previous = points[(index - 1 + points.length) % points.length];
+    const next = points[(index + 1) % points.length];
+    const previousLength = Math.hypot(previous.x - point.x, previous.y - point.y);
+    const nextLength = Math.hypot(next.x - point.x, next.y - point.y);
+    const distance = Math.min(sketch.cornerRadii[index] || 0, previousLength * 0.42, nextLength * 0.42);
+    return {
+      point,
+      start: {
+        x: point.x + (previous.x - point.x) * distance / Math.max(previousLength, 0.001),
+        y: point.y + (previous.y - point.y) * distance / Math.max(previousLength, 0.001)
+      },
+      end: {
+        x: point.x + (next.x - point.x) * distance / Math.max(nextLength, 0.001),
+        y: point.y + (next.y - point.y) * distance / Math.max(nextLength, 0.001)
+      }
+    };
+  });
+  const path = [];
+  corners.forEach((corner, index) => {
+    path.push(corner.start);
+    for (let step = 1; step <= 4; step += 1) {
+      const t = step / 4;
+      const inverse = 1 - t;
+      path.push([
+        inverse * inverse * corner.start.x + 2 * inverse * t * corner.point.x + t * t * corner.end.x,
+        inverse * inverse * corner.start.y + 2 * inverse * t * corner.point.y + t * t * corner.end.y
+      ]);
+    }
+    path.push([corners[(index + 1) % corners.length].start.x, corners[(index + 1) % corners.length].start.y]);
+  });
+  return path.map((point) => Array.isArray(point) ? point : [point.x, point.y]);
+}
+
 function buildDesignScad(draft = state.designDraft) {
   const p = designGeometryParams(draft.params);
   const definition = designDefinitionFromDraft(draft);
@@ -6791,11 +7054,19 @@ function buildDesignScad(draft = state.designDraft) {
   const leftText = style.leftTempleText.replaceAll("\\", "\\\\").replaceAll("\"", "\\\"");
   const rightText = style.rightTempleText.replaceAll("\\", "\\\\").replaceAll("\"", "\\\"");
   const sketch = normalizeDesignSketch(definition.sketch);
+  const templeSketch = normalizeDesignTempleSketch(definition.templeSketch, construction);
   const profilePoints = sketch.points
     .map(([x, y]) => `[${formatNumber(x)}, ${formatNumber(y)}]`)
     .join(", ");
   const profileCornerRadii = sketch.cornerRadii.map((radius) => formatNumber(radius)).join(", ");
   const profilePath = sampleDesignProfile(sketch, p)
+    .map(([x, y]) => `[${formatNumber(x)}, ${formatNumber(y)}]`)
+    .join(", ");
+  const templeProfilePoints = templeSketch.points
+    .map(([x, y]) => `[${formatNumber(x)}, ${formatNumber(y)}]`)
+    .join(", ");
+  const templeProfileCornerRadii = templeSketch.cornerRadii.map((radius) => formatNumber(radius)).join(", ");
+  const templeProfilePath = sampleDesignTempleProfile(templeSketch)
     .map(([x, y]) => `[${formatNumber(x)}, ${formatNumber(y)}]`)
     .join(", ");
   const publicParameters = definition.publicParameters.map((key) => `"${key}"`).join(", ");
@@ -6821,6 +7092,9 @@ detail_color = "${style.detailColor}";
 profile_points = [${profilePoints}];
 profile_corner_radii = [${profileCornerRadii}]; // Radius at each authored drawing point.
 profile_path = [${profilePath}]; // Local corner fillets resolved from the drawing.
+temple_profile_points = [${templeProfilePoints}];
+temple_profile_corner_radii = [${templeProfileCornerRadii}]; // Radius at each temple vertex.
+temple_profile_path = [${templeProfilePath}]; // Closed side profile of the printable temple.
 customer_sliders = [${publicParameters}]; // Exposed controls in Frame Lab.
 customer_slider_ranges = [${customerRanges}]; // Safe customer adjustment limits.
 extrude_enabled = ${features.extrude.enabled ? "true" : "false"};
@@ -6838,12 +7112,18 @@ lens_channel_offset = ${formatNumber(construction.lensChannelOffset)};
 hinge_standard = "${construction.hingeStandard}";
 hinge_mount_height = ${formatNumber(construction.hingeMountHeight)};
 hinge_mount_offset = ${formatNumber(construction.hingeMountOffset)};
-hinge_join_overlap = ${formatNumber(designHingeJoinOverlap)}; // FL-H1 embed into rim material.
-front_face_z = (extrude_enabled ? extrude_depth : 0.2) / 2; // Flush hinge face datum.
+bridge_join_radius = ${formatNumber(construction.bridgeJoinRadius)};
+hinge_pad_size = ${formatNumber(designHingePadSize)};
+hinge_pad_overlap = ${formatNumber(designHingePadOverlap)};
+hinge_rear_overlap = ${formatNumber(designHingeRearOverlap)};
+front_depth = extrude_enabled ? extrude_depth : 0.2;
+front_face_z = front_depth / 2;
+hinge_rear_z = -front_face_z + hinge_rear_overlap; // Mechanical hinge is bonded behind the planar pad.
 temple_straight = ${formatNumber(construction.templeStraight)};
 temple_hook = ${formatNumber(construction.templeHook)};
 temple_hook_angle = ${formatNumber(construction.templeHookAngle)};
 temple_bar_height = ${formatNumber(construction.templeBarHeight)};
+temple_depth = ${formatNumber(construction.templeDepth)};
 temple_corner_radius = ${formatNumber(construction.templeCornerRadius)};
 temple_texture_depth = ${formatNumber(construction.templeTextureDepth)};
 temple_pattern_spacing = ${formatNumber(construction.templePatternSpacing)};
@@ -6876,19 +7156,27 @@ module lens_profile(size=[10,10], outer=false) {
   drawn_profile(size);
 }
 
+module drawn_temple_profile() {
+  polygon(temple_profile_path);
+}
+
 module soft_bar(size=[10,4,4], radius=1) {
   linear_extrude(height=size[2], center=true, convexity=5)
   rounded_rect([size[0], size[1]], radius);
 }
 
-module rim(cx=0) {
+module rim_profile(cx=0) {
   translate([cx, 0, 0])
   scale([cx < 0 ? -1 : 1, 1, 1])
-  linear_extrude(height=extrude_enabled ? extrude_depth : 0.2, center=true, convexity=10)
   difference() {
     offset(delta=rim_thickness) lens_profile([opening_width, lens_height], false);
     lens_profile([opening_width, lens_height], false);
   }
+}
+
+module rim(cx=0) {
+  linear_extrude(height=front_depth, center=true, convexity=10)
+    rim_profile(cx);
 }
 
 module lens_insert(cx=0) {
@@ -6909,8 +7197,8 @@ module lens_seat_cut(cx=0) {
 }
 
 module front_hinge(side=1) {
-  hinge_x = side*(head_width/2 - hinge_join_overlap + hinge_mount_offset);
-  translate([hinge_x, hinge_mount_height, front_face_z])
+  hinge_x = side*(head_width/2 - hinge_pad_overlap + hinge_mount_offset);
+  translate([hinge_x, hinge_mount_height, hinge_rear_z])
   rotate([-90, 0, 0])
   if (side < 0)
     import("assets/hinges/front-hinge-right.3mf");
@@ -6918,12 +7206,48 @@ module front_hinge(side=1) {
     import("assets/hinges/front-hinge-left.3mf");
 }
 
+module hinge_pad(side=1) {
+  pad_x = side*(head_width/2 - hinge_pad_overlap + hinge_mount_offset + hinge_pad_size/2);
+  translate([pad_x, hinge_mount_height + hinge_pad_size/2, 0])
+    soft_bar([hinge_pad_size, hinge_pad_size, front_depth], min(0.55, front_depth*0.18));
+}
+
+module bridge_profile() {
+  translate([0, lens_height*0.18])
+    rounded_rect([bridge_width + rim_thickness*1.8, min(3, rim_thickness*0.8)], min(bridge_join_radius, min(3, rim_thickness*0.8)/2));
+}
+
+module hinge_pad_profile(side=1) {
+  pad_x = side*(head_width/2 - hinge_pad_overlap + hinge_mount_offset + hinge_pad_size/2);
+  translate([pad_x, hinge_mount_height + hinge_pad_size/2])
+    rounded_rect([hinge_pad_size, hinge_pad_size], min(0.55, front_depth*0.18));
+}
+
+module front_planar_profile() {
+  // Join the nose bridge and hinge lands in 2D before extrusion so the front is one printable face.
+  if (bridge_join_radius > 0)
+    offset(r=bridge_join_radius)
+    offset(delta=-bridge_join_radius)
+    union() {
+      rim_profile(-lens_center);
+      rim_profile(lens_center);
+      bridge_profile();
+      hinge_pad_profile(-1);
+      hinge_pad_profile(1);
+    }
+  else
+    union() {
+      rim_profile(-lens_center);
+      rim_profile(lens_center);
+      bridge_profile();
+      hinge_pad_profile(-1);
+      hinge_pad_profile(1);
+    }
+}
+
 module front_body() {
-  union() {
-    rim(-lens_center);
-    rim(lens_center);
-    translate([0, lens_height*0.18, 0])
-      soft_bar([bridge_width + rim_thickness*0.8, min(3, rim_thickness*0.8), extrude_depth], min(1, rim_thickness*0.3));
+  linear_extrude(height=front_depth, center=true, convexity=10) {
+    front_planar_profile();
   }
 }
 
@@ -6943,12 +7267,12 @@ module temple_pattern_relief(side=1) {
   if (temple_pattern == "ribs")
     for (z=[20:temple_pattern_spacing:min(active_temple_straight-5,74)])
       translate([side*2.5, temple_bar_center_y, temple_arm_start_z-z])
-      soft_bar([frame_depth*0.72, temple_bar_height + temple_texture_depth, 1.4], 0.35);
+      soft_bar([temple_depth + temple_texture_depth, temple_bar_height + temple_texture_depth, 1.4], 0.35);
   if (temple_pattern == "diamond")
     for (z=[20:temple_pattern_spacing:min(active_temple_straight-5,74)])
       translate([side*2.5, temple_bar_center_y, temple_arm_start_z-z])
       rotate([0, 0, 45])
-      soft_bar([frame_depth*0.7, temple_bar_height + temple_texture_depth, 2], 0.3);
+      soft_bar([temple_depth + temple_texture_depth, temple_bar_height + temple_texture_depth, 2], 0.3);
 }
 
 module temple_pattern_cutout(side=1) {
@@ -6962,7 +7286,7 @@ module temple_pattern_cutout(side=1) {
 module temple_mark(side=1) {
   text_value = side < 0 ? left_temple_text : right_temple_text;
   if (text_value != "")
-    translate([side*2.5 + side*rim_thickness*0.67, temple_bar_center_y-rim_thickness*0.56, temple_arm_start_z-50])
+    translate([side*2.5 + side*(temple_depth/2 + 0.01), temple_bar_center_y-rim_thickness*0.56, temple_arm_start_z-50])
     rotate([90, side > 0 ? 90 : -90, 0])
     linear_extrude(height=0.45)
     text(text_value, size=4, halign="center", valign="center");
@@ -6981,24 +7305,26 @@ module temple_blend(side=1) {
     translate([side*2.5, temple_bar_center_y, temple_blend_start_z])
       soft_bar([temple_hinge_body_width, temple_hinge_body_height, 0.35], min(1, temple_hinge_body_height/2));
     translate([side*2.5, temple_bar_center_y, temple_bar_start_z])
-      soft_bar([frame_depth*0.64, temple_bar_height, 0.35], temple_corner_radius);
+      soft_bar([temple_depth, temple_bar_height, 0.35], temple_corner_radius);
   }
 }
 
+module temple_profile_body(side=1) {
+  translate([side*2.5, temple_bar_center_y, temple_arm_start_z])
+  rotate([0, 90, 0])
+  linear_extrude(height=temple_depth, center=true, convexity=8)
+    drawn_temple_profile();
+}
+
 module temple(side=1) {
-  hinge_x = side * (head_width/2 - hinge_join_overlap + hinge_mount_offset);
-  temple_join_overlap = min(temple_bar_height*0.55, temple_hook*0.16);
-  translate([hinge_x, hinge_mount_height, front_face_z])
+  hinge_x = side * (head_width/2 - hinge_pad_overlap + hinge_mount_offset);
+  translate([hinge_x, hinge_mount_height, hinge_rear_z])
   rotate([0, side*temple_spread, 0])
   difference() {
     union() {
       temple_hinge(side);
       temple_blend(side);
-      translate([side*2.5, temple_bar_center_y, temple_arm_start_z-active_temple_straight/2])
-        soft_bar([frame_depth*0.64, temple_bar_height, active_temple_straight], temple_corner_radius);
-      translate([side*2.5, temple_bar_center_y-sin(temple_hook_angle)*(temple_hook-temple_join_overlap)/2, temple_arm_start_z-active_temple_straight-cos(temple_hook_angle)*(temple_hook-temple_join_overlap)/2])
-        rotate([-temple_hook_angle, 0, 0])
-        soft_bar([frame_depth*0.64, temple_bar_height, temple_hook+temple_join_overlap], temple_corner_radius);
+      temple_profile_body(side);
       temple_pattern_relief(side);
       temple_mark(side);
     }
