@@ -218,6 +218,13 @@ const defaultDesignConstruction = {
 };
 // The standard hinge is inset into the rim so exported parts share printable material.
 const designHingeJoinOverlap = 1.25;
+// FL-H1 temple geometry bounds after vertical-bore rotation; align the arm through its body.
+const designTempleBarCenterY = 2.8;
+const designTempleHingeBodyWidth = 4.1;
+const designTempleHingeBodyHeight = 3.2;
+const designTempleBlendStartZ = -6.4;
+const designTempleBarStartZ = -10;
+const designTempleArmJoinOverlap = 0.35;
 const designHingeAssetManifest = {
   frontLeft: "./assets/hinges/front-hinge-left.3mf",
   frontRight: "./assets/hinges/front-hinge-right.3mf",
@@ -1764,10 +1771,12 @@ function addDesignBar(width, y, height, depth, material, p, target = designModel
 
 function designHingeDatum(side, p, definition = state.designDraft) {
   const construction = normalizeDesignConstruction(definition?.construction);
+  const features = normalizeDesignFeatures(definition?.features, p);
+  const frontDepth = features.extrude.enabled ? features.extrude.depth : 0.2;
   return new THREE.Vector3(
     side * (p.head_width / 2 - designHingeJoinOverlap + construction.hingeMountOffset),
     construction.hingeMountHeight,
-    0
+    frontDepth / 2
   );
 }
 
@@ -1795,24 +1804,36 @@ function addDesignTemple(side, p, outerLensWidth, frameMaterial, detailMaterial,
   const hookLength = construction.templeHook;
   const hookAngle = THREE.MathUtils.degToRad(construction.templeHookAngle);
   const attachX = side * 2.5;
+  const armStartZ = designTempleBarStartZ + designTempleArmJoinOverlap;
   const cornerRadius = Math.min(construction.templeCornerRadius, armWidth / 2, construction.templeBarHeight / 2);
+  const transition = new THREE.Mesh(roundedTransitionGeometry(
+    designTempleHingeBodyWidth,
+    designTempleHingeBodyHeight,
+    armWidth,
+    construction.templeBarHeight,
+    designTempleBlendStartZ - designTempleBarStartZ,
+    Math.min(1, designTempleHingeBodyHeight / 2),
+    cornerRadius
+  ), frameMaterial);
+  transition.position.set(attachX, designTempleBarCenterY, (designTempleBlendStartZ + designTempleBarStartZ) / 2);
+  temple.add(transition);
   const arm = new THREE.Mesh(roundedPrismGeometry(armWidth, construction.templeBarHeight, straight, cornerRadius, p.bevel * 0.5), frameMaterial);
-  arm.position.set(attachX, 0, -straight / 2 - 6);
+  arm.position.set(attachX, designTempleBarCenterY, armStartZ - straight / 2);
   temple.add(arm);
   const joinOverlap = Math.min(construction.templeBarHeight * 0.55, hookLength * 0.16);
   const hookDepth = hookLength + joinOverlap;
   const hook = new THREE.Mesh(roundedPrismGeometry(armWidth, construction.templeBarHeight, hookDepth, cornerRadius, p.bevel * 0.5), frameMaterial);
   hook.position.set(
     attachX,
-    -Math.sin(hookAngle) * (hookLength - joinOverlap) / 2,
-    -straight - 6 - Math.cos(hookAngle) * (hookLength - joinOverlap) / 2
+    designTempleBarCenterY - Math.sin(hookAngle) * (hookLength - joinOverlap) / 2,
+    armStartZ - straight - Math.cos(hookAngle) * (hookLength - joinOverlap) / 2
   );
   hook.rotation.x = -hookAngle;
   temple.add(hook);
   if (style.templePattern === "ribs") {
     for (let z = 20; z < Math.min(straight - 5, 74); z += construction.templePatternSpacing) {
       const rib = new THREE.Mesh(roundedPrismGeometry(armWidth * 1.12, construction.templeBarHeight + construction.templeTextureDepth, 1.4, 0.35, 0.08), detailMaterial);
-      rib.position.set(attachX, 0, -z - 6);
+      rib.position.set(attachX, designTempleBarCenterY, armStartZ - z);
       temple.add(rib);
     }
   }
@@ -1820,14 +1841,14 @@ function addDesignTemple(side, p, outerLensWidth, frameMaterial, detailMaterial,
     for (let z = 20; z < Math.min(straight - 5, 74); z += construction.templePatternSpacing) {
       const dot = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, construction.templeTextureDepth, 18), detailMaterial);
       dot.rotation.x = Math.PI / 2;
-      dot.position.set(attachX, construction.templeBarHeight / 2, -z - 6);
+      dot.position.set(attachX, designTempleBarCenterY + construction.templeBarHeight / 2, armStartZ - z);
       temple.add(dot);
     }
   }
   if (style.templePattern === "diamond") {
     for (let z = 20; z < Math.min(straight - 5, 74); z += construction.templePatternSpacing) {
       const mark = new THREE.Mesh(roundedPrismGeometry(armWidth * 1.08, construction.templeBarHeight + construction.templeTextureDepth, 2, 0.3, 0.08), detailMaterial);
-      mark.position.set(attachX, 0, -z - 6);
+      mark.position.set(attachX, designTempleBarCenterY, armStartZ - z);
       mark.rotation.z = THREE.MathUtils.degToRad(45);
       temple.add(mark);
     }
@@ -1840,7 +1861,7 @@ function addDesignTemple(side, p, outerLensWidth, frameMaterial, detailMaterial,
 function addDesignTextMark(text, side, p, temple, material) {
   const width = THREE.MathUtils.clamp(text.length * 2.7, 12, 42);
   const plate = new THREE.Mesh(roundedPrismGeometry(p.rim_thickness * 1.34, p.rim_thickness * 1.12, width, 0.36, 0.08), material);
-  plate.position.set(side * 2.5, p.rim_thickness * 0.08, -58);
+  plate.position.set(side * 2.5, designTempleBarCenterY + p.rim_thickness * 0.08, designTempleBarStartZ + designTempleArmJoinOverlap - 50);
   temple.add(plate);
 }
 
@@ -4670,6 +4691,41 @@ function roundedPrismGeometry(width, height, depth, radius, bevel) {
   return geometry;
 }
 
+function roundedTransitionGeometry(startWidth, startHeight, endWidth, endHeight, depth, startRadius, endRadius) {
+  const pointsPerCorner = 4;
+  const section = (width, height, radius, z) => {
+    const boundedRadius = Math.min(Math.max(0.01, radius), width / 2, height / 2);
+    const corners = [
+      [width / 2 - boundedRadius, height / 2 - boundedRadius, 0],
+      [-width / 2 + boundedRadius, height / 2 - boundedRadius, Math.PI / 2],
+      [-width / 2 + boundedRadius, -height / 2 + boundedRadius, Math.PI],
+      [width / 2 - boundedRadius, -height / 2 + boundedRadius, Math.PI * 1.5]
+    ];
+    return corners.flatMap(([cx, cy, startAngle]) => Array.from({ length: pointsPerCorner }, (_, index) => {
+      const angle = startAngle + index / (pointsPerCorner - 1) * Math.PI / 2;
+      return new THREE.Vector3(cx + Math.cos(angle) * boundedRadius, cy + Math.sin(angle) * boundedRadius, z);
+    }));
+  };
+  const front = section(startWidth, startHeight, startRadius, depth / 2);
+  const back = section(endWidth, endHeight, endRadius, -depth / 2);
+  const positions = [...front, ...back, new THREE.Vector3(0, 0, depth / 2), new THREE.Vector3(0, 0, -depth / 2)];
+  const verticesPerSection = front.length;
+  const frontCenter = verticesPerSection * 2;
+  const backCenter = frontCenter + 1;
+  const indices = [];
+  for (let index = 0; index < verticesPerSection; index += 1) {
+    const next = (index + 1) % verticesPerSection;
+    indices.push(index, verticesPerSection + next, next, index, verticesPerSection + index, verticesPerSection + next);
+    indices.push(frontCenter, index, next);
+    indices.push(backCenter, verticesPerSection + next, verticesPerSection + index);
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions.flatMap(({ x, y, z }) => [x, y, z]), 3));
+  geometry.setIndex(indices);
+  geometry.computeVertexNormals();
+  return geometry;
+}
+
 function renderMeshObject(object) {
   const clone = object.clone(true);
   const material = new THREE.MeshStandardMaterial({
@@ -6783,6 +6839,7 @@ hinge_standard = "${construction.hingeStandard}";
 hinge_mount_height = ${formatNumber(construction.hingeMountHeight)};
 hinge_mount_offset = ${formatNumber(construction.hingeMountOffset)};
 hinge_join_overlap = ${formatNumber(designHingeJoinOverlap)}; // FL-H1 embed into rim material.
+front_face_z = (extrude_enabled ? extrude_depth : 0.2) / 2; // Flush hinge face datum.
 temple_straight = ${formatNumber(construction.templeStraight)};
 temple_hook = ${formatNumber(construction.templeHook)};
 temple_hook_angle = ${formatNumber(construction.templeHookAngle)};
@@ -6790,6 +6847,13 @@ temple_bar_height = ${formatNumber(construction.templeBarHeight)};
 temple_corner_radius = ${formatNumber(construction.templeCornerRadius)};
 temple_texture_depth = ${formatNumber(construction.templeTextureDepth)};
 temple_pattern_spacing = ${formatNumber(construction.templePatternSpacing)};
+temple_bar_center_y = ${formatNumber(designTempleBarCenterY)}; // Center of FL-H1 temple body after rotation.
+temple_hinge_body_width = ${formatNumber(designTempleHingeBodyWidth)};
+temple_hinge_body_height = ${formatNumber(designTempleHingeBodyHeight)};
+temple_blend_start_z = ${formatNumber(designTempleBlendStartZ)}; // Inside the FL-H1 hinge body.
+temple_bar_start_z = ${formatNumber(designTempleBarStartZ)}; // End of the blended transition.
+temple_arm_join_overlap = ${formatNumber(designTempleArmJoinOverlap)}; // Solid overlap at the blend-to-arm join.
+temple_arm_start_z = temple_bar_start_z + temple_arm_join_overlap;
 authored_temple_length = temple_straight + temple_hook;
 active_temple_straight = max(35, temple_straight + temple_length - authored_temple_length);
 max_lens_channel_offset = max(0, (extrude_depth - lens_seat_width)/2 - 0.45);
@@ -6846,7 +6910,7 @@ module lens_seat_cut(cx=0) {
 
 module front_hinge(side=1) {
   hinge_x = side*(head_width/2 - hinge_join_overlap + hinge_mount_offset);
-  translate([hinge_x, hinge_mount_height, 0])
+  translate([hinge_x, hinge_mount_height, front_face_z])
   rotate([-90, 0, 0])
   if (side < 0)
     import("assets/hinges/front-hinge-right.3mf");
@@ -6878,11 +6942,11 @@ module front() {
 module temple_pattern_relief(side=1) {
   if (temple_pattern == "ribs")
     for (z=[20:temple_pattern_spacing:min(active_temple_straight-5,74)])
-      translate([side*2.5, 0, -z-6])
+      translate([side*2.5, temple_bar_center_y, temple_arm_start_z-z])
       soft_bar([frame_depth*0.72, temple_bar_height + temple_texture_depth, 1.4], 0.35);
   if (temple_pattern == "diamond")
     for (z=[20:temple_pattern_spacing:min(active_temple_straight-5,74)])
-      translate([side*2.5, 0, -z-6])
+      translate([side*2.5, temple_bar_center_y, temple_arm_start_z-z])
       rotate([0, 0, 45])
       soft_bar([frame_depth*0.7, temple_bar_height + temple_texture_depth, 2], 0.3);
 }
@@ -6890,7 +6954,7 @@ module temple_pattern_relief(side=1) {
 module temple_pattern_cutout(side=1) {
   if (temple_pattern == "perforated")
     for (z=[20:temple_pattern_spacing:min(active_temple_straight-5,74)])
-      translate([side*2.5, 0, -z-6])
+      translate([side*2.5, temple_bar_center_y, temple_arm_start_z-z])
       rotate([90,0,0])
       cylinder(h=rim_thickness*2, r=1, center=true, $fn=20);
 }
@@ -6898,7 +6962,7 @@ module temple_pattern_cutout(side=1) {
 module temple_mark(side=1) {
   text_value = side < 0 ? left_temple_text : right_temple_text;
   if (text_value != "")
-    translate([side*2.5 + side*rim_thickness*0.67, -rim_thickness*0.56, -56])
+    translate([side*2.5 + side*rim_thickness*0.67, temple_bar_center_y-rim_thickness*0.56, temple_arm_start_z-50])
     rotate([90, side > 0 ? 90 : -90, 0])
     linear_extrude(height=0.45)
     text(text_value, size=4, halign="center", valign="center");
@@ -6912,17 +6976,27 @@ module temple_hinge(side=1) {
     import("assets/hinges/temple-hinge-left.3mf");
 }
 
+module temple_blend(side=1) {
+  hull() {
+    translate([side*2.5, temple_bar_center_y, temple_blend_start_z])
+      soft_bar([temple_hinge_body_width, temple_hinge_body_height, 0.35], min(1, temple_hinge_body_height/2));
+    translate([side*2.5, temple_bar_center_y, temple_bar_start_z])
+      soft_bar([frame_depth*0.64, temple_bar_height, 0.35], temple_corner_radius);
+  }
+}
+
 module temple(side=1) {
   hinge_x = side * (head_width/2 - hinge_join_overlap + hinge_mount_offset);
   temple_join_overlap = min(temple_bar_height*0.55, temple_hook*0.16);
-  translate([hinge_x, hinge_mount_height, 0])
+  translate([hinge_x, hinge_mount_height, front_face_z])
   rotate([0, side*temple_spread, 0])
   difference() {
     union() {
       temple_hinge(side);
-      translate([side*2.5, 0, -active_temple_straight/2 - 6])
+      temple_blend(side);
+      translate([side*2.5, temple_bar_center_y, temple_arm_start_z-active_temple_straight/2])
         soft_bar([frame_depth*0.64, temple_bar_height, active_temple_straight], temple_corner_radius);
-      translate([side*2.5, -sin(temple_hook_angle)*(temple_hook-temple_join_overlap)/2, -active_temple_straight - 6 - cos(temple_hook_angle)*(temple_hook-temple_join_overlap)/2])
+      translate([side*2.5, temple_bar_center_y-sin(temple_hook_angle)*(temple_hook-temple_join_overlap)/2, temple_arm_start_z-active_temple_straight-cos(temple_hook_angle)*(temple_hook-temple_join_overlap)/2])
         rotate([-temple_hook_angle, 0, 0])
         soft_bar([frame_depth*0.64, temple_bar_height, temple_hook+temple_join_overlap], temple_corner_radius);
       temple_pattern_relief(side);
