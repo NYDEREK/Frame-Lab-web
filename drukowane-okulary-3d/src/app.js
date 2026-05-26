@@ -1176,7 +1176,8 @@ function addDesignHingeAsset(key, position, material, target = designModelGroup)
     child.material = material;
     child.geometry.computeVertexNormals();
   });
-  // Assets are authored in their assembly orientation with the screw bore facing up.
+  // The authored screw bore follows CAD Z; eyewear assembly uses vertical Y.
+  hinge.rotation.x = -Math.PI / 2;
   hinge.position.copy(position);
   target.add(hinge);
   return true;
@@ -1795,11 +1796,13 @@ function addDesignTemple(side, p, outerLensWidth, frameMaterial, detailMaterial,
   const arm = new THREE.Mesh(roundedPrismGeometry(armWidth, construction.templeBarHeight, straight, cornerRadius, p.bevel * 0.5), frameMaterial);
   arm.position.set(attachX, 0, -straight / 2 - 6);
   temple.add(arm);
-  const hook = new THREE.Mesh(roundedPrismGeometry(armWidth, construction.templeBarHeight, hookLength, cornerRadius, p.bevel * 0.5), frameMaterial);
+  const joinOverlap = Math.min(construction.templeBarHeight * 0.55, hookLength * 0.16);
+  const hookDepth = hookLength + joinOverlap;
+  const hook = new THREE.Mesh(roundedPrismGeometry(armWidth, construction.templeBarHeight, hookDepth, cornerRadius, p.bevel * 0.5), frameMaterial);
   hook.position.set(
     attachX,
-    -Math.sin(hookAngle) * hookLength / 2,
-    -straight - 6 - Math.cos(hookAngle) * hookLength / 2
+    -Math.sin(hookAngle) * (hookLength - joinOverlap) / 2,
+    -straight - 6 - Math.cos(hookAngle) * (hookLength - joinOverlap) / 2
   );
   hook.rotation.x = -hookAngle;
   temple.add(hook);
@@ -6839,6 +6842,7 @@ module lens_seat_cut(cx=0) {
 
 module front_hinge(side=1) {
   translate([side*(head_width/2 + hinge_mount_offset), hinge_mount_height, 0])
+  rotate([-90, 0, 0])
   if (side < 0)
     import("assets/hinges/front-hinge-left.3mf");
   else
@@ -6894,6 +6898,7 @@ module temple_mark(side=1) {
 }
 
 module temple_hinge(side=1) {
+  rotate([-90, 0, 0])
   if (side < 0)
     import("assets/hinges/temple-hinge-left.3mf");
   else
@@ -6902,6 +6907,7 @@ module temple_hinge(side=1) {
 
 module temple(side=1) {
   hinge_x = side * (head_width/2 + hinge_mount_offset);
+  temple_join_overlap = min(temple_bar_height*0.55, temple_hook*0.16);
   translate([hinge_x, hinge_mount_height, 0])
   rotate([0, side*temple_spread, 0])
   difference() {
@@ -6909,9 +6915,9 @@ module temple(side=1) {
       temple_hinge(side);
       translate([-side*2.5, 0, -active_temple_straight/2 - 6])
         soft_bar([frame_depth*0.64, temple_bar_height, active_temple_straight], temple_corner_radius);
-      translate([-side*2.5, -sin(temple_hook_angle)*temple_hook/2, -active_temple_straight - 6 - cos(temple_hook_angle)*temple_hook/2])
+      translate([-side*2.5, -sin(temple_hook_angle)*(temple_hook-temple_join_overlap)/2, -active_temple_straight - 6 - cos(temple_hook_angle)*(temple_hook-temple_join_overlap)/2])
         rotate([-temple_hook_angle, 0, 0])
-        soft_bar([frame_depth*0.64, temple_bar_height, temple_hook], temple_corner_radius);
+        soft_bar([frame_depth*0.64, temple_bar_height, temple_hook+temple_join_overlap], temple_corner_radius);
       temple_pattern_relief(side);
       temple_mark(side);
     }
