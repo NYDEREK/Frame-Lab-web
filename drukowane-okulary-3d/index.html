@@ -941,16 +941,38 @@
     </div>
 
     <script>
-      window.frameLabBoot = { ready: false, editorRequested: false };
+      window.frameLabBoot = {
+        ready: false,
+        editorRequested: false,
+        designLabRequested: false,
+        resetDesignDraftRequested: false
+      };
+      const showBootLoader = (title, text) => {
+        const overlay = document.querySelector("#loaderOverlay");
+        document.querySelector("#loaderTitle").textContent = title;
+        document.querySelector("#loaderText").textContent = text;
+        overlay.hidden = false;
+      };
+      const queueDesignLabDuringBoot = (event, shouldReset) => {
+        if (window.frameLabBoot.ready) return;
+        event?.preventDefault();
+        window.frameLabBoot.editorRequested = false;
+        window.frameLabBoot.designLabRequested = true;
+        window.frameLabBoot.resetDesignDraftRequested ||= shouldReset;
+        if (window.location.hash !== "#design-lab") {
+          window.history.pushState({ frameLabRoute: "#design-lab" }, "", "#design-lab");
+        }
+        showBootLoader("Loading Design Lab", "Preparing drawing tools and 3D previews...");
+      };
       document.querySelector("#heroEditor")?.addEventListener("click", () => {
         if (window.frameLabBoot.ready) return;
         window.frameLabBoot.editorRequested = true;
-        const overlay = document.querySelector("#loaderOverlay");
-        document.querySelector("#loaderTitle").textContent = "Loading editor";
-        document.querySelector("#loaderText").textContent = "Preparing frame options and 3D previews...";
-        overlay.hidden = false;
+        window.frameLabBoot.designLabRequested = false;
+        showBootLoader("Loading editor", "Preparing frame options and 3D previews...");
       });
+      document.querySelector("#openDesignLab")?.addEventListener("click", (event) => queueDesignLabDuringBoot(event, false));
+      document.querySelector("#startDesignLab")?.addEventListener("click", (event) => queueDesignLabDuringBoot(event, true));
     </script>
-    <script type="module" src="./src/app.js?v=color-dialog-20260524-1"></script>
+    <script type="module" src="./src/app.js?v=design-lab-entry-20260526-1"></script>
   </body>
 </html>

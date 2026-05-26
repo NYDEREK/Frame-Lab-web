@@ -899,7 +899,12 @@ let designCameraDistance = 260;
 let designZoomScale = 1;
 const designCameraTarget = new THREE.Vector3();
 const designViewerRotation = { x: -0.54, y: 0.56, z: 0.02 };
-const bootState = window.frameLabBoot || { ready: false, editorRequested: false };
+const bootState = window.frameLabBoot || {
+  ready: false,
+  editorRequested: false,
+  designLabRequested: false,
+  resetDesignDraftRequested: false
+};
 
 init();
 
@@ -936,10 +941,15 @@ async function init() {
   render();
   renderDesignPreview();
   renderGallery();
+  if (bootState.designLabRequested && bootState.resetDesignDraftRequested) {
+    resetDesignDraft();
+  }
   setupNavigation();
   bootState.ready = true;
   if (bootState.editorRequested) {
     openHeroEditorTarget();
+    showLoader(false);
+  } else if (bootState.designLabRequested) {
     showLoader(false);
   }
   animate();
