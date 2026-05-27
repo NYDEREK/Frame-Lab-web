@@ -474,8 +474,15 @@
             <button type="button" data-design-tab="left-temple" role="tab" aria-selected="false">Left temple</button>
             <button type="button" data-design-tab="right-temple" role="tab" aria-selected="false">Right temple</button>
             <button type="button" data-design-tab="assembly" role="tab" aria-selected="false">Assembly</button>
-            <button type="button" data-design-tab="code" role="tab" aria-selected="false">Code</button>
           </div>
+          <section id="designAppearancePanel" class="design-control-section design-details design-global-appearance">
+            <h3>Appearance</h3>
+            <div class="design-colors">
+              <label><span>Frame</span><input id="designFrameColor" type="color" value="#ff741f" /></label>
+              <label><span>Lens</span><input id="designLensColor" type="color" value="#202529" /></label>
+              <label><span>Detail</span><input id="designDetailColor" type="color" value="#e59a62" /></label>
+            </div>
+          </section>
           <section id="designOperationsPanel" class="design-operations" role="tabpanel">
             <section class="design-control-section">
               <div class="design-section-heading">
@@ -527,7 +534,7 @@
               <div class="design-construction-grid">
                 <label><span>Hinge height</span><input id="designHingeMountHeight" type="number" min="-12" max="12" step="0.5" value="10" /><small>mm</small></label>
                 <label><span>Side inset</span><input id="designHingeMountOffset" type="number" min="-4" max="0" step="0.5" value="0" /><small>mm</small></label>
-                <label><span>Bridge fillet</span><input id="designBridgeJoinRadius" type="number" min="0" max="4" step="0.1" value="1.2" /><small>mm</small></label>
+                <label><span>Bridge blend radius</span><input id="designBridgeJoinRadius" type="number" min="0" max="10" step="0.1" value="2.4" /><small>mm</small></label>
               </div>
               <p class="design-note">Both hinge halves share this vertical screw axis in assembly.</p>
             </section>
@@ -554,17 +561,6 @@
               </label>
               <input id="designLensRecessEnabled" type="checkbox" checked hidden />
               <input id="designLensRecessDepth" type="number" value="0.35" hidden />
-            </section>
-            <section class="design-control-section design-details">
-              <h3>Profile preset</h3>
-              <label>
-                <span>Starting profile</span>
-                <select id="designLensShape" class="component-select">
-                  <option value="soft-square">Soft square</option>
-                  <option value="round">Round</option>
-                  <option value="sharp">Architectural</option>
-                </select>
-              </label>
             </section>
           </section>
           <section id="designFeaturesPanel" class="design-operations" role="tabpanel" hidden>
@@ -606,23 +602,41 @@
             <section class="design-control-section design-details">
               <h3>Left side detail</h3>
               <label>
-                <span>Outer texture</span>
-                <select id="designTemplePattern" class="component-select">
-                  <option value="none">Clean</option>
-                  <option value="ribs">Ribs</option>
-                  <option value="perforated">Perforated</option>
-                  <option value="diamond">Diamond relief</option>
+                <span>Detail mode</span>
+                <select id="designTempleDetailMode" class="component-select">
+                  <option value="none">Clean surface</option>
+                  <option value="text">Raised text</option>
+                  <option value="texture">Relief texture</option>
                 </select>
               </label>
               <div class="design-construction-grid">
                 <label><span>Rounding</span><input id="designTempleCornerRadius" type="number" min="0" max="4" step="0.1" value="1.4" /><small>mm</small></label>
-                <label><span>Texture depth</span><input id="designTempleTextureDepth" type="number" min="0.2" max="1.2" step="0.05" value="0.45" /><small>mm</small></label>
-                <label><span>Spacing</span><input id="designTemplePatternSpacing" type="number" min="5" max="18" step="1" value="9" /><small>mm</small></label>
               </div>
-              <label class="design-text-field">
-                <span>Left temple text</span>
-                <input id="designTempleText" type="text" maxlength="24" placeholder="Optional engraving" />
-              </label>
+              <div id="designTempleTextureControls" class="design-detail-fields" hidden>
+                <label>
+                  <span>Pattern</span>
+                  <select id="designTemplePattern" class="component-select">
+                    <option value="ribs">Ribs</option>
+                    <option value="diamond">Diamond relief</option>
+                    <option value="wave">Contour wave</option>
+                  </select>
+                </label>
+                <div class="design-construction-grid">
+                  <label><span>Relief depth</span><input id="designTempleTextureDepth" type="number" min="0.15" max="1.2" step="0.05" value="0.45" /><small>mm</small></label>
+                  <label><span>Spacing</span><input id="designTemplePatternSpacing" type="number" min="5" max="18" step="1" value="9" /><small>mm</small></label>
+                </div>
+              </div>
+              <div id="designTempleTextControls" class="design-detail-fields" hidden>
+                <label class="design-text-field">
+                  <span>Left temple text</span>
+                  <input id="designTempleText" type="text" maxlength="24" placeholder="Frame Lab" />
+                </label>
+                <div class="design-construction-grid">
+                  <label><span>Text size</span><input id="designTempleTextSize" type="number" min="2" max="8" step="0.1" value="4" /><small>mm</small></label>
+                  <label><span>Position</span><input id="designTempleTextPosition" type="number" min="8" max="75" step="1" value="36" /><small>mm</small></label>
+                  <label><span>Relief depth</span><input id="designTempleTextDepth" type="number" min="0.15" max="1.2" step="0.05" value="0.45" /><small>mm</small></label>
+                </div>
+              </div>
             </section>
           </section>
           <section id="designRightTemplePanel" class="design-operations" role="tabpanel" hidden>
@@ -637,10 +651,14 @@
             </section>
             <section class="design-control-section design-details">
               <h3>Right side detail</h3>
-              <label class="design-text-field">
-                <span>Right temple text</span>
-                <input id="designRightTempleText" type="text" maxlength="24" placeholder="Optional engraving" />
-              </label>
+              <div id="designRightTempleTextControls" class="design-detail-fields" hidden>
+                <label class="design-text-field">
+                  <span>Right temple text</span>
+                  <input id="designRightTempleText" type="text" maxlength="24" placeholder="Frame Lab" />
+                </label>
+                <p class="design-note">Uses the same size and placement as the left temple.</p>
+              </div>
+              <p id="designRightTempleDetailNote" class="design-note">The selected relief texture is mirrored with the temple geometry.</p>
             </section>
           </section>
           <section id="designAssemblyPanel" class="design-operations" role="tabpanel" hidden>
@@ -654,25 +672,12 @@
               </div>
             </section>
             <section class="design-control-section">
-              <h3>Production checks</h3>
-              <div id="designProductionChecks" class="design-production-checks"></div>
-              <p class="design-note">Print and test one hinge sample before releasing a new frame.</p>
-            </section>
-            <section class="design-control-section">
               <h3>Customer sliders</h3>
               <p class="design-note">Choose dimensions exposed to the customer when this frame is published.</p>
               <div id="designPublicParameters" class="design-public-parameters"></div>
             </section>
-            <section class="design-control-section design-details">
-              <h3>Appearance</h3>
-              <div class="design-colors">
-                <label><span>Frame</span><input id="designFrameColor" type="color" value="#ff741f" /></label>
-                <label><span>Lens</span><input id="designLensColor" type="color" value="#202529" /></label>
-                <label><span>Detail</span><input id="designDetailColor" type="color" value="#e59a62" /></label>
-              </div>
-            </section>
           </section>
-          <section id="designCodePanel" class="design-code-panel" role="tabpanel" hidden>
+          <section id="designCodePanel" class="design-code-panel hidden-utility" aria-hidden="true" hidden>
             <textarea id="designScadCode" spellcheck="false" aria-label="OpenSCAD source code"></textarea>
             <div class="design-code-actions">
               <button id="regenerateDesignCode" type="button">Regenerate</button>

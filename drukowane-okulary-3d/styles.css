@@ -933,7 +933,7 @@ small,
 
 .design-tabs {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 0.35rem;
   padding: 0.28rem;
   border: 1px solid var(--line);
@@ -967,6 +967,20 @@ small,
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--subtle-bg);
+}
+
+.design-global-appearance {
+  margin-block: 0.1rem 0.15rem;
+}
+
+.design-detail-fields {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.design-detail-fields[hidden],
+.hidden-utility {
+  display: none !important;
 }
 
 .design-control-section h3 {
@@ -3527,7 +3541,7 @@ input[type="password"] {
   }
 
   .design-tabs {
-    grid-template-columns: repeat(5, minmax(5.2rem, 1fr));
+    grid-template-columns: repeat(4, minmax(5.2rem, 1fr));
     overflow-x: auto;
   }
 

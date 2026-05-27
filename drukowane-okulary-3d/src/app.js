@@ -3,6 +3,8 @@ import polygonClipping from "polygon-clipping";
 import * as THREE from "three";
 import { STLLoader } from "three/addons/loaders/STLLoader.js";
 import { ThreeMFLoader } from "three/addons/loaders/3MFLoader.js";
+import { FontLoader } from "three/addons/loaders/FontLoader.js";
+import { TextGeometry } from "three/addons/geometries/TextGeometry.js";
 
 const parameterSchema = [
   ["head_width", "Head width", "Overall fit width", 118, 172, 1, "mm"],
@@ -170,7 +172,8 @@ const designParameterGroups = {
 };
 const defaultDesignStyle = {
   lensShape: "soft-square",
-  templePattern: "none",
+  templeDetailMode: "none",
+  templePattern: "ribs",
   templeText: "",
   leftTempleText: "",
   rightTempleText: "",
@@ -209,7 +212,7 @@ const defaultDesignConstruction = {
   lensChannelOffset: 0,
   hingeMountHeight: 10,
   hingeMountOffset: 0,
-  bridgeJoinRadius: 1.2,
+  bridgeJoinRadius: 2.4,
   templeStraight: 65,
   templeHook: 30,
   templeHookAngle: 45,
@@ -217,7 +220,10 @@ const defaultDesignConstruction = {
   templeDepth: 3.6,
   templeCornerRadius: 1.4,
   templeTextureDepth: 0.45,
-  templePatternSpacing: 9
+  templePatternSpacing: 9,
+  templeTextSize: 4,
+  templeTextPosition: 36,
+  templeTextDepth: 0.45
 };
 // The visible front remains planar: a side landing carries the mechanical hinge behind it.
 const designHingePadSize = 6;
@@ -721,12 +727,18 @@ const els = {
   designFeaturesPanel: document.querySelector("#designFeaturesPanel"),
   designRightTemplePanel: document.querySelector("#designRightTemplePanel"),
   designAssemblyPanel: document.querySelector("#designAssemblyPanel"),
+  designAppearancePanel: document.querySelector("#designAppearancePanel"),
   designCodePanel: document.querySelector("#designCodePanel"),
   designScadCode: document.querySelector("#designScadCode"),
   regenerateDesignCode: document.querySelector("#regenerateDesignCode"),
   applyDesignCode: document.querySelector("#applyDesignCode"),
   designLensShape: document.querySelector("#designLensShape"),
+  designTempleDetailMode: document.querySelector("#designTempleDetailMode"),
   designTemplePattern: document.querySelector("#designTemplePattern"),
+  designTempleTextureControls: document.querySelector("#designTempleTextureControls"),
+  designTempleTextControls: document.querySelector("#designTempleTextControls"),
+  designRightTempleTextControls: document.querySelector("#designRightTempleTextControls"),
+  designRightTempleDetailNote: document.querySelector("#designRightTempleDetailNote"),
   designTempleText: document.querySelector("#designTempleText"),
   designRightTempleText: document.querySelector("#designRightTempleText"),
   designBrowBar: document.querySelector("#designBrowBar"),
@@ -774,6 +786,9 @@ const els = {
   designTempleCornerRadius: document.querySelector("#designTempleCornerRadius"),
   designTempleTextureDepth: document.querySelector("#designTempleTextureDepth"),
   designTemplePatternSpacing: document.querySelector("#designTemplePatternSpacing"),
+  designTempleTextSize: document.querySelector("#designTempleTextSize"),
+  designTempleTextPosition: document.querySelector("#designTempleTextPosition"),
+  designTempleTextDepth: document.querySelector("#designTempleTextDepth"),
   designDimensions: document.querySelector("#designDimensions"),
   designStatus: document.querySelector("#designStatus"),
   designSubmissionStatus: document.querySelector("#designSubmissionStatus"),
@@ -895,6 +910,8 @@ let designSketchSelectedIndex = 0;
 let designTempleSketchDragIndex = -1;
 let designTempleSketchSelectedIndex = 0;
 let designHingeLibrary = {};
+let designTextFont = null;
+let designTextFontLoading = false;
 let designCameraDistance = 260;
 let designZoomScale = 1;
 const designCameraTarget = new THREE.Vector3();
@@ -1019,9 +1036,17 @@ function createDefaultDesignDraft() {
 function normalizeDesignStyle(style = {}) {
   const leftTempleText = String(style.leftTempleText ?? style.templeText ?? "").trim().slice(0, 24);
   const rightTempleText = String(style.rightTempleText ?? style.templeText ?? "").trim().slice(0, 24);
+  const legacyPattern = style.templePattern;
+  const templePattern = ["ribs", "diamond", "wave"].includes(legacyPattern)
+    ? legacyPattern
+    : legacyPattern === "perforated" ? "diamond" : defaultDesignStyle.templePattern;
+  const inferredMode = leftTempleText || rightTempleText
+    ? "text"
+    : legacyPattern && legacyPattern !== "none" ? "texture" : "none";
   return {
     lensShape: ["soft-square", "round", "sharp"].includes(style.lensShape) ? style.lensShape : defaultDesignStyle.lensShape,
-    templePattern: ["none", "ribs", "perforated", "diamond"].includes(style.templePattern) ? style.templePattern : defaultDesignStyle.templePattern,
+    templeDetailMode: ["none", "text", "texture"].includes(style.templeDetailMode) ? style.templeDetailMode : inferredMode,
+    templePattern,
     templeText: leftTempleText,
     leftTempleText,
     rightTempleText,
@@ -1139,7 +1164,7 @@ function normalizeDesignConstruction(construction = {}) {
     // Keep the complete 6 mm landing bonded to the planar front profile.
     hingeMountHeight: bounded("hingeMountHeight", -12, 12),
     hingeMountOffset: bounded("hingeMountOffset", -4, 0),
-    bridgeJoinRadius: bounded("bridgeJoinRadius", 0, 4),
+    bridgeJoinRadius: bounded("bridgeJoinRadius", 0, 10),
     templeStraight: bounded("templeStraight", 35, 120),
     templeHook: bounded("templeHook", 10, 60),
     templeHookAngle: bounded("templeHookAngle", 10, 75),
@@ -1147,7 +1172,10 @@ function normalizeDesignConstruction(construction = {}) {
     templeDepth: bounded("templeDepth", 2.4, 6),
     templeCornerRadius: bounded("templeCornerRadius", 0, 4),
     templeTextureDepth: bounded("templeTextureDepth", 0.2, 1.2),
-    templePatternSpacing: bounded("templePatternSpacing", 5, 18)
+    templePatternSpacing: bounded("templePatternSpacing", 5, 18),
+    templeTextSize: bounded("templeTextSize", 2, 8),
+    templeTextPosition: bounded("templeTextPosition", 8, 75),
+    templeTextDepth: bounded("templeTextDepth", 0.15, 1.2)
   };
 }
 
@@ -1223,7 +1251,25 @@ function setupDesignScene() {
   designModelGroup = new THREE.Group();
   designModelGroup.rotation.order = "YXZ";
   designScene.add(designModelGroup);
+  loadDesignTextFont();
   resizeDesignScene();
+}
+
+function loadDesignTextFont() {
+  if (designTextFont || designTextFontLoading) return;
+  designTextFontLoading = true;
+  new FontLoader().load(
+    "https://unpkg.com/three@0.164.1/examples/fonts/helvetiker_bold.typeface.json",
+    (font) => {
+      designTextFont = font;
+      designTextFontLoading = false;
+      if (!els.designLab?.hidden) renderDesignPreview({ fitView: false });
+    },
+    undefined,
+    () => {
+      designTextFontLoading = false;
+    }
+  );
 }
 
 async function loadDesignHingeAssets() {
@@ -1533,6 +1579,7 @@ function drawTempleSketch(mirrored = false) {
   if (!canvas || !metrics) return;
   const { ctx, colors } = prepareDesignDrawingCanvas(canvas, metrics.rect);
   const { construction: c, profile, screenPoints, origin, scale, rect, totalWidth } = metrics;
+  const style = normalizeDesignStyle(state.designDraft.style);
   const flipX = (x) => mirrored ? rect.width - x : x;
   const point = ({ x, y }) => ({ x: flipX(x), y });
   const displayPoints = screenPoints.map(point);
@@ -1550,6 +1597,49 @@ function drawTempleSketch(mirrored = false) {
   traceRoundedPolygon(ctx, displayPoints, profile.cornerRadii.map((radius) => radius * scale));
   ctx.fill();
   ctx.stroke();
+  if (style.templeDetailMode === "texture") {
+    ctx.save();
+    ctx.beginPath();
+    traceRoundedPolygon(ctx, displayPoints, profile.cornerRadii.map((radius) => radius * scale));
+    ctx.clip();
+    ctx.strokeStyle = colors.dimension;
+    ctx.lineWidth = Math.max(1.25, c.templeTextureDepth * scale * 0.45);
+    const start = 14;
+    const end = Math.min(c.templeStraight - 8, 76);
+    for (let z = start; z < end; z += c.templePatternSpacing) {
+      const x = point({ x: origin.x + z * scale, y: origin.y }).x;
+      const markHeight = c.templeBarHeight * scale * 0.32;
+      ctx.beginPath();
+      if (style.templePattern === "ribs") {
+        ctx.moveTo(x, origin.y - markHeight);
+        ctx.lineTo(x, origin.y + markHeight);
+      } else {
+        const shift = Math.min(5, c.templePatternSpacing * 0.7) * scale / 2;
+        const tilt = style.templePattern === "diamond" ? markHeight : markHeight * 0.72;
+        ctx.moveTo(x - shift, origin.y - tilt);
+        ctx.lineTo(x + shift, origin.y + tilt);
+        if (style.templePattern === "diamond") {
+          ctx.moveTo(x - shift, origin.y + tilt);
+          ctx.lineTo(x + shift, origin.y - tilt);
+        }
+      }
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+  if (style.templeDetailMode === "text") {
+    const label = mirrored ? style.rightTempleText : style.leftTempleText;
+    if (label) {
+      const labelX = point({ x: origin.x + c.templeTextPosition * scale, y: origin.y }).x;
+      ctx.save();
+      ctx.fillStyle = colors.dimension;
+      ctx.font = `700 ${Math.max(10, Math.min(28, c.templeTextSize * scale * 0.7))}px Inter, Arial, sans-serif`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(label, labelX, origin.y);
+      ctx.restore();
+    }
+  }
   const hingeLength = 6.25 * scale;
   const hingeHeight = 6 * scale;
   ctx.fillStyle = colors.accent;
@@ -1866,16 +1956,18 @@ function designFrontPlanarPolygons(p, definition, innerExpansion = 0) {
   const leftPad = designHingePadOrigin(-1, p, definition);
   const rightPad = designHingePadOrigin(1, p, definition);
   const padRadius = 0.45;
+  const landingReach = Math.max(2.4, p.rim_thickness * 1.3);
+  const landingWidth = designHingePadSize + landingReach;
   const solids = [
     [designOutlineRing(-center, p, definition, p.rim_thickness, true)],
     [designOutlineRing(center, p, definition, p.rim_thickness)],
     [designRoundedRectRing(bridge.width, bridge.height, bridge.radius, 0, bridge.centerY)],
-    [designRoundedRectRing(designHingePadSize, designHingePadSize, padRadius, leftPad.x - designHingePadSize / 2, leftPad.y + designHingePadSize / 2)],
-    [designRoundedRectRing(designHingePadSize, designHingePadSize, padRadius, rightPad.x + designHingePadSize / 2, rightPad.y + designHingePadSize / 2)]
+    [designRoundedRectRing(landingWidth, designHingePadSize, padRadius, leftPad.x - designHingePadSize / 2 + landingReach / 2, leftPad.y + designHingePadSize / 2)],
+    [designRoundedRectRing(landingWidth, designHingePadSize, padRadius, rightPad.x + designHingePadSize / 2 - landingReach / 2, rightPad.y + designHingePadSize / 2)]
   ];
-  const shoulderRadius = Math.min(construction.bridgeJoinRadius, p.rim_thickness * 1.35);
+  const shoulderRadius = Math.min(construction.bridgeJoinRadius, p.lens_height * 0.3);
   if (shoulderRadius > 0) {
-    const shoulderX = p.bridge_width / 2 + p.rim_thickness * 0.64;
+    const shoulderX = p.bridge_width / 2 + p.rim_thickness * 0.48 + shoulderRadius * 0.32;
     solids.push([designRoundedRectRing(shoulderRadius * 2, shoulderRadius * 2, shoulderRadius, -shoulderX, bridge.centerY)]);
     solids.push([designRoundedRectRing(shoulderRadius * 2, shoulderRadius * 2, shoulderRadius, shoulderX, bridge.centerY)]);
   }
@@ -1935,13 +2027,15 @@ function designProfilePath(width, height, definition, expansion = 0, asHole = fa
 
 function designBridgeMetrics(p, definition = state.designDraft) {
   const construction = normalizeDesignConstruction(definition?.construction);
-  const height = Math.max(2, Math.min(3, p.rim_thickness * 0.8));
-  const radius = Math.min(construction.bridgeJoinRadius, height / 2);
+  const joinRadius = THREE.MathUtils.clamp(construction.bridgeJoinRadius, 0, Math.min(10, p.lens_height * 0.34));
+  const height = Math.max(2, Math.min(3.4, p.rim_thickness * 0.86));
+  const radius = Math.min(joinRadius, height / 2);
   return {
     height,
     radius,
+    joinRadius,
     centerY: p.lens_height * 0.18,
-    width: p.bridge_width + 2 * (p.rim_thickness + radius)
+    width: p.bridge_width + 2 * (p.rim_thickness + joinRadius * 0.75)
   };
 }
 
@@ -2061,69 +2155,66 @@ function addDesignTemple(side, p, outerLensWidth, frameMaterial, detailMaterial,
   const profile = new THREE.Mesh(designTempleProfileGeometry(definition, p), frameMaterial);
   profile.position.set(attachX, designTempleBarCenterY, armStartZ);
   temple.add(profile);
-  const straight = construction.templeStraight;
-  if (style.templePattern === "ribs") {
-    for (let z = 20; z < Math.min(straight - 5, 74); z += construction.templePatternSpacing) {
-      const rib = new THREE.Mesh(roundedPrismGeometry(armWidth * 1.12, construction.templeBarHeight + construction.templeTextureDepth, 1.4, 0.35, 0.08), detailMaterial);
-      rib.position.set(attachX, designTempleBarCenterY, armStartZ - z);
-      temple.add(rib);
-    }
-  }
-  if (style.templePattern === "perforated") {
-    for (let z = 20; z < Math.min(straight - 5, 74); z += construction.templePatternSpacing) {
-      const dot = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, construction.templeTextureDepth, 18), detailMaterial);
-      dot.rotation.x = Math.PI / 2;
-      dot.position.set(attachX, designTempleBarCenterY + construction.templeBarHeight / 2, armStartZ - z);
-      temple.add(dot);
-    }
-  }
-  if (style.templePattern === "diamond") {
-    for (let z = 20; z < Math.min(straight - 5, 74); z += construction.templePatternSpacing) {
-      const mark = new THREE.Mesh(roundedPrismGeometry(armWidth * 1.08, construction.templeBarHeight + construction.templeTextureDepth, 2, 0.3, 0.08), detailMaterial);
-      mark.position.set(attachX, designTempleBarCenterY, armStartZ - z);
-      mark.rotation.z = THREE.MathUtils.degToRad(45);
-      temple.add(mark);
-    }
+  if (style.templeDetailMode === "texture") {
+    addDesignTempleRelief(side, temple, detailMaterial, construction, style.templePattern);
   }
   const templeText = side < 0 ? style.leftTempleText : style.rightTempleText;
-  if (templeText) addDesignTextMark(templeText, side, p, temple, style.detailColor, armWidth);
+  if (style.templeDetailMode === "text" && templeText) {
+    addDesignTextRelief(templeText, side, temple, detailMaterial, construction);
+  }
   target.add(temple);
 }
 
-function addDesignTextMark(text, side, p, temple, color, armWidth) {
-  const canvas = document.createElement("canvas");
-  canvas.width = 512;
-  canvas.height = 96;
-  const context = canvas.getContext("2d");
-  context.clearRect(0, 0, canvas.width, canvas.height);
-  context.font = "700 54px Inter, Arial, sans-serif";
-  context.textAlign = "center";
-  context.textBaseline = "middle";
-  context.strokeStyle = "rgba(27, 17, 11, 0.62)";
-  context.lineWidth = 8;
-  context.strokeText(text, canvas.width / 2, canvas.height / 2);
-  context.fillStyle = color;
-  context.fillText(text, canvas.width / 2, canvas.height / 2);
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  texture.needsUpdate = true;
-  const material = new THREE.MeshBasicMaterial({
-    map: texture,
-    transparent: true,
-    side: THREE.DoubleSide,
-    depthWrite: false,
-    polygonOffset: true,
-    polygonOffsetFactor: -2
+function addDesignTempleRelief(side, temple, material, construction, pattern) {
+  const depth = construction.templeTextureDepth;
+  const outsideX = side * (2.5 + construction.templeDepth / 2 + depth / 2 - 0.06);
+  const limit = Math.min(construction.templeStraight - 8, 76);
+  const addMark = (width, height, z, angle = 0) => {
+    const mark = new THREE.Mesh(roundedPrismGeometry(width, height, depth, Math.min(0.26, height / 3), 0.04), material);
+    mark.rotation.y = Math.PI / 2;
+    mark.rotation.x = angle;
+    mark.position.set(outsideX, designTempleBarCenterY, designTempleProfileStartZ - z);
+    temple.add(mark);
+  };
+  for (let z = 14; z < limit; z += construction.templePatternSpacing) {
+    if (pattern === "ribs") {
+      addMark(1.2, construction.templeBarHeight * 0.68, z);
+    } else if (pattern === "diamond") {
+      addMark(Math.min(5.2, construction.templePatternSpacing * 0.7), 0.72, z, Math.PI / 4);
+      addMark(Math.min(5.2, construction.templePatternSpacing * 0.7), 0.72, z, -Math.PI / 4);
+    } else {
+      addMark(Math.min(5, construction.templePatternSpacing * 0.7), 0.72, z, (Math.floor(z / construction.templePatternSpacing) % 2 ? -1 : 1) * Math.PI / 5);
+    }
+  }
+}
+
+function addDesignTextRelief(text, side, temple, material, construction) {
+  if (!designTextFont) {
+    loadDesignTextFont();
+    return;
+  }
+  const geometry = new TextGeometry(text, {
+    font: designTextFont,
+    size: construction.templeTextSize,
+    depth: construction.templeTextDepth,
+    curveSegments: 4,
+    bevelEnabled: true,
+    bevelThickness: 0.03,
+    bevelSize: 0.025,
+    bevelSegments: 1
   });
-  const width = THREE.MathUtils.clamp(text.length * 3.2, 14, 46);
-  const mark = new THREE.Mesh(new THREE.PlaneGeometry(width, 5), material);
-  mark.position.set(
-    side * (2.5 + armWidth / 2 + 0.03),
-    designTempleBarCenterY,
-    designTempleProfileStartZ - 40
-  );
+  geometry.computeBoundingBox();
+  const box = geometry.boundingBox;
+  const width = box.max.x - box.min.x;
+  const height = box.max.y - box.min.y;
+  geometry.translate(-width / 2, -height / 2, 0);
+  const mark = new THREE.Mesh(geometry, material);
   mark.rotation.y = side < 0 ? -Math.PI / 2 : Math.PI / 2;
-  mark.renderOrder = 4;
+  mark.position.set(
+    side * (2.5 + construction.templeDepth / 2 - 0.04),
+    designTempleBarCenterY,
+    designTempleProfileStartZ - construction.templeTextPosition
+  );
   temple.add(mark);
 }
 
@@ -2421,6 +2512,8 @@ function bindUi() {
   els.designRightTemplePanel?.addEventListener("change", handleDesignOperationChange);
   els.designAssemblyPanel?.addEventListener("input", handleDesignOperationChange);
   els.designAssemblyPanel?.addEventListener("change", handleDesignOperationChange);
+  els.designAppearancePanel?.addEventListener("input", handleDesignOperationChange);
+  els.designAppearancePanel?.addEventListener("change", handleDesignOperationChange);
   els.designViewSketch?.addEventListener("click", () => setDesignView("sketch"));
   els.designView3d?.addEventListener("click", () => setDesignView("3d"));
   els.addSketchPoint?.addEventListener("click", addDesignSketchPoint);
@@ -2621,10 +2714,14 @@ function buildDesignControls() {
   syncDesignCode();
 }
 
+function setDesignFieldValue(field, value) {
+  if (field && document.activeElement !== field) field.value = String(value);
+}
+
 function syncDesignFields() {
   const draft = state.designDraft;
-  if (els.designName) els.designName.value = draft.name;
-  if (els.designDescription) els.designDescription.value = draft.description;
+  setDesignFieldValue(els.designName, draft.name);
+  setDesignFieldValue(els.designDescription, draft.description);
   [...designParameterGroups.front, ...designParameterGroups.temples].forEach(([key]) => {
     const input = document.querySelector(`[data-design-param="${key}"]`);
     const output = document.querySelector(`#design-${key}-output`);
@@ -2634,43 +2731,56 @@ function syncDesignFields() {
   });
   const style = normalizeDesignStyle(draft.style);
   if (els.designLensShape) els.designLensShape.value = style.lensShape;
+  if (els.designTempleDetailMode) els.designTempleDetailMode.value = style.templeDetailMode;
   if (els.designTemplePattern) els.designTemplePattern.value = style.templePattern;
-  if (els.designTempleText) els.designTempleText.value = style.templeText;
-  if (els.designRightTempleText) els.designRightTempleText.value = style.rightTempleText;
+  if (els.designTempleTextureControls) els.designTempleTextureControls.hidden = style.templeDetailMode !== "texture";
+  if (els.designTempleTextControls) els.designTempleTextControls.hidden = style.templeDetailMode !== "text";
+  if (els.designRightTempleTextControls) els.designRightTempleTextControls.hidden = style.templeDetailMode !== "text";
+  if (els.designRightTempleDetailNote) {
+    els.designRightTempleDetailNote.hidden = style.templeDetailMode === "text";
+    els.designRightTempleDetailNote.textContent = style.templeDetailMode === "texture"
+      ? "The relief texture follows the mirrored temple geometry."
+      : "Select raised text or a relief texture on the left temple.";
+  }
+  setDesignFieldValue(els.designTempleText, style.leftTempleText);
+  setDesignFieldValue(els.designRightTempleText, style.rightTempleText);
   if (els.designBrowBar) els.designBrowBar.checked = style.browBar;
   if (els.designFrameColor) els.designFrameColor.value = style.frameColor;
   if (els.designLensColor) els.designLensColor.value = style.lensColor;
   if (els.designDetailColor) els.designDetailColor.value = style.detailColor;
   const features = normalizeDesignFeatures(draft.features, draft.params);
   if (els.designExtrudeEnabled) els.designExtrudeEnabled.checked = features.extrude.enabled;
-  if (els.designExtrudeDepth) els.designExtrudeDepth.value = String(features.extrude.depth);
+  setDesignFieldValue(els.designExtrudeDepth, features.extrude.depth);
   if (els.designFilletEnabled) els.designFilletEnabled.checked = features.fillet.enabled;
-  if (els.designFilletRadius) els.designFilletRadius.value = String(features.fillet.radius);
+  setDesignFieldValue(els.designFilletRadius, features.fillet.radius);
   if (els.designChamferEnabled) els.designChamferEnabled.checked = features.chamfer.enabled;
-  if (els.designChamferAmount) els.designChamferAmount.value = String(features.chamfer.amount);
+  setDesignFieldValue(els.designChamferAmount, features.chamfer.amount);
   if (els.designLensRecessEnabled) els.designLensRecessEnabled.checked = features.lensRecess.enabled;
-  if (els.designLensRecessDepth) els.designLensRecessDepth.value = String(features.lensRecess.depth);
+  setDesignFieldValue(els.designLensRecessDepth, features.lensRecess.depth);
   const construction = normalizeDesignConstruction(draft.construction);
-  if (els.designLensSlotWidth) els.designLensSlotWidth.value = String(construction.lensSeatWidth);
-  if (els.designLensCaptureDepth) els.designLensCaptureDepth.value = String(construction.lensSeatDepth);
-  if (els.designLensClearance) els.designLensClearance.value = String(construction.lensClearance);
-  if (els.designLensChannelOffset) els.designLensChannelOffset.value = String(construction.lensChannelOffset);
+  setDesignFieldValue(els.designLensSlotWidth, construction.lensSeatWidth);
+  setDesignFieldValue(els.designLensCaptureDepth, construction.lensSeatDepth);
+  setDesignFieldValue(els.designLensClearance, construction.lensClearance);
+  setDesignFieldValue(els.designLensChannelOffset, construction.lensChannelOffset);
   if (els.designLensSlotMetric) els.designLensSlotMetric.textContent = `${formatNumber(construction.lensSeatWidth)} mm`;
   if (els.designLensCaptureMetric) els.designLensCaptureMetric.textContent = `${formatNumber(construction.lensSeatDepth)} mm`;
   if (els.designLensChannelSummary) {
     els.designLensChannelSummary.textContent = `${formatNumber(construction.lensSeatWidth)} mm slot / ${formatNumber(construction.lensSeatDepth)} mm grip / ${formatNumber(construction.lensClearance)} mm clearance`;
   }
-  if (els.designHingeMountHeight) els.designHingeMountHeight.value = String(construction.hingeMountHeight);
-  if (els.designHingeMountOffset) els.designHingeMountOffset.value = String(construction.hingeMountOffset);
-  if (els.designBridgeJoinRadius) els.designBridgeJoinRadius.value = String(construction.bridgeJoinRadius);
-  if (els.designTempleStraight) els.designTempleStraight.value = String(construction.templeStraight);
-  if (els.designTempleHook) els.designTempleHook.value = String(construction.templeHook);
-  if (els.designTempleHookAngle) els.designTempleHookAngle.value = String(construction.templeHookAngle);
-  if (els.designTempleBarHeight) els.designTempleBarHeight.value = String(construction.templeBarHeight);
-  if (els.designTempleDepth) els.designTempleDepth.value = String(construction.templeDepth);
-  if (els.designTempleCornerRadius) els.designTempleCornerRadius.value = String(construction.templeCornerRadius);
-  if (els.designTempleTextureDepth) els.designTempleTextureDepth.value = String(construction.templeTextureDepth);
-  if (els.designTemplePatternSpacing) els.designTemplePatternSpacing.value = String(construction.templePatternSpacing);
+  setDesignFieldValue(els.designHingeMountHeight, construction.hingeMountHeight);
+  setDesignFieldValue(els.designHingeMountOffset, construction.hingeMountOffset);
+  setDesignFieldValue(els.designBridgeJoinRadius, construction.bridgeJoinRadius);
+  setDesignFieldValue(els.designTempleStraight, construction.templeStraight);
+  setDesignFieldValue(els.designTempleHook, construction.templeHook);
+  setDesignFieldValue(els.designTempleHookAngle, construction.templeHookAngle);
+  setDesignFieldValue(els.designTempleBarHeight, construction.templeBarHeight);
+  setDesignFieldValue(els.designTempleDepth, construction.templeDepth);
+  setDesignFieldValue(els.designTempleCornerRadius, construction.templeCornerRadius);
+  setDesignFieldValue(els.designTempleTextureDepth, construction.templeTextureDepth);
+  setDesignFieldValue(els.designTemplePatternSpacing, construction.templePatternSpacing);
+  setDesignFieldValue(els.designTempleTextSize, construction.templeTextSize);
+  setDesignFieldValue(els.designTempleTextPosition, construction.templeTextPosition);
+  setDesignFieldValue(els.designTempleTextDepth, construction.templeTextDepth);
   syncDesignSelectedCornerField();
   syncDesignTempleSelectedCornerField();
   renderDesignProductionChecks();
@@ -2744,7 +2854,7 @@ function renderDesignProductionChecks() {
 }
 
 function switchDesignTab(mode) {
-  const nextMode = ["front", "left-temple", "right-temple", "assembly", "code"].includes(mode) ? mode : "front";
+  const nextMode = ["front", "left-temple", "right-temple", "assembly"].includes(mode) ? mode : "front";
   state.designDraft.step = nextMode;
   els.designTabs.forEach((button) => {
     const active = button.dataset.designTab === nextMode;
@@ -2755,10 +2865,9 @@ function switchDesignTab(mode) {
   if (els.designFeaturesPanel) els.designFeaturesPanel.hidden = nextMode !== "left-temple";
   if (els.designRightTemplePanel) els.designRightTemplePanel.hidden = nextMode !== "right-temple";
   if (els.designAssemblyPanel) els.designAssemblyPanel.hidden = nextMode !== "assembly";
-  if (els.designCodePanel) els.designCodePanel.hidden = nextMode !== "code";
+  if (els.designCodePanel) els.designCodePanel.hidden = true;
   if (nextMode === "assembly") setDesignView("3d");
-  else if (nextMode !== "code") setDesignView("sketch");
-  else drawDesignSketch();
+  else setDesignView("sketch");
 }
 
 function handleDesignProjectCopyChange() {
@@ -2767,6 +2876,7 @@ function handleDesignProjectCopyChange() {
 }
 
 function handleDesignOperationChange(event) {
+  if (event.type === "input" && event.target.matches('input[type="number"], input[type="text"], textarea')) return;
   const param = event.target.dataset.designParam;
   if (param) {
     state.designDraft.params[param] = Number(event.target.value);
@@ -2817,7 +2927,10 @@ function handleDesignOperationChange(event) {
     els.designTempleDepth,
     els.designTempleCornerRadius,
     els.designTempleTextureDepth,
-    els.designTemplePatternSpacing
+    els.designTemplePatternSpacing,
+    els.designTempleTextSize,
+    els.designTempleTextPosition,
+    els.designTempleTextDepth
   ].includes(event.target)) {
     state.designDraft.construction = normalizeDesignConstruction({
       ...state.designDraft.construction,
@@ -2835,7 +2948,10 @@ function handleDesignOperationChange(event) {
       templeDepth: els.designTempleDepth?.value,
       templeCornerRadius: els.designTempleCornerRadius?.value,
       templeTextureDepth: els.designTempleTextureDepth?.value,
-      templePatternSpacing: els.designTemplePatternSpacing?.value
+      templePatternSpacing: els.designTemplePatternSpacing?.value,
+      templeTextSize: els.designTempleTextSize?.value,
+      templeTextPosition: els.designTempleTextPosition?.value,
+      templeTextDepth: els.designTempleTextDepth?.value
     });
     state.designDraft.params.temple_length = state.designDraft.construction.templeStraight + state.designDraft.construction.templeHook;
     if ([
@@ -2863,7 +2979,8 @@ function handleDesignOperationChange(event) {
   }
   state.designDraft.style = normalizeDesignStyle({
     ...state.designDraft.style,
-    lensShape: els.designLensShape?.value,
+    lensShape: els.designLensShape?.value || state.designDraft.style.lensShape,
+    templeDetailMode: els.designTempleDetailMode?.value,
     templePattern: els.designTemplePattern?.value,
     templeText: els.designTempleText?.value,
     leftTempleText: els.designTempleText?.value,
@@ -2968,6 +3085,7 @@ function parseDesignCode(source) {
   const legacyTextValue = source.match(/(?:^|\n)\s*temple_text\s*=\s*"([^"]*)"\s*;/)?.[1];
   const leftTextValue = source.match(/(?:^|\n)\s*left_temple_text\s*=\s*"([^"]*)"\s*;/)?.[1] ?? legacyTextValue;
   const rightTextValue = source.match(/(?:^|\n)\s*right_temple_text\s*=\s*"([^"]*)"\s*;/)?.[1] ?? legacyTextValue;
+  const detailModeValue = source.match(/(?:^|\n)\s*temple_detail_mode\s*=\s*"([^"]*)"\s*;/)?.[1];
   const patternValue = source.match(/(?:^|\n)\s*temple_pattern\s*=\s*"([^"]*)"\s*;/)?.[1];
   const shapeValue = source.match(/(?:^|\n)\s*lens_shape\s*=\s*"([^"]*)"\s*;/)?.[1];
   const browValue = source.match(/(?:^|\n)\s*brow_bar_enabled\s*=\s*(true|false)\s*;/)?.[1];
@@ -3028,7 +3146,10 @@ function parseDesignCode(source) {
       templeDepth: readNumber("temple_depth", state.designDraft.construction?.templeDepth),
       templeCornerRadius: readNumber("temple_corner_radius", state.designDraft.construction?.templeCornerRadius),
       templeTextureDepth: readNumber("temple_texture_depth", state.designDraft.construction?.templeTextureDepth),
-      templePatternSpacing: readNumber("temple_pattern_spacing", state.designDraft.construction?.templePatternSpacing)
+      templePatternSpacing: readNumber("temple_pattern_spacing", state.designDraft.construction?.templePatternSpacing),
+      templeTextSize: readNumber("temple_text_size", state.designDraft.construction?.templeTextSize),
+      templeTextPosition: readNumber("temple_text_position", state.designDraft.construction?.templeTextPosition),
+      templeTextDepth: readNumber("temple_text_depth", state.designDraft.construction?.templeTextDepth)
     }),
     features: normalizeDesignFeatures({
       extrude: {
@@ -3053,6 +3174,7 @@ function parseDesignCode(source) {
       templeText: leftTextValue === undefined ? style.templeText : leftTextValue,
       leftTempleText: leftTextValue === undefined ? style.leftTempleText : leftTextValue,
       rightTempleText: rightTextValue === undefined ? style.rightTempleText : rightTextValue,
+      templeDetailMode: detailModeValue || style.templeDetailMode,
       templePattern: patternValue || style.templePattern,
       lensShape: shapeValue || style.lensShape,
       browBar: browValue === undefined ? style.browBar : browValue === "true",
@@ -7137,6 +7259,7 @@ function buildDesignScad(draft = state.designDraft) {
 
 ${paramLines}
 lens_shape = "${style.lensShape}";
+temple_detail_mode = "${style.templeDetailMode}";
 temple_pattern = "${style.templePattern}";
 left_temple_text = "${leftText}";
 right_temple_text = "${rightText}";
@@ -7171,6 +7294,7 @@ bridge_join_radius = ${formatNumber(construction.bridgeJoinRadius)};
 hinge_pad_size = ${formatNumber(designHingePadSize)};
 hinge_pad_overlap = ${formatNumber(designHingePadOverlap)};
 hinge_rear_overlap = ${formatNumber(designHingeRearOverlap)};
+hinge_landing_reach = max(2.4, rim_thickness*1.3);
 front_depth = extrude_enabled ? extrude_depth : 0.2;
 front_face_z = front_depth / 2;
 hinge_rear_z = -front_face_z + hinge_rear_overlap; // Mechanical hinge is bonded behind the planar pad.
@@ -7182,6 +7306,9 @@ temple_depth = ${formatNumber(construction.templeDepth)};
 temple_corner_radius = ${formatNumber(construction.templeCornerRadius)};
 temple_texture_depth = ${formatNumber(construction.templeTextureDepth)};
 temple_pattern_spacing = ${formatNumber(construction.templePatternSpacing)};
+temple_text_size = ${formatNumber(construction.templeTextSize)};
+temple_text_position = ${formatNumber(construction.templeTextPosition)};
+temple_text_depth = ${formatNumber(construction.templeTextDepth)};
 temple_bar_center_y = ${formatNumber(designTempleBarCenterY)}; // Center of FL-H1 temple body after rotation.
 temple_hinge_rear_z = ${formatNumber(designTempleHingeRearZ)}; // Rear face of FL-H1 temple body after orientation.
 temple_arm_join_overlap = ${formatNumber(designTempleArmJoinOverlap)}; // Solid overlap into the supplied hinge body.
@@ -7259,27 +7386,29 @@ module front_hinge(side=1) {
 }
 
 module hinge_pad(side=1) {
-  pad_x = side*(head_width/2 - hinge_pad_overlap + hinge_mount_offset + hinge_pad_size/2);
+  pad_x = side*(head_width/2 - hinge_pad_overlap + hinge_mount_offset + hinge_pad_size/2 - hinge_landing_reach/2);
   translate([pad_x, hinge_mount_height + hinge_pad_size/2, 0])
-    soft_bar([hinge_pad_size, hinge_pad_size, front_depth], min(0.55, front_depth*0.18));
+    soft_bar([hinge_pad_size + hinge_landing_reach, hinge_pad_size, front_depth], min(0.55, front_depth*0.18));
 }
 
 module bridge_profile() {
+  join_radius = min(bridge_join_radius, min(10, lens_height*0.34));
+  bridge_height = max(2, min(3.4, rim_thickness*0.86));
   translate([0, lens_height*0.18])
-    rounded_rect([bridge_width + 2*(rim_thickness + min(bridge_join_radius, min(3, rim_thickness*0.8)/2)), min(3, rim_thickness*0.8)], min(bridge_join_radius, min(3, rim_thickness*0.8)/2));
+    rounded_rect([bridge_width + 2*(rim_thickness + join_radius*0.75), bridge_height], min(join_radius, bridge_height/2));
 }
 
 module bridge_shoulder(side=1) {
-  shoulder_radius = min(bridge_join_radius, rim_thickness*1.35);
+  shoulder_radius = min(bridge_join_radius, lens_height*0.3);
   if (shoulder_radius > 0)
-    translate([side*(bridge_width/2 + rim_thickness*0.64), lens_height*0.18])
+    translate([side*(bridge_width/2 + rim_thickness*0.48 + shoulder_radius*0.32), lens_height*0.18])
       rounded_rect([shoulder_radius*2, shoulder_radius*2], shoulder_radius);
 }
 
 module hinge_pad_profile(side=1) {
-  pad_x = side*(head_width/2 - hinge_pad_overlap + hinge_mount_offset + hinge_pad_size/2);
+  pad_x = side*(head_width/2 - hinge_pad_overlap + hinge_mount_offset + hinge_pad_size/2 - hinge_landing_reach/2);
   translate([pad_x, hinge_mount_height + hinge_pad_size/2])
-    rounded_rect([hinge_pad_size, hinge_pad_size], min(0.55, front_depth*0.18));
+    rounded_rect([hinge_pad_size + hinge_landing_reach, hinge_pad_size], min(0.55, front_depth*0.18));
 }
 
 module front_planar_profile() {
@@ -7314,32 +7443,29 @@ module front() {
 }
 
 module temple_pattern_relief(side=1) {
-  if (temple_pattern == "ribs")
+  if (temple_detail_mode == "texture" && temple_pattern == "ribs")
     for (z=[20:temple_pattern_spacing:min(active_temple_straight-5,74)])
       translate([side*2.5, temple_bar_center_y, temple_arm_start_z-z])
       soft_bar([temple_depth + temple_texture_depth, temple_bar_height + temple_texture_depth, 1.4], 0.35);
-  if (temple_pattern == "diamond")
+  if (temple_detail_mode == "texture" && temple_pattern == "diamond")
     for (z=[20:temple_pattern_spacing:min(active_temple_straight-5,74)])
       translate([side*2.5, temple_bar_center_y, temple_arm_start_z-z])
       rotate([0, 0, 45])
       soft_bar([temple_depth + temple_texture_depth, temple_bar_height + temple_texture_depth, 2], 0.3);
-}
-
-module temple_pattern_cutout(side=1) {
-  if (temple_pattern == "perforated")
+  if (temple_detail_mode == "texture" && temple_pattern == "wave")
     for (z=[20:temple_pattern_spacing:min(active_temple_straight-5,74)])
       translate([side*2.5, temple_bar_center_y, temple_arm_start_z-z])
-      rotate([90,0,0])
-      cylinder(h=rim_thickness*2, r=1, center=true, $fn=20);
+      rotate([0, 0, (floor(z/temple_pattern_spacing) % 2 == 0) ? 34 : -34])
+      soft_bar([temple_depth + temple_texture_depth, temple_bar_height + temple_texture_depth, 2], 0.3);
 }
 
 module temple_mark(side=1) {
   text_value = side < 0 ? left_temple_text : right_temple_text;
-  if (text_value != "")
-    translate([side*2.5 + side*(temple_depth/2 + 0.01), temple_bar_center_y-rim_thickness*0.56, temple_arm_start_z-50])
+  if (temple_detail_mode == "text" && text_value != "")
+    translate([side*2.5 + side*(temple_depth/2 - 0.04), temple_bar_center_y-temple_text_size/2, temple_arm_start_z-temple_text_position])
     rotate([90, side > 0 ? 90 : -90, 0])
-    linear_extrude(height=0.45)
-    text(text_value, size=4, halign="center", valign="center");
+    linear_extrude(height=temple_text_depth)
+    text(text_value, size=temple_text_size, halign="center", valign="center");
 }
 
 module temple_hinge(side=1) {
@@ -7361,14 +7487,11 @@ module temple(side=1) {
   hinge_x = side * (head_width/2 - hinge_pad_overlap + hinge_mount_offset);
   translate([hinge_x, hinge_mount_height, hinge_rear_z])
   rotate([0, side*temple_spread, 0])
-  difference() {
-    union() {
-      temple_hinge(side);
-      temple_profile_body(side);
-      temple_pattern_relief(side);
-      temple_mark(side);
-    }
-    temple_pattern_cutout(side);
+  union() {
+    temple_hinge(side);
+    temple_profile_body(side);
+    temple_pattern_relief(side);
+    temple_mark(side);
   }
 }
 
