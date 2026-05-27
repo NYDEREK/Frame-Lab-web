@@ -916,6 +916,7 @@ let designCameraDistance = 260;
 let designZoomScale = 1;
 const designCameraTarget = new THREE.Vector3();
 const designViewerRotation = { x: -0.54, y: 0.56, z: 0.02 };
+const designBridgeHandleSelectionOffset = 1000;
 const bootState = window.frameLabBoot || {
   ready: false,
   editorRequested: false,
@@ -1334,6 +1335,13 @@ function setupDesignSketch() {
         distance = nextDistance;
       }
     });
+    designBridgeHandleScreenPoints(metrics).forEach((point, index) => {
+      const nextDistance = Math.hypot(point.x - x, point.y - y);
+      if (nextDistance < distance) {
+        closest = designBridgeHandleSelectionOffset + index;
+        distance = nextDistance;
+      }
+    });
     return closest;
   };
   els.designSketchCanvas.addEventListener("pointerdown", (event) => {
@@ -1362,6 +1370,13 @@ function setupDesignSketch() {
     }
     const index = locatePoint(event);
     if (index < 0) return;
+    if (isDesignBridgeSelection(index)) {
+      designSketchDragIndex = -1;
+      designSketchSelectedIndex = index;
+      syncDesignSelectedCornerField();
+      drawDesignSketch();
+      return;
+    }
     designSketchDragIndex = index;
     designSketchSelectedIndex = index;
     els.designSketchCanvas.setPointerCapture(event.pointerId);
@@ -1388,7 +1403,7 @@ function setupDesignSketch() {
       renderDesignPreview({ fitView: false });
       return;
     }
-    if (designSketchDragIndex < 0) return;
+    if (designSketchDragIndex < 0 || isDesignBridgeSelection(designSketchDragIndex)) return;
     const metrics = designSketchMetrics();
     if (!metrics) return;
     const rect = els.designSketchCanvas.getBoundingClientRect();
@@ -1484,6 +1499,29 @@ function sketchScreenPoint(index, metrics) {
     x: metrics.rightCenterX + x * metrics.lensWidth * metrics.scale,
     y: metrics.centerY - y * metrics.lensHeight * metrics.scale
   };
+}
+
+function isDesignBridgeSelection(index) {
+  return index >= designBridgeHandleSelectionOffset;
+}
+
+function designBridgeSelectionHandleIndex(index) {
+  return index - designBridgeHandleSelectionOffset;
+}
+
+function designBridgeHandlePoints(p, definition = state.designDraft) {
+  const bridge = designBridgeMetrics(p, definition);
+  return [-1, 1].flatMap((side) => [-1, 1].map((vertical) => ({
+    x: side * bridge.halfWidth,
+    y: bridge.centerY + vertical * bridge.height / 2
+  })));
+}
+
+function designBridgeHandleScreenPoints(metrics) {
+  return designBridgeHandlePoints(metrics.p, state.designDraft).map((point) => ({
+    x: metrics.centerX + point.x * metrics.scale,
+    y: metrics.centerY - point.y * metrics.scale
+  }));
 }
 
 function drawSketchProfile(ctx, centerX, metrics, expansion, fill, stroke, mirror = false) {
@@ -1711,6 +1749,17 @@ function drawDesignSketch() {
     ctx.beginPath();
     ctx.arc(point.x, point.y, index === designSketchSelectedIndex ? 6 : 4.5, 0, Math.PI * 2);
     ctx.fillStyle = index === designSketchSelectedIndex ? colors.accent : colors.text;
+    ctx.fill();
+    ctx.strokeStyle = colors.background;
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+  });
+  designBridgeHandleScreenPoints(metrics).forEach((point, index) => {
+    const selectionIndex = designBridgeHandleSelectionOffset + index;
+    const selected = designSketchSelectedIndex === selectionIndex;
+    ctx.beginPath();
+    ctx.arc(point.x, point.y, selected ? 6 : 4.5, 0, Math.PI * 2);
+    ctx.fillStyle = selected ? colors.accent : colors.text;
     ctx.fill();
     ctx.strokeStyle = colors.background;
     ctx.lineWidth = 1.5;
@@ -1950,6 +1999,24 @@ function designRoundedRectRing(width, height, radius, centerX = 0, centerY = 0) 
   ], Math.min(Math.max(0, radius), halfWidth, halfHeight));
 }
 
+function designCircleRing(radius, centerX = 0, centerY = 0, segments = 40) {
+  return Array.from({ length: segments }, (_, index) => {
+    const angle = Math.PI * 2 * index / segments;
+    return [
+      centerX + Math.cos(angle) * radius,
+      centerY + Math.sin(angle) * radius
+    ];
+  });
+}
+
+function designBridgeJoinRings(p, definition) {
+  const bridge = designBridgeMetrics(p, definition);
+  if (bridge.joinRadius <= 0.05) return [];
+  return designBridgeHandlePoints(p, definition).map((point) => (
+    designCircleRing(bridge.joinRadius, point.x, point.y)
+  ));
+}
+
 function designFrontPlanarPolygons(p, definition, innerExpansion = 0) {
   const center = designLensCenter(p);
   const bridge = designBridgeMetrics(p, definition);
@@ -1962,6 +2029,7 @@ function designFrontPlanarPolygons(p, definition, innerExpansion = 0) {
     [designOutlineRing(-center, p, definition, p.rim_thickness, true)],
     [designOutlineRing(center, p, definition, p.rim_thickness)],
     [designRoundedRectRing(bridge.width, bridge.height, bridge.radius, 0, bridge.centerY)],
+    ...designBridgeJoinRings(p, definition).map((ring) => [ring]),
     [designRoundedRectRing(landingWidth, designHingePadSize, padRadius, leftPad.x - designHingePadSize / 2 + landingReach / 2, leftPad.y + designHingePadSize / 2)],
     [designRoundedRectRing(landingWidth, designHingePadSize, padRadius, rightPad.x + designHingePadSize / 2 - landingReach / 2, rightPad.y + designHingePadSize / 2)]
   ];
@@ -2019,15 +2087,18 @@ function designProfilePath(width, height, definition, expansion = 0, asHole = fa
   return path;
 }
 
-function designBridgeMetrics(p) {
+function designBridgeMetrics(p, definition = state.designDraft) {
+  const construction = normalizeDesignConstruction(definition?.construction);
   const height = THREE.MathUtils.clamp(p.rim_thickness * 0.72, 2, 3);
   const halfWidth = p.bridge_width / 2 + p.rim_thickness * 0.62;
+  const maxJoinRadius = Math.min(5.5, p.rim_thickness * 1.55, p.bridge_width * 0.36, p.lens_height * 0.22);
   return {
     height,
     radius: 0,
     centerY: p.lens_height * 0.18,
     width: halfWidth * 2,
-    halfWidth
+    halfWidth,
+    joinRadius: THREE.MathUtils.clamp(construction.bridgeJoinRadius, 0, maxJoinRadius)
   };
 }
 
@@ -2785,12 +2856,32 @@ function syncDesignFields() {
 
 function syncDesignSelectedCornerField() {
   const sketch = normalizeDesignSketch(state.designDraft.sketch);
+  if (isDesignBridgeSelection(designSketchSelectedIndex)) {
+    const construction = normalizeDesignConstruction(state.designDraft.construction);
+    const handleIndex = designBridgeSelectionHandleIndex(designSketchSelectedIndex);
+    if (els.designSelectedCornerLabel) els.designSelectedCornerLabel.textContent = `Bridge joint ${handleIndex + 1} radius`;
+    if (els.designSelectedCornerRadius) els.designSelectedCornerRadius.value = String(construction.bridgeJoinRadius || 0);
+    return;
+  }
   designSketchSelectedIndex = Math.max(0, Math.min(designSketchSelectedIndex, sketch.points.length - 1));
   if (els.designSelectedCornerLabel) els.designSelectedCornerLabel.textContent = `Point ${designSketchSelectedIndex + 1} radius`;
   if (els.designSelectedCornerRadius) els.designSelectedCornerRadius.value = String(sketch.cornerRadii[designSketchSelectedIndex] || 0);
 }
 
 function updateSelectedDesignCorner(radius) {
+  if (isDesignBridgeSelection(designSketchSelectedIndex)) {
+    const construction = normalizeDesignConstruction({
+      ...state.designDraft.construction,
+      bridgeJoinRadius: THREE.MathUtils.clamp(Number(radius) || 0, 0, 10)
+    });
+    state.designDraft.construction = construction;
+    state.designDraft.manualCode = false;
+    setDesignFieldValue(els.designBridgeJoinRadius, construction.bridgeJoinRadius);
+    syncDesignSelectedCornerField();
+    syncDesignCode();
+    renderDesignPreview({ fitView: false });
+    return;
+  }
   const sketch = normalizeDesignSketch(state.designDraft.sketch);
   sketch.cornerRadii[designSketchSelectedIndex] = THREE.MathUtils.clamp(Number(radius) || 0, 0, 30);
   state.designDraft.sketch = sketch;
@@ -7395,6 +7486,16 @@ module bridge_profile() {
     rounded_rect([bridge_half_width*2, bridge_height], 0);
 }
 
+module bridge_joint_profile() {
+  bridge_height = max(2, min(3, rim_thickness*0.72));
+  bridge_half_width = bridge_width/2 + rim_thickness*0.62;
+  joint_radius = min(max(0, bridge_join_radius), min(5.5, rim_thickness*1.55, bridge_width*0.36, lens_height*0.22));
+  if (joint_radius > 0.05)
+    for (side=[-1, 1], vertical=[-1, 1])
+      translate([side*bridge_half_width, lens_height*0.18 + vertical*(bridge_height/2)])
+        circle(r=joint_radius, $fn=40);
+}
+
 module hinge_pad_profile(side=1) {
   pad_x = side*(head_width/2 - hinge_pad_overlap + hinge_mount_offset + hinge_pad_size/2 - hinge_landing_reach/2);
   translate([pad_x, hinge_mount_height + hinge_pad_size/2])
@@ -7407,6 +7508,7 @@ module front_planar_profile() {
     rim_profile(-lens_center);
     rim_profile(lens_center);
     bridge_profile();
+    bridge_joint_profile();
     hinge_pad_profile(-1);
     hinge_pad_profile(1);
   }
