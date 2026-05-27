@@ -1950,27 +1950,6 @@ function designRoundedRectRing(width, height, radius, centerX = 0, centerY = 0) 
   ], Math.min(Math.max(0, radius), halfWidth, halfHeight));
 }
 
-function designCircleRing(radius, centerX = 0, centerY = 0, segments = 40) {
-  const safeRadius = Math.max(0.01, radius);
-  return Array.from({ length: segments }, (_, index) => {
-    const angle = Math.PI * 2 * index / segments;
-    return [
-      centerX + Math.cos(angle) * safeRadius,
-      centerY + Math.sin(angle) * safeRadius
-    ];
-  });
-}
-
-function designBridgeConcaveCutouts(bridge) {
-  if (bridge.joinRadius <= 0.05) return [];
-  const radius = bridge.joinRadius;
-  const x = bridge.halfWidth;
-  const yOffset = bridge.height / 2;
-  return [-1, 1].flatMap((side) => [-1, 1].map((vertical) => (
-    designCircleRing(radius, side * x, bridge.centerY + vertical * yOffset)
-  )));
-}
-
 function designFrontPlanarPolygons(p, definition, innerExpansion = 0) {
   const center = designLensCenter(p);
   const bridge = designBridgeMetrics(p, definition);
@@ -1987,10 +1966,8 @@ function designFrontPlanarPolygons(p, definition, innerExpansion = 0) {
     [designRoundedRectRing(landingWidth, designHingePadSize, padRadius, rightPad.x + designHingePadSize / 2 - landingReach / 2, rightPad.y + designHingePadSize / 2)]
   ];
   const solidProfile = polygonClipping.union(...solids);
-  const bridgeCutouts = designBridgeConcaveCutouts(bridge);
   return polygonClipping.difference(
     solidProfile,
-    ...bridgeCutouts.map((ring) => [ring]),
     [designOutlineRing(-center, p, definition, innerExpansion, true)],
     [designOutlineRing(center, p, definition, innerExpansion)]
   );
@@ -2042,19 +2019,12 @@ function designProfilePath(width, height, definition, expansion = 0, asHole = fa
   return path;
 }
 
-function designBridgeMetrics(p, definition = state.designDraft) {
-  const construction = normalizeDesignConstruction(definition?.construction);
+function designBridgeMetrics(p) {
   const height = THREE.MathUtils.clamp(p.rim_thickness * 0.72, 2, 3);
-  const joinRadius = THREE.MathUtils.clamp(
-    construction.bridgeJoinRadius,
-    0,
-    Math.min(5.5, height * 0.82, p.lens_height * 0.22, p.bridge_width * 0.36, p.rim_thickness * 1.35)
-  );
   const halfWidth = p.bridge_width / 2 + p.rim_thickness * 0.62;
   return {
     height,
     radius: 0,
-    joinRadius,
     centerY: p.lens_height * 0.18,
     width: halfWidth * 2,
     halfWidth
@@ -7425,16 +7395,6 @@ module bridge_profile() {
     rounded_rect([bridge_half_width*2, bridge_height], 0);
 }
 
-module bridge_concave_cuts() {
-  bridge_height = max(2, min(3, rim_thickness*0.72));
-  join_radius = min(bridge_join_radius, min(5.5, bridge_height*0.82, lens_height*0.22, bridge_width*0.36, rim_thickness*1.35));
-  bridge_half_width = bridge_width/2 + rim_thickness*0.62;
-  if (join_radius > 0.05)
-    for (side=[-1,1], vertical=[-1,1])
-      translate([side*bridge_half_width, lens_height*0.18 + vertical*(bridge_height/2)])
-        circle(r=join_radius, $fn=40);
-}
-
 module hinge_pad_profile(side=1) {
   pad_x = side*(head_width/2 - hinge_pad_overlap + hinge_mount_offset + hinge_pad_size/2 - hinge_landing_reach/2);
   translate([pad_x, hinge_mount_height + hinge_pad_size/2])
@@ -7443,15 +7403,12 @@ module hinge_pad_profile(side=1) {
 
 module front_planar_profile() {
   // All front interfaces are joined before extrusion, matching the Design Lab preview.
-  difference() {
-    union() {
-      rim_profile(-lens_center);
-      rim_profile(lens_center);
-      bridge_profile();
-      hinge_pad_profile(-1);
-      hinge_pad_profile(1);
-    }
-    bridge_concave_cuts();
+  union() {
+    rim_profile(-lens_center);
+    rim_profile(lens_center);
+    bridge_profile();
+    hinge_pad_profile(-1);
+    hinge_pad_profile(1);
   }
 }
 
