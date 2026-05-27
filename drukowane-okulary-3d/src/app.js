@@ -1718,7 +1718,8 @@ function drawDesignSketch() {
   });
   const topY = centerY - (p.lens_height / 2 + p.rim_thickness + 14) * scale;
   sketchDimension(ctx, centerX - p.head_width * scale / 2, topY, centerX + p.head_width * scale / 2, topY, `${formatNumber(p.head_width)} mm overall width`);
-  const bridgeY = centerY - p.lens_height * scale * 0.1;
+  const bridge = designBridgeMetrics(p, state.designDraft);
+  const bridgeY = centerY - (bridge.centerY + bridge.height / 2 + 10) * scale;
   sketchDimension(ctx, centerX - p.bridge_width * scale / 2, bridgeY, centerX + p.bridge_width * scale / 2, bridgeY, `${formatNumber(p.bridge_width)} mm bridge`);
   const heightX = rightCenterX + (p.lens_width / 2 + p.rim_thickness + 12) * scale;
   sketchDimension(ctx, heightX, centerY - p.lens_height * scale / 2, heightX, centerY + p.lens_height * scale / 2, `${formatNumber(p.lens_height)} mm`);
@@ -1949,14 +1950,34 @@ function designRoundedRectRing(width, height, radius, centerX = 0, centerY = 0) 
   ], Math.min(Math.max(0, radius), halfWidth, halfHeight));
 }
 
+function designCircleRing(radius, centerX = 0, centerY = 0, segments = 40) {
+  const safeRadius = Math.max(0.01, radius);
+  return Array.from({ length: segments }, (_, index) => {
+    const angle = Math.PI * 2 * index / segments;
+    return [
+      centerX + Math.cos(angle) * safeRadius,
+      centerY + Math.sin(angle) * safeRadius
+    ];
+  });
+}
+
+function designBridgeConcaveCutouts(bridge) {
+  if (bridge.joinRadius <= 0.05) return [];
+  const radius = bridge.joinRadius;
+  const x = bridge.halfWidth;
+  const yOffset = bridge.height / 2;
+  return [-1, 1].flatMap((side) => [-1, 1].map((vertical) => (
+    designCircleRing(radius, side * x, bridge.centerY + vertical * yOffset)
+  )));
+}
+
 function designFrontPlanarPolygons(p, definition, innerExpansion = 0) {
-  const construction = normalizeDesignConstruction(definition?.construction);
   const center = designLensCenter(p);
   const bridge = designBridgeMetrics(p, definition);
   const leftPad = designHingePadOrigin(-1, p, definition);
   const rightPad = designHingePadOrigin(1, p, definition);
   const padRadius = 0.45;
-  const landingReach = Math.max(2.4, p.rim_thickness * 1.3);
+  const landingReach = Math.max(designHingePadSize, p.rim_thickness * 2.2);
   const landingWidth = designHingePadSize + landingReach;
   const solids = [
     [designOutlineRing(-center, p, definition, p.rim_thickness, true)],
@@ -1965,15 +1986,11 @@ function designFrontPlanarPolygons(p, definition, innerExpansion = 0) {
     [designRoundedRectRing(landingWidth, designHingePadSize, padRadius, leftPad.x - designHingePadSize / 2 + landingReach / 2, leftPad.y + designHingePadSize / 2)],
     [designRoundedRectRing(landingWidth, designHingePadSize, padRadius, rightPad.x + designHingePadSize / 2 - landingReach / 2, rightPad.y + designHingePadSize / 2)]
   ];
-  const shoulderRadius = Math.min(construction.bridgeJoinRadius, p.lens_height * 0.3);
-  if (shoulderRadius > 0) {
-    const shoulderX = p.bridge_width / 2 + p.rim_thickness * 0.48 + shoulderRadius * 0.32;
-    solids.push([designRoundedRectRing(shoulderRadius * 2, shoulderRadius * 2, shoulderRadius, -shoulderX, bridge.centerY)]);
-    solids.push([designRoundedRectRing(shoulderRadius * 2, shoulderRadius * 2, shoulderRadius, shoulderX, bridge.centerY)]);
-  }
   const solidProfile = polygonClipping.union(...solids);
+  const bridgeCutouts = designBridgeConcaveCutouts(bridge);
   return polygonClipping.difference(
     solidProfile,
+    ...bridgeCutouts.map((ring) => [ring]),
     [designOutlineRing(-center, p, definition, innerExpansion, true)],
     [designOutlineRing(center, p, definition, innerExpansion)]
   );
@@ -2027,15 +2044,20 @@ function designProfilePath(width, height, definition, expansion = 0, asHole = fa
 
 function designBridgeMetrics(p, definition = state.designDraft) {
   const construction = normalizeDesignConstruction(definition?.construction);
-  const joinRadius = THREE.MathUtils.clamp(construction.bridgeJoinRadius, 0, Math.min(10, p.lens_height * 0.34));
-  const height = Math.max(2, Math.min(3.4, p.rim_thickness * 0.86));
-  const radius = Math.min(joinRadius, height / 2);
+  const height = THREE.MathUtils.clamp(p.rim_thickness * 0.72, 2, 3);
+  const joinRadius = THREE.MathUtils.clamp(
+    construction.bridgeJoinRadius,
+    0,
+    Math.min(5.5, height * 0.82, p.lens_height * 0.22, p.bridge_width * 0.36, p.rim_thickness * 1.35)
+  );
+  const halfWidth = p.bridge_width / 2 + p.rim_thickness * 0.62;
   return {
     height,
-    radius,
+    radius: 0,
     joinRadius,
     centerY: p.lens_height * 0.18,
-    width: p.bridge_width + 2 * (p.rim_thickness + joinRadius * 0.75)
+    width: halfWidth * 2,
+    halfWidth
   };
 }
 
@@ -2160,7 +2182,7 @@ function addDesignTemple(side, p, outerLensWidth, frameMaterial, detailMaterial,
   }
   const templeText = side < 0 ? style.leftTempleText : style.rightTempleText;
   if (style.templeDetailMode === "text" && templeText) {
-    addDesignTextRelief(templeText, side, temple, detailMaterial, construction);
+    addDesignTextRelief(templeText, side, temple, frameMaterial, construction);
   }
   target.add(temple);
 }
@@ -2211,7 +2233,7 @@ function addDesignTextRelief(text, side, temple, material, construction) {
   const mark = new THREE.Mesh(geometry, material);
   mark.rotation.y = side < 0 ? -Math.PI / 2 : Math.PI / 2;
   mark.position.set(
-    side * (2.5 + construction.templeDepth / 2 - 0.04),
+    side * (2.5 + construction.templeDepth / 2 - construction.templeTextDepth * 0.35),
     designTempleBarCenterY,
     designTempleProfileStartZ - construction.templeTextPosition
   );
@@ -2504,16 +2526,21 @@ function bindUi() {
   });
   els.exitDesignLab?.addEventListener("click", scrollGalleryIntoView);
   els.designTabs.forEach((button) => button.addEventListener("click", () => switchDesignTab(button.dataset.designTab)));
-  els.designOperationsPanel?.addEventListener("input", handleDesignOperationChange);
-  els.designOperationsPanel?.addEventListener("change", handleDesignOperationChange);
-  els.designFeaturesPanel?.addEventListener("input", handleDesignOperationChange);
-  els.designFeaturesPanel?.addEventListener("change", handleDesignOperationChange);
-  els.designRightTemplePanel?.addEventListener("input", handleDesignOperationChange);
-  els.designRightTemplePanel?.addEventListener("change", handleDesignOperationChange);
-  els.designAssemblyPanel?.addEventListener("input", handleDesignOperationChange);
-  els.designAssemblyPanel?.addEventListener("change", handleDesignOperationChange);
-  els.designAppearancePanel?.addEventListener("input", handleDesignOperationChange);
-  els.designAppearancePanel?.addEventListener("change", handleDesignOperationChange);
+  [
+    els.designOperationsPanel,
+    els.designFeaturesPanel,
+    els.designRightTemplePanel,
+    els.designAssemblyPanel,
+    els.designAppearancePanel
+  ].forEach((panel) => {
+    panel?.addEventListener("input", handleDesignOperationChange);
+    panel?.addEventListener("change", handleDesignOperationChange);
+    panel?.addEventListener("focusout", (event) => {
+      if (event.target.matches('input[type="number"], input[type="text"], textarea')) {
+        handleDesignOperationChange(event);
+      }
+    });
+  });
   els.designViewSketch?.addEventListener("click", () => setDesignView("sketch"));
   els.designView3d?.addEventListener("click", () => setDesignView("3d"));
   els.addSketchPoint?.addEventListener("click", addDesignSketchPoint);
@@ -7294,7 +7321,7 @@ bridge_join_radius = ${formatNumber(construction.bridgeJoinRadius)};
 hinge_pad_size = ${formatNumber(designHingePadSize)};
 hinge_pad_overlap = ${formatNumber(designHingePadOverlap)};
 hinge_rear_overlap = ${formatNumber(designHingeRearOverlap)};
-hinge_landing_reach = max(2.4, rim_thickness*1.3);
+hinge_landing_reach = max(hinge_pad_size, rim_thickness*2.2);
 front_depth = extrude_enabled ? extrude_depth : 0.2;
 front_face_z = front_depth / 2;
 hinge_rear_z = -front_face_z + hinge_rear_overlap; // Mechanical hinge is bonded behind the planar pad.
@@ -7392,17 +7419,20 @@ module hinge_pad(side=1) {
 }
 
 module bridge_profile() {
-  join_radius = min(bridge_join_radius, min(10, lens_height*0.34));
-  bridge_height = max(2, min(3.4, rim_thickness*0.86));
+  bridge_height = max(2, min(3, rim_thickness*0.72));
+  bridge_half_width = bridge_width/2 + rim_thickness*0.62;
   translate([0, lens_height*0.18])
-    rounded_rect([bridge_width + 2*(rim_thickness + join_radius*0.75), bridge_height], min(join_radius, bridge_height/2));
+    rounded_rect([bridge_half_width*2, bridge_height], 0);
 }
 
-module bridge_shoulder(side=1) {
-  shoulder_radius = min(bridge_join_radius, lens_height*0.3);
-  if (shoulder_radius > 0)
-    translate([side*(bridge_width/2 + rim_thickness*0.48 + shoulder_radius*0.32), lens_height*0.18])
-      rounded_rect([shoulder_radius*2, shoulder_radius*2], shoulder_radius);
+module bridge_concave_cuts() {
+  bridge_height = max(2, min(3, rim_thickness*0.72));
+  join_radius = min(bridge_join_radius, min(5.5, bridge_height*0.82, lens_height*0.22, bridge_width*0.36, rim_thickness*1.35));
+  bridge_half_width = bridge_width/2 + rim_thickness*0.62;
+  if (join_radius > 0.05)
+    for (side=[-1,1], vertical=[-1,1])
+      translate([side*bridge_half_width, lens_height*0.18 + vertical*(bridge_height/2)])
+        circle(r=join_radius, $fn=40);
 }
 
 module hinge_pad_profile(side=1) {
@@ -7413,14 +7443,15 @@ module hinge_pad_profile(side=1) {
 
 module front_planar_profile() {
   // All front interfaces are joined before extrusion, matching the Design Lab preview.
-  union() {
-    rim_profile(-lens_center);
-    rim_profile(lens_center);
-    bridge_profile();
-    bridge_shoulder(-1);
-    bridge_shoulder(1);
-    hinge_pad_profile(-1);
-    hinge_pad_profile(1);
+  difference() {
+    union() {
+      rim_profile(-lens_center);
+      rim_profile(lens_center);
+      bridge_profile();
+      hinge_pad_profile(-1);
+      hinge_pad_profile(1);
+    }
+    bridge_concave_cuts();
   }
 }
 
@@ -7462,7 +7493,7 @@ module temple_pattern_relief(side=1) {
 module temple_mark(side=1) {
   text_value = side < 0 ? left_temple_text : right_temple_text;
   if (temple_detail_mode == "text" && text_value != "")
-    translate([side*2.5 + side*(temple_depth/2 - 0.04), temple_bar_center_y-temple_text_size/2, temple_arm_start_z-temple_text_position])
+    translate([side*2.5 + side*(temple_depth/2 - temple_text_depth*0.35), temple_bar_center_y-temple_text_size/2, temple_arm_start_z-temple_text_position])
     rotate([90, side > 0 ? 90 : -90, 0])
     linear_extrude(height=temple_text_depth)
     text(text_value, size=temple_text_size, halign="center", valign="center");
