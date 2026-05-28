@@ -214,6 +214,8 @@ const defaultDesignConstruction = {
   hingeMountOffset: 0,
   bridgeJoinRadius: 2.4,
   bridgeThickness: 6,
+  bridgeTopJoinOffset: 3,
+  bridgeBottomJoinOffset: -5.4,
   bridgeTopRadius: 2.4,
   bridgeBottomRadius: 4.2,
   templeStraight: 65,
@@ -1186,6 +1188,8 @@ function normalizeDesignConstruction(construction = {}) {
     hingeMountOffset: bounded("hingeMountOffset", -4, 0),
     bridgeJoinRadius: bridgeTopRadius,
     bridgeThickness: bounded("bridgeThickness", 3, 12),
+    bridgeTopJoinOffset: bounded("bridgeTopJoinOffset", -18, 18),
+    bridgeBottomJoinOffset: bounded("bridgeBottomJoinOffset", -18, 18),
     bridgeTopRadius,
     bridgeBottomRadius,
     templeStraight: bounded("templeStraight", 35, 120),
@@ -1393,8 +1397,9 @@ function setupDesignSketch() {
     const index = locatePoint(event);
     if (index < 0) return;
     if (isDesignBridgeSelection(index)) {
-      designSketchDragIndex = -1;
+      designSketchDragIndex = index;
       designSketchSelectedIndex = index;
+      els.designSketchCanvas.setPointerCapture(event.pointerId);
       syncDesignSelectedCornerField();
       drawDesignSketch();
       return;
@@ -1425,9 +1430,13 @@ function setupDesignSketch() {
       renderDesignPreview({ fitView: false });
       return;
     }
-    if (designSketchDragIndex < 0 || isDesignBridgeSelection(designSketchDragIndex)) return;
     const metrics = designSketchMetrics();
     if (!metrics) return;
+    if (isDesignBridgeSelection(designSketchDragIndex)) {
+      updateDraggedDesignBridgeHandle(event, metrics);
+      return;
+    }
+    if (designSketchDragIndex < 0) return;
     const rect = els.designSketchCanvas.getBoundingClientRect();
     const x = (event.clientX - rect.left - metrics.rightCenterX) / (metrics.lensWidth * metrics.scale);
     const y = (metrics.centerY - (event.clientY - rect.top)) / (metrics.lensHeight * metrics.scale);
@@ -1544,6 +1553,37 @@ function designBridgeHandleScreenPoints(metrics) {
     x: metrics.centerX + point.x * metrics.scale,
     y: metrics.centerY - point.y * metrics.scale
   }));
+}
+
+function updateDraggedDesignBridgeHandle(event, metrics) {
+  if (!metrics || !els.designSketchCanvas) return;
+  const rect = els.designSketchCanvas.getBoundingClientRect();
+  const handleIndex = THREE.MathUtils.clamp(designBridgeSelectionHandleIndex(designSketchDragIndex), 0, 1);
+  const p = metrics.p;
+  const construction = normalizeDesignConstruction(state.designDraft.construction);
+  const bridge = designBridgeMetrics(p, state.designDraft);
+  const rim = designOuterRimRing(1, p, state.designDraft);
+  const rimMinY = Math.min(...rim.map(([, y]) => y));
+  const rimMaxY = Math.max(...rim.map(([, y]) => y));
+  const pointerY = (metrics.centerY - (event.clientY - rect.top)) / metrics.scale;
+  const minSeparation = Math.max(2.2, p.rim_thickness * 0.72);
+  const baseY = bridge.centerY;
+  let topJoinY = bridge.topJoinY;
+  let bottomJoinY = bridge.bottomJoinY;
+  if (handleIndex === 0) {
+    topJoinY = THREE.MathUtils.clamp(pointerY, bottomJoinY + minSeparation, rimMaxY - 0.2);
+  } else {
+    bottomJoinY = THREE.MathUtils.clamp(pointerY, rimMinY + 0.2, topJoinY - minSeparation);
+  }
+  state.designDraft.construction = normalizeDesignConstruction({
+    ...construction,
+    bridgeTopJoinOffset: topJoinY - baseY,
+    bridgeBottomJoinOffset: bottomJoinY - baseY
+  });
+  state.designDraft.manualCode = false;
+  syncDesignFields();
+  syncDesignCode();
+  renderDesignPreview({ fitView: false });
 }
 
 function drawSketchProfile(ctx, centerX, metrics, expansion, fill, stroke, mirror = false) {
@@ -2227,12 +2267,27 @@ function designBridgeMetrics(p, definition = state.designDraft) {
       ? Math.max(clearHalfWidth, outerJoinX)
       : clearHalfWidth;
   };
-  const topHalfWidth = bridgeExteriorHalfWidthAtY(upperY) + bondOverlap;
-  const bottomHalfWidth = bridgeExteriorHalfWidthAtY(lowerY) + bondOverlap;
+  const rim = designOuterRimRing(1, p, definition);
+  const rimMinY = Math.min(...rim.map(([, y]) => y));
+  const rimMaxY = Math.max(...rim.map(([, y]) => y));
+  const topJoinY = THREE.MathUtils.clamp(
+    centerY + parseDesignNumber(construction.bridgeTopJoinOffset, height / 2),
+    lowerY + 1.8,
+    rimMaxY - 0.2
+  );
+  const bottomJoinY = THREE.MathUtils.clamp(
+    centerY + parseDesignNumber(construction.bridgeBottomJoinOffset, -height / 2 - p.rim_thickness * 0.8),
+    rimMinY + 0.2,
+    topJoinY - 1.8
+  );
+  const topHalfWidth = bridgeExteriorHalfWidthAtY(topJoinY) + bondOverlap;
+  const bottomHalfWidth = bridgeExteriorHalfWidthAtY(bottomJoinY) + bondOverlap;
   const halfWidth = Math.max(topHalfWidth, bottomHalfWidth);
-  const sideLength = Math.hypot(topHalfWidth - bottomHalfWidth, upperY - lowerY);
-  const maxTopRadius = Math.min(topHalfWidth * 0.48, sideLength * 0.48, p.rim_thickness * 1.45, 5.2);
-  const maxBottomRadius = Math.min(bottomHalfWidth * 0.48, sideLength * 0.48, p.rim_thickness * 1.8, 6.2);
+  const topLineLength = Math.hypot(topHalfWidth, topJoinY - upperY);
+  const bottomLineLength = Math.hypot(bottomHalfWidth, bottomJoinY - lowerY);
+  const sideLength = Math.hypot(topHalfWidth - bottomHalfWidth, topJoinY - bottomJoinY);
+  const maxTopRadius = Math.min(topHalfWidth * 0.48, sideLength * 0.48, topLineLength * 0.36, p.rim_thickness * 1.45, 5.2);
+  const maxBottomRadius = Math.min(bottomHalfWidth * 0.48, sideLength * 0.48, bottomLineLength * 0.36, p.rim_thickness * 1.8, 6.2);
   const topRadius = THREE.MathUtils.clamp(
     parseDesignNumber(construction.bridgeTopRadius, defaultDesignConstruction.bridgeTopRadius),
     0,
@@ -2248,6 +2303,8 @@ function designBridgeMetrics(p, definition = state.designDraft) {
     centerY,
     topY: upperY,
     bottomY: lowerY,
+    topJoinY,
+    bottomJoinY,
     width: halfWidth * 2,
     halfWidth,
     topHalfWidth,
@@ -2264,12 +2321,12 @@ function designBridgeMetrics(p, definition = state.designDraft) {
 function designBridgeProfileOutline(p, definition = state.designDraft) {
   const bridge = designBridgeMetrics(p, definition);
   const points = [
-    { x: -bridge.topHalfWidth, y: bridge.topY },
+    { x: -bridge.topHalfWidth, y: bridge.topJoinY },
     { x: 0, y: bridge.topY },
-    { x: bridge.topHalfWidth, y: bridge.topY },
-    { x: bridge.bottomHalfWidth, y: bridge.bottomY },
+    { x: bridge.topHalfWidth, y: bridge.topJoinY },
+    { x: bridge.bottomHalfWidth, y: bridge.bottomJoinY },
     { x: 0, y: bridge.bottomY },
-    { x: -bridge.bottomHalfWidth, y: bridge.bottomY }
+    { x: -bridge.bottomHalfWidth, y: bridge.bottomJoinY }
   ];
   return {
     points,
@@ -3279,6 +3336,8 @@ function handleDesignOperationChange(event) {
       hingeMountHeight: els.designHingeMountHeight?.value,
       hingeMountOffset: els.designHingeMountOffset?.value,
       bridgeThickness: els.designBridgeThickness?.value,
+      bridgeTopJoinOffset: state.designDraft.construction?.bridgeTopJoinOffset,
+      bridgeBottomJoinOffset: state.designDraft.construction?.bridgeBottomJoinOffset,
       bridgeTopRadius: els.designBridgeTopRadius?.value,
       bridgeBottomRadius: els.designBridgeBottomRadius?.value,
       templeStraight: els.designTempleStraight?.value,
@@ -3480,6 +3539,8 @@ function parseDesignCode(source) {
       hingeMountOffset: readNumber("hinge_mount_offset", state.designDraft.construction?.hingeMountOffset),
       bridgeJoinRadius: readNumber("bridge_join_radius", state.designDraft.construction?.bridgeJoinRadius),
       bridgeThickness: readNumber("bridge_thickness", state.designDraft.construction?.bridgeThickness),
+      bridgeTopJoinOffset: readNumber("bridge_top_join_offset", state.designDraft.construction?.bridgeTopJoinOffset),
+      bridgeBottomJoinOffset: readNumber("bridge_bottom_join_offset", state.designDraft.construction?.bridgeBottomJoinOffset),
       bridgeTopRadius: readNumber("bridge_top_radius", state.designDraft.construction?.bridgeTopRadius),
       bridgeBottomRadius: readNumber("bridge_bottom_radius", state.designDraft.construction?.bridgeBottomRadius),
       templeStraight: readNumber("temple_straight", state.designDraft.construction?.templeStraight),
@@ -7649,6 +7710,8 @@ hinge_mount_height = ${formatNumber(construction.hingeMountHeight)};
 hinge_mount_offset = ${formatNumber(construction.hingeMountOffset)};
 bridge_join_radius = ${formatNumber(construction.bridgeTopRadius)}; // Legacy alias for upper bridge blend.
 bridge_thickness = ${formatNumber(construction.bridgeThickness)};
+bridge_top_join_offset = ${formatNumber(construction.bridgeTopJoinOffset)};
+bridge_bottom_join_offset = ${formatNumber(construction.bridgeBottomJoinOffset)};
 bridge_top_radius = ${formatNumber(construction.bridgeTopRadius)};
 bridge_bottom_radius = ${formatNumber(construction.bridgeBottomRadius)};
 hinge_pad_size = ${formatNumber(designHingePadSize)};
