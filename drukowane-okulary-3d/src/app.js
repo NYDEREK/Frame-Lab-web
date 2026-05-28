@@ -1162,7 +1162,6 @@ function normalizeDesignConstruction(construction = {}) {
     lensSeatDepth: bounded("lensSeatDepth", 0.15, 1.2),
     lensClearance: bounded("lensClearance", 0, 0.6),
     lensChannelOffset: bounded("lensChannelOffset", -1, 1),
-    // Keep the complete 6 mm landing bonded to the planar front profile.
     hingeMountHeight: bounded("hingeMountHeight", -12, 12),
     hingeMountOffset: bounded("hingeMountOffset", -4, 0),
     bridgeJoinRadius: bounded("bridgeJoinRadius", 0, 10),
@@ -1510,11 +1509,7 @@ function designBridgeSelectionHandleIndex(index) {
 }
 
 function designBridgeHandlePoints(p, definition = state.designDraft) {
-  const bridge = designBridgeMetrics(p, definition);
-  return [-1, 1].flatMap((side) => [-1, 1].map((vertical) => ({
-    x: side * bridge.halfWidth,
-    y: bridge.centerY + vertical * bridge.height / 2
-  })));
+  return designBridgeProfileOutline(p, definition).points;
 }
 
 function designBridgeHandleScreenPoints(metrics) {
@@ -2000,8 +1995,8 @@ function designRoundedRectRing(width, height, radius, centerX = 0, centerY = 0) 
 }
 
 function designBridgeProfileRing(p, definition) {
-  const bridge = designBridgeMetrics(p, definition);
-  return designRoundedRectRing(bridge.width, bridge.height, bridge.cornerRadius, 0, bridge.centerY);
+  const bridge = designBridgeProfileOutline(p, definition);
+  return sampledRoundedPolygon(bridge.points, bridge.radii);
 }
 
 function designFrontPlanarPolygons(p, definition, innerExpansion = 0) {
@@ -2009,8 +2004,6 @@ function designFrontPlanarPolygons(p, definition, innerExpansion = 0) {
   const leftPad = designHingePadOrigin(-1, p, definition);
   const rightPad = designHingePadOrigin(1, p, definition);
   const padRadius = 0.45;
-  const landingReach = Math.max(designHingePadSize, p.rim_thickness * 2.2);
-  const landingWidth = designHingePadSize + landingReach;
   const leftRim = polygonClipping.difference(
     [designOutlineRing(-center, p, definition, p.rim_thickness, true)],
     [designOutlineRing(-center, p, definition, innerExpansion, true)]
@@ -2023,8 +2016,8 @@ function designFrontPlanarPolygons(p, definition, innerExpansion = 0) {
     ...leftRim,
     ...rightRim,
     [designBridgeProfileRing(p, definition)],
-    [designRoundedRectRing(landingWidth, designHingePadSize, padRadius, leftPad.x - designHingePadSize / 2 + landingReach / 2, leftPad.y + designHingePadSize / 2)],
-    [designRoundedRectRing(landingWidth, designHingePadSize, padRadius, rightPad.x + designHingePadSize / 2 - landingReach / 2, rightPad.y + designHingePadSize / 2)]
+    [designRoundedRectRing(designHingePadSize, designHingePadSize, padRadius, leftPad.x, leftPad.y + designHingePadSize / 2)],
+    [designRoundedRectRing(designHingePadSize, designHingePadSize, padRadius, rightPad.x, rightPad.y + designHingePadSize / 2)]
   ];
   return polygonClipping.union(...solids);
 }
@@ -2093,6 +2086,21 @@ function designBridgeMetrics(p, definition = state.designDraft) {
     overlap,
     joinRadius,
     cornerRadius: Math.min(joinRadius, height / 2 - 0.02)
+  };
+}
+
+function designBridgeProfileOutline(p, definition = state.designDraft) {
+  const bridge = designBridgeMetrics(p, definition);
+  const halfHeight = bridge.height / 2;
+  const points = [
+    { x: -bridge.halfWidth, y: bridge.centerY + halfHeight },
+    { x: bridge.halfWidth, y: bridge.centerY + halfHeight },
+    { x: bridge.halfWidth, y: bridge.centerY - halfHeight },
+    { x: -bridge.halfWidth, y: bridge.centerY - halfHeight }
+  ];
+  return {
+    points,
+    radii: points.map(() => bridge.cornerRadius)
   };
 }
 
@@ -2853,7 +2861,7 @@ function syncDesignSelectedCornerField() {
   if (isDesignBridgeSelection(designSketchSelectedIndex)) {
     const construction = normalizeDesignConstruction(state.designDraft.construction);
     const handleIndex = designBridgeSelectionHandleIndex(designSketchSelectedIndex);
-    if (els.designSelectedCornerLabel) els.designSelectedCornerLabel.textContent = `Bridge joint ${handleIndex + 1} radius`;
+    if (els.designSelectedCornerLabel) els.designSelectedCornerLabel.textContent = `Bridge point ${handleIndex + 1} radius`;
     if (els.designSelectedCornerRadius) els.designSelectedCornerRadius.value = String(construction.bridgeJoinRadius || 0);
     return;
   }
@@ -7376,7 +7384,6 @@ bridge_join_radius = ${formatNumber(construction.bridgeJoinRadius)};
 hinge_pad_size = ${formatNumber(designHingePadSize)};
 hinge_pad_overlap = ${formatNumber(designHingePadOverlap)};
 hinge_rear_overlap = ${formatNumber(designHingeRearOverlap)};
-hinge_landing_reach = max(hinge_pad_size, rim_thickness*2.2);
 front_depth = extrude_enabled ? extrude_depth : 0.2;
 front_face_z = front_depth / 2;
 hinge_rear_z = -front_face_z + hinge_rear_overlap; // Mechanical hinge is bonded behind the planar pad.
@@ -7468,9 +7475,9 @@ module front_hinge(side=1) {
 }
 
 module hinge_pad(side=1) {
-  pad_x = side*(head_width/2 - hinge_pad_overlap + hinge_mount_offset + hinge_pad_size/2 - hinge_landing_reach/2);
+  pad_x = side*(head_width/2 - hinge_pad_overlap + hinge_mount_offset);
   translate([pad_x, hinge_mount_height + hinge_pad_size/2, 0])
-    soft_bar([hinge_pad_size + hinge_landing_reach, hinge_pad_size, front_depth], min(0.55, front_depth*0.18));
+    soft_bar([hinge_pad_size, hinge_pad_size, front_depth], min(0.55, front_depth*0.18));
 }
 
 module bridge_profile() {
@@ -7488,9 +7495,9 @@ module bridge_profile() {
 }
 
 module hinge_pad_profile(side=1) {
-  pad_x = side*(head_width/2 - hinge_pad_overlap + hinge_mount_offset + hinge_pad_size/2 - hinge_landing_reach/2);
+  pad_x = side*(head_width/2 - hinge_pad_overlap + hinge_mount_offset);
   translate([pad_x, hinge_mount_height + hinge_pad_size/2])
-    rounded_rect([hinge_pad_size + hinge_landing_reach, hinge_pad_size], min(0.55, front_depth*0.18));
+    rounded_rect([hinge_pad_size, hinge_pad_size], min(0.55, front_depth*0.18));
 }
 
 module front_planar_profile() {
