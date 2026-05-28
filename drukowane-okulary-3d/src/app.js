@@ -2127,9 +2127,7 @@ function designFrontPlanarPolygons(p, definition, innerExpansion = 0) {
     ...leftRim,
     ...rightRim,
     [designBridgeProfileRing(p, definition)],
-    [designHingePadRing(-1, p, definition)],
     [designHingePadConnectorRing(-1, p, definition)],
-    [designHingePadRing(1, p, definition)],
     [designHingePadConnectorRing(1, p, definition)]
   ];
   return polygonClipping.union(...solids);
@@ -2225,21 +2223,11 @@ function designBridgeProfileOutline(p, definition = state.designDraft) {
   };
 }
 
-function designHingePadRing(side, p, definition = state.designDraft) {
-  const pad = designHingePadOrigin(side, p, definition);
-  return designRoundedRectRing(
-    designHingePadSize,
-    designHingePadSize,
-    Math.min(0.42, designHingePadSize * 0.16),
-    pad.x,
-    pad.y
-  );
-}
-
 function designHingePadConnectorRing(side, p, definition = state.designDraft) {
   const center = designLensCenter(p);
   const pad = designHingePadOrigin(side, p, definition);
   const padHalf = designHingePadSize / 2;
+  const padOuterX = pad.x + side * padHalf;
   const padInnerX = pad.x - side * padHalf;
   const fallbackRimOuterX = side * (center + p.lens_width / 2 + p.rim_thickness * 0.88);
   const rimBoundary = designRimBoundaryNearX(side, p, definition, pad.y, padInnerX);
@@ -2254,15 +2242,17 @@ function designHingePadConnectorRing(side, p, definition = state.designDraft) {
   rimJoinX = side > 0
     ? Math.max(rimJoinX, maxReachX)
     : Math.min(rimJoinX, maxReachX);
-  const neckHalf = Math.min(padHalf * 0.44, Math.max(1.05, p.rim_thickness * 0.32));
-  const minX = Math.min(padInnerX, rimJoinX);
-  const maxX = Math.max(padInnerX, rimJoinX);
-  const radius = Math.min(0.22, neckHalf * 0.35, (maxX - minX) * 0.45);
+  const topY = pad.y + padHalf;
+  const bottomY = pad.y - padHalf;
+  const neckHalf = Math.min(padHalf * 0.68, Math.max(1.35, p.rim_thickness * 0.42));
+  const radius = Math.min(0.42, padHalf * 0.16);
   return sampledRoundedPolygon([
-    { x: minX, y: pad.y + neckHalf },
-    { x: maxX, y: pad.y + neckHalf },
-    { x: maxX, y: pad.y - neckHalf },
-    { x: minX, y: pad.y - neckHalf }
+    { x: padOuterX, y: topY },
+    { x: padInnerX, y: topY },
+    { x: rimJoinX, y: pad.y + neckHalf },
+    { x: rimJoinX, y: pad.y - neckHalf },
+    { x: padInnerX, y: bottomY },
+    { x: padOuterX, y: bottomY }
   ], radius);
 }
 
@@ -7680,9 +7670,7 @@ module front_planar_profile() {
     rim_profile(-lens_center);
     rim_profile(lens_center);
     bridge_profile();
-    hinge_pad_profile(-1);
     hinge_connector_profile(-1);
-    hinge_pad_profile(1);
     hinge_connector_profile(1);
   }
 }
