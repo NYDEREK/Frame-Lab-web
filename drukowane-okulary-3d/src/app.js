@@ -2183,9 +2183,77 @@ function designRoundedRectRing(width, height, radius, centerX = 0, centerY = 0) 
   ], Math.min(Math.max(0, radius), halfWidth, halfHeight));
 }
 
-function designBridgeProfileRing(p, definition) {
-  const outline = designBridgeProfileOutline(p, definition);
-  return dedupeRingPoints(sampledRoundedPolygon(outline.points, outline.radii, 10));
+function designHorizontalStrokeRing(points, width, cap = "butt", segmentCount = 14) {
+  const xs = points.map(([x]) => x).filter(Number.isFinite);
+  const ys = points.map(([, y]) => y).filter(Number.isFinite);
+  if (!xs.length || !ys.length || width <= 0) return [];
+  const minX = Math.min(...xs);
+  const maxX = Math.max(...xs);
+  const y = ys.reduce((sum, value) => sum + value, 0) / ys.length;
+  const radius = width / 2;
+  if (cap !== "round" || maxX - minX < 0.001) {
+    return [
+      [minX, y + radius],
+      [maxX, y + radius],
+      [maxX, y - radius],
+      [minX, y - radius]
+    ];
+  }
+  const ring = [
+    [minX, y + radius],
+    [maxX, y + radius]
+  ];
+  for (let step = 1; step <= segmentCount; step += 1) {
+    const angle = Math.PI / 2 - (Math.PI * step) / segmentCount;
+    ring.push([maxX + Math.cos(angle) * radius, y + Math.sin(angle) * radius]);
+  }
+  ring.push([minX, y - radius]);
+  for (let step = 1; step <= segmentCount; step += 1) {
+    const angle = -Math.PI / 2 - (Math.PI * step) / segmentCount;
+    ring.push([minX + Math.cos(angle) * radius, y + Math.sin(angle) * radius]);
+  }
+  return dedupeRingPoints(ring);
+}
+
+function designBridgeStrokeDefinitions(p, definition = state.designDraft) {
+  const bridge = designBridgeMetrics(p, definition);
+  const radius = bridge.bottomInnerRadius;
+  const mainHeight = Math.max(0.02, bridge.height - radius);
+  const mainY = bridge.topY - mainHeight / 2;
+  const mainCapRadius = radius > 0.01 ? mainHeight / 2 : 0;
+  const mainHalfWidth = Math.max(
+    0.02,
+    Math.max(bridge.topHalfWidth, bridge.bottomHalfWidth) - mainCapRadius
+  );
+  const strokes = [{
+    cap: radius > 0.01 ? "round" : "butt",
+    width: mainHeight,
+    points: [
+      [-mainHalfWidth, mainY],
+      [0, mainY],
+      [mainHalfWidth, mainY]
+    ]
+  }];
+  if (radius > 0.01) {
+    const lowerHalfWidth = Math.max(0.02, bridge.bottomHalfWidth - radius);
+    const lowerY = bridge.bottomY + radius;
+    strokes.push({
+      cap: "round",
+      width: radius * 2,
+      points: [
+        [-lowerHalfWidth, lowerY],
+        [0, lowerY],
+        [lowerHalfWidth, lowerY]
+      ]
+    });
+  }
+  return strokes;
+}
+
+function designBridgeStrokeRings(p, definition = state.designDraft) {
+  return designBridgeStrokeDefinitions(p, definition)
+    .map((stroke) => designHorizontalStrokeRing(stroke.points, stroke.width, stroke.cap))
+    .filter((ring) => ring.length >= 3);
 }
 
 function designFrontPlanarPolygons(p, definition, innerExpansion = 0) {
@@ -2201,7 +2269,7 @@ function designFrontPlanarPolygons(p, definition, innerExpansion = 0) {
   const solids = [
     ...leftRim,
     ...rightRim,
-    [designBridgeProfileRing(p, definition)],
+    ...designBridgeStrokeRings(p, definition).map((ring) => [ring]),
     [designHingePadConnectorRing(-1, p, definition)],
     [designHingePadConnectorRing(1, p, definition)]
   ];
@@ -7659,9 +7727,14 @@ function buildDesignScad(draft = state.designDraft) {
   const templeProfilePath = sampleDesignTempleProfile(templeSketch)
     .map(([x, y]) => `[${formatNumber(x)}, ${formatNumber(y)}]`)
     .join(", ");
-  const bridgeProfilePath = designBridgeProfileRing(p, definition)
+  const bridgeStrokes = designBridgeStrokeDefinitions(p, definition);
+  const bridgeMainStroke = bridgeStrokes[0] || { points: [], width: 0 };
+  const bridgeLowerStroke = bridgeStrokes.slice(1).find((stroke) => stroke.cap === "round") || { points: [], width: 0 };
+  const formatScadPath = (points) => points
     .map(([x, y]) => `[${formatNumber(x)}, ${formatNumber(y)}]`)
     .join(", ");
+  const bridgeMainPath = formatScadPath(bridgeMainStroke.points);
+  const bridgeLowerPath = formatScadPath(bridgeLowerStroke.points);
   const hingeConnectorLeftPath = designHingePadConnectorRing(-1, p, definition)
     .map(([x, y]) => `[${formatNumber(x)}, ${formatNumber(y)}]`)
     .join(", ");
@@ -7692,7 +7765,11 @@ detail_color = "${style.detailColor}";
 profile_points = [${profilePoints}];
 profile_corner_radii = [${profileCornerRadii}]; // Radius at each authored drawing point.
 profile_path = [${profilePath}]; // Local corner fillets resolved from the drawing.
-bridge_profile_path = [${bridgeProfilePath}]; // Nose bridge profile with draggable horizontal lines.
+bridge_main_path = [${bridgeMainPath}]; // Open stroke path for the bridge body.
+bridge_main_width = ${formatNumber(bridgeMainStroke.width)};
+bridge_main_round_caps = ${bridgeMainStroke.cap === "round" ? "true" : "false"};
+bridge_lower_path = [${bridgeLowerPath}]; // Open stroke path for the lower inner bridge radius.
+bridge_lower_width = ${formatNumber(bridgeLowerStroke.width)};
 hinge_connector_left_path = [${hingeConnectorLeftPath}]; // Keeps the left pad bonded to the rim when mount height changes.
 hinge_connector_right_path = [${hingeConnectorRightPath}]; // Keeps the right pad bonded to the rim when mount height changes.
 temple_profile_points = [${templeProfilePoints}];
@@ -7822,8 +7899,32 @@ module hinge_pad(side=1) {
     soft_bar([hinge_pad_size, hinge_pad_size, front_depth], min(0.55, front_depth*0.18));
 }
 
+module open_stroke_butt(points, width) {
+  if (width > 0.001 && len(points) > 1)
+    for (i=[0:len(points)-2])
+      hull() {
+        translate(points[i]) square([0.02, width], center=true);
+        translate(points[i + 1]) square([0.02, width], center=true);
+      }
+}
+
+module open_stroke_round(points, width) {
+  if (width > 0.001 && len(points) > 1)
+    for (i=[0:len(points)-2])
+      hull() {
+        translate(points[i]) circle(r=width/2, $fn=32);
+        translate(points[i + 1]) circle(r=width/2, $fn=32);
+      }
+}
+
 module bridge_profile() {
-  polygon(bridge_profile_path);
+  union() {
+    if (bridge_main_round_caps)
+      open_stroke_round(bridge_main_path, bridge_main_width);
+    else
+      open_stroke_butt(bridge_main_path, bridge_main_width);
+    open_stroke_round(bridge_lower_path, bridge_lower_width);
+  }
 }
 
 module hinge_pad_profile(side=1) {
