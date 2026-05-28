@@ -1543,8 +1543,8 @@ function designBridgeSelectionHandleIndex(index) {
 function designBridgeHandlePoints(p, definition = state.designDraft) {
   const bridge = designBridgeMetrics(p, definition);
   return [
-    { x: bridge.topHalfWidth, y: bridge.topY },
-    { x: bridge.bottomHalfWidth, y: bridge.bottomY }
+    { x: bridge.topHalfWidth, y: bridge.topJoinY },
+    { x: bridge.bottomHalfWidth, y: bridge.bottomJoinY }
   ];
 }
 
@@ -2177,21 +2177,21 @@ function designRoundedRectRing(width, height, radius, centerX = 0, centerY = 0) 
   ], Math.min(Math.max(0, radius), halfWidth, halfHeight));
 }
 
-function appendCubicBridgeSamples(points, start, controlA, controlB, end, segments = 18) {
-  if (!points.length) points.push([start.x, start.y]);
+function appendBridgePoint(points, point) {
+  const previous = points[points.length - 1];
+  if (previous && Math.hypot(previous[0] - point.x, previous[1] - point.y) < 0.001) return;
+  points.push([point.x, point.y]);
+}
+
+function appendQuadraticBridgeSamples(points, start, control, end, segments = 10) {
+  appendBridgePoint(points, start);
   for (let step = 1; step <= segments; step += 1) {
     const t = step / segments;
     const inverse = 1 - t;
-    points.push([
-      inverse ** 3 * start.x
-        + 3 * inverse ** 2 * t * controlA.x
-        + 3 * inverse * t ** 2 * controlB.x
-        + t ** 3 * end.x,
-      inverse ** 3 * start.y
-        + 3 * inverse ** 2 * t * controlA.y
-        + 3 * inverse * t ** 2 * controlB.y
-        + t ** 3 * end.y
-    ]);
+    appendBridgePoint(points, {
+      x: inverse * inverse * start.x + 2 * inverse * t * control.x + t * t * end.x,
+      y: inverse * inverse * start.y + 2 * inverse * t * control.y + t * t * end.y
+    });
   }
 }
 
@@ -2203,38 +2203,52 @@ function designBridgeProfileRing(p, definition) {
   const topLeft = { x: -bridge.topHalfWidth, y: bridge.topJoinY };
   const bottomRight = { x: bridge.bottomHalfWidth, y: bridge.bottomJoinY };
   const bottomLeft = { x: -bridge.bottomHalfWidth, y: bridge.bottomJoinY };
-  const topBend = Math.min(bridge.topRadius * 1.25, bridge.topHalfWidth * 0.35);
-  const bottomBend = Math.min(bridge.bottomRadius * 1.15, bridge.bottomHalfWidth * 0.35);
-  const topControlY = Math.max(bridge.topY, bridge.topJoinY) + topBend;
-  const bottomControlY = Math.min(bridge.bottomY, bridge.bottomJoinY) - bottomBend;
+  const topBlendLength = Math.min(Math.max(bridge.topRadius * 1.35, 0.3), bridge.topHalfWidth * 0.24, 3.6);
+  const bottomBlendLength = Math.min(Math.max(bridge.bottomRadius * 1.25, 0.3), bridge.bottomHalfWidth * 0.24, 4);
+  const topLift = Math.min(bridge.topRadius * 0.24, p.rim_thickness * 0.28, 0.85);
+  const bottomDrop = Math.min(bridge.bottomRadius * 0.22, p.rim_thickness * 0.32, 1);
+  const pointOnRay = (center, end, distanceFromEnd) => {
+    const length = Math.hypot(end.x - center.x, end.y - center.y);
+    const ratio = Math.max(0, (length - distanceFromEnd) / Math.max(length, 0.001));
+    return {
+      x: center.x + (end.x - center.x) * ratio,
+      y: center.y + (end.y - center.y) * ratio
+    };
+  };
+  const topRightInner = pointOnRay(topCenter, topRight, topBlendLength);
+  const topLeftInner = { x: -topRightInner.x, y: topRightInner.y };
+  const bottomRightInner = pointOnRay(bottomCenter, bottomRight, bottomBlendLength);
+  const bottomLeftInner = { x: -bottomRightInner.x, y: bottomRightInner.y };
+  const topControlY = Math.max(topRight.y, topRightInner.y) + topLift;
+  const bottomControlY = Math.min(bottomRight.y, bottomRightInner.y) - bottomDrop;
   const points = [];
-  appendCubicBridgeSamples(
+  appendQuadraticBridgeSamples(
     points,
     topLeft,
-    { x: -bridge.topHalfWidth * 0.72, y: topControlY },
-    { x: -bridge.topHalfWidth * 0.28, y: topControlY },
-    topCenter
+    { x: topLeft.x + topBlendLength * 0.32, y: topControlY },
+    topLeftInner
   );
-  appendCubicBridgeSamples(
+  appendBridgePoint(points, topCenter);
+  appendBridgePoint(points, topRightInner);
+  appendQuadraticBridgeSamples(
     points,
-    topCenter,
-    { x: bridge.topHalfWidth * 0.28, y: topControlY },
-    { x: bridge.topHalfWidth * 0.72, y: topControlY },
+    topRightInner,
+    { x: topRight.x - topBlendLength * 0.32, y: topControlY },
     topRight
   );
-  points.push([bottomRight.x, bottomRight.y]);
-  appendCubicBridgeSamples(
+  appendBridgePoint(points, bottomRight);
+  appendQuadraticBridgeSamples(
     points,
     bottomRight,
-    { x: bridge.bottomHalfWidth * 0.72, y: bottomControlY },
-    { x: bridge.bottomHalfWidth * 0.28, y: bottomControlY },
-    bottomCenter
+    { x: bottomRight.x - bottomBlendLength * 0.32, y: bottomControlY },
+    bottomRightInner
   );
-  appendCubicBridgeSamples(
+  appendBridgePoint(points, bottomCenter);
+  appendBridgePoint(points, bottomLeftInner);
+  appendQuadraticBridgeSamples(
     points,
-    bottomCenter,
-    { x: -bridge.bottomHalfWidth * 0.28, y: bottomControlY },
-    { x: -bridge.bottomHalfWidth * 0.72, y: bottomControlY },
+    bottomLeftInner,
+    { x: bottomLeft.x + bottomBlendLength * 0.32, y: bottomControlY },
     bottomLeft
   );
   return points;
