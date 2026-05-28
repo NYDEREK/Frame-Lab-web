@@ -1743,9 +1743,10 @@ function drawDesignSketch() {
   drawDesignFrontPlanarProfile(ctx, metrics, colors);
   const hingeSize = designHingePadSize * scale;
   const hingeY = centerY - construction.hingeMountHeight * scale;
-  const hingeDatumDistance = p.head_width / 2 - designHingePadOverlap + construction.hingeMountOffset;
-  const hingeLeftX = centerX - hingeDatumDistance * scale;
-  const hingeRightX = centerX + hingeDatumDistance * scale;
+  const hingeLeftCenter = designHingePadCenter(-1, p, state.designDraft);
+  const hingeRightCenter = designHingePadCenter(1, p, state.designDraft);
+  const hingeLeftX = centerX + hingeLeftCenter.x * scale;
+  const hingeRightX = centerX + hingeRightCenter.x * scale;
   ctx.fillStyle = colors.muted;
   ctx.font = "600 11px Inter, Arial, sans-serif";
   ctx.textAlign = "center";
@@ -2097,6 +2098,19 @@ function designRimBoundaryNearX(side, p, definition, y, targetX) {
   ), xs[0]);
 }
 
+function designLensOpeningBoundaryX(side, p, definition, y, towardBridge = false) {
+  const center = designLensCenter(p);
+  const ring = designOutlineRing(side * center, p, definition, 0, side < 0);
+  let xs = designRingIntersectionsAtY(ring, y);
+  if (!xs.length) {
+    const band = Math.max(1, p.rim_thickness * 0.55);
+    xs = ring.filter(([, pointY]) => Math.abs(pointY - y) <= band).map(([x]) => x);
+  }
+  if (!xs.length) return null;
+  if (side > 0) return towardBridge ? Math.min(...xs) : Math.max(...xs);
+  return towardBridge ? Math.max(...xs) : Math.min(...xs);
+}
+
 function designRoundedRectRing(width, height, radius, centerX = 0, centerY = 0) {
   const halfWidth = width / 2;
   const halfHeight = height / 2;
@@ -2182,15 +2196,26 @@ function designProfilePath(width, height, definition, expansion = 0, asHole = fa
 function designBridgeMetrics(p, definition = state.designDraft) {
   const construction = normalizeDesignConstruction(definition?.construction);
   const centerY = p.lens_height * 0.18;
-  const height = THREE.MathUtils.clamp(p.rim_thickness * 0.82, 2.2, 3.8);
+  const height = THREE.MathUtils.clamp(p.rim_thickness * 1.34, 4, 6.2);
   const clearHalfWidth = p.bridge_width / 2;
-  const overlap = THREE.MathUtils.clamp(p.rim_thickness * 0.48, 0.85, p.rim_thickness);
-  const rimJoinX = designRimBoundaryX(1, p, definition, centerY, true);
-  const halfWidth = Math.max(
-    clearHalfWidth + overlap,
-    Number.isFinite(rimJoinX) ? rimJoinX + overlap : clearHalfWidth + overlap
-  );
-  const maxJoinRadius = Math.min(height / 2 - 0.02, p.rim_thickness * 0.78, overlap * 1.4, 3.2);
+  const overlap = THREE.MathUtils.clamp(p.rim_thickness * 1.08, 2.35, p.rim_thickness * 1.65);
+  const upperY = centerY + height / 2;
+  const lowerY = centerY - height / 2;
+  const bridgeHalfWidthAtY = (y) => {
+    const outerJoinX = designRimBoundaryX(1, p, definition, y, true);
+    const lensOpeningX = designLensOpeningBoundaryX(1, p, definition, y, true);
+    let halfWidth = Number.isFinite(outerJoinX)
+      ? outerJoinX + overlap
+      : clearHalfWidth + overlap;
+    if (Number.isFinite(lensOpeningX)) {
+      halfWidth = Math.min(halfWidth, lensOpeningX - 0.18);
+    }
+    return Math.max(clearHalfWidth + Math.min(overlap, p.rim_thickness * 0.74), halfWidth);
+  };
+  const topHalfWidth = bridgeHalfWidthAtY(upperY);
+  const bottomHalfWidth = bridgeHalfWidthAtY(lowerY);
+  const halfWidth = Math.max(topHalfWidth, bottomHalfWidth);
+  const maxJoinRadius = Math.min(height / 2 - 0.02, p.rim_thickness * 0.95, overlap * 1.15, 3.6);
   const joinRadius = THREE.MathUtils.clamp(
     parseDesignNumber(construction.bridgeJoinRadius, defaultDesignConstruction.bridgeJoinRadius),
     0,
@@ -2201,6 +2226,8 @@ function designBridgeMetrics(p, definition = state.designDraft) {
     centerY,
     width: halfWidth * 2,
     halfWidth,
+    topHalfWidth,
+    bottomHalfWidth,
     clearHalfWidth,
     overlap,
     joinRadius,
@@ -2212,10 +2239,10 @@ function designBridgeProfileOutline(p, definition = state.designDraft) {
   const bridge = designBridgeMetrics(p, definition);
   const halfHeight = bridge.height / 2;
   const points = [
-    { x: -bridge.halfWidth, y: bridge.centerY + halfHeight },
-    { x: bridge.halfWidth, y: bridge.centerY + halfHeight },
-    { x: bridge.halfWidth, y: bridge.centerY - halfHeight },
-    { x: -bridge.halfWidth, y: bridge.centerY - halfHeight }
+    { x: -bridge.topHalfWidth, y: bridge.centerY + halfHeight },
+    { x: bridge.topHalfWidth, y: bridge.centerY + halfHeight },
+    { x: bridge.bottomHalfWidth, y: bridge.centerY - halfHeight },
+    { x: -bridge.bottomHalfWidth, y: bridge.centerY - halfHeight }
   ];
   return {
     points,
@@ -2227,8 +2254,8 @@ function designHingePadConnectorRing(side, p, definition = state.designDraft) {
   const center = designLensCenter(p);
   const pad = designHingePadOrigin(side, p, definition);
   const padHalf = designHingePadSize / 2;
-  const padOuterX = pad.x + side * padHalf;
-  const padInnerX = pad.x - side * padHalf;
+  const padInnerX = pad.x;
+  const padOuterX = pad.x + side * designHingePadSize;
   const fallbackRimOuterX = side * (center + p.lens_width / 2 + p.rim_thickness * 0.88);
   const rimBoundary = designRimBoundaryNearX(side, p, definition, pad.y, padInnerX);
   let rimX = Number.isFinite(rimBoundary) ? rimBoundary : fallbackRimOuterX;
@@ -2317,6 +2344,12 @@ function designHingePadOrigin(side, p, definition = state.designDraft) {
     construction.hingeMountHeight,
     0
   );
+}
+
+function designHingePadCenter(side, p, definition = state.designDraft) {
+  const center = designHingePadOrigin(side, p, definition);
+  center.x += side * designHingePadSize / 2;
+  return center;
 }
 
 function designHingeDatum(side, p, definition = state.designDraft) {
@@ -7646,7 +7679,7 @@ module front_hinge(side=1) {
 
 module hinge_pad(side=1) {
   pad_x = side*(head_width/2 - hinge_pad_overlap + hinge_mount_offset);
-  translate([pad_x, hinge_mount_height, 0])
+  translate([pad_x + side*hinge_pad_size/2, hinge_mount_height, 0])
     soft_bar([hinge_pad_size, hinge_pad_size, front_depth], min(0.55, front_depth*0.18));
 }
 
@@ -7656,7 +7689,7 @@ module bridge_profile() {
 
 module hinge_pad_profile(side=1) {
   pad_x = side*(head_width/2 - hinge_pad_overlap + hinge_mount_offset);
-  translate([pad_x, hinge_mount_height])
+  translate([pad_x + side*hinge_pad_size/2, hinge_mount_height])
     rounded_rect([hinge_pad_size, hinge_pad_size], min(0.55, front_depth*0.18));
 }
 
