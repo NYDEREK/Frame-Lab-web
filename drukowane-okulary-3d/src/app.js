@@ -212,6 +212,7 @@ const defaultDesignConstruction = {
   bridgeThickness: 6,
   bridgeTopJoinOffset: 3,
   bridgeBottomJoinOffset: -3,
+  bridgeBottomInnerRadius: 2.4,
   templeStraight: 70,
   templeHook: 30,
   templeHookAngle: 45,
@@ -777,6 +778,7 @@ const els = {
   designHingeMountHeight: document.querySelector("#designHingeMountHeight"),
   designHingeMountOffset: document.querySelector("#designHingeMountOffset"),
   designBridgeThickness: document.querySelector("#designBridgeThickness"),
+  designBridgeBottomInnerRadius: document.querySelector("#designBridgeBottomInnerRadius"),
   designTempleStraight: document.querySelector("#designTempleStraight"),
   designTempleHook: document.querySelector("#designTempleHook"),
   designTempleHookAngle: document.querySelector("#designTempleHookAngle"),
@@ -1179,6 +1181,7 @@ function normalizeDesignConstruction(construction = {}) {
     bridgeThickness,
     bridgeTopJoinOffset: bounded("bridgeTopJoinOffset", -18, 18, bridgeThickness / 2),
     bridgeBottomJoinOffset: bounded("bridgeBottomJoinOffset", -18, 18, -bridgeThickness / 2),
+    bridgeBottomInnerRadius: bounded("bridgeBottomInnerRadius", 0, 8),
     templeStraight: bounded("templeStraight", 35, 120),
     templeHook: bounded("templeHook", 10, 60),
     templeHookAngle: bounded("templeHookAngle", 10, 75),
@@ -2064,6 +2067,21 @@ function sampledRoundedPolygon(points, radii = 0, segmentCount = 16) {
   return samples;
 }
 
+function dedupeRingPoints(points, epsilon = 0.001) {
+  const clean = [];
+  points.forEach((point) => {
+    const previous = clean[clean.length - 1];
+    if (previous && Math.hypot(previous[0] - point[0], previous[1] - point[1]) <= epsilon) return;
+    clean.push(point);
+  });
+  if (clean.length > 2) {
+    const first = clean[0];
+    const last = clean[clean.length - 1];
+    if (Math.hypot(first[0] - last[0], first[1] - last[1]) <= epsilon) clean.pop();
+  }
+  return clean;
+}
+
 function designLensCenter(p) {
   return p.bridge_width / 2 + (p.lens_width + p.rim_thickness * 2) / 2;
 }
@@ -2166,7 +2184,8 @@ function designRoundedRectRing(width, height, radius, centerX = 0, centerY = 0) 
 }
 
 function designBridgeProfileRing(p, definition) {
-  return designBridgeProfileOutline(p, definition).points.map(({ x, y }) => [x, y]);
+  const outline = designBridgeProfileOutline(p, definition);
+  return dedupeRingPoints(sampledRoundedPolygon(outline.points, outline.radii, 10));
 }
 
 function designFrontPlanarPolygons(p, definition, innerExpansion = 0) {
@@ -2268,6 +2287,12 @@ function designBridgeMetrics(p, definition = state.designDraft) {
   const topHalfWidth = bridgeExteriorHalfWidthAtY(topLineY) + bondOverlap;
   const bottomHalfWidth = bridgeExteriorHalfWidthAtY(bottomLineY) + bondOverlap;
   const halfWidth = Math.max(topHalfWidth, bottomHalfWidth);
+  const sideRun = Math.hypot(topHalfWidth - bottomHalfWidth, topLineY - bottomLineY);
+  const safeBottomInnerRadius = THREE.MathUtils.clamp(
+    parseDesignNumber(construction.bridgeBottomInnerRadius, defaultDesignConstruction.bridgeBottomInnerRadius),
+    0,
+    Math.max(0, Math.min(sideRun * 0.44, bottomHalfWidth * 0.42, (topLineY - bottomLineY) * 0.46))
+  );
   return {
     height: topLineY - bottomLineY,
     centerY,
@@ -2281,6 +2306,7 @@ function designBridgeMetrics(p, definition = state.designDraft) {
     bottomHalfWidth,
     clearHalfWidth,
     overlap,
+    bottomInnerRadius: safeBottomInnerRadius,
     topRadius: 0,
     bottomRadius: 0,
     joinRadius: 0,
@@ -2300,7 +2326,7 @@ function designBridgeProfileOutline(p, definition = state.designDraft) {
   ];
   return {
     points,
-    radii: points.map(() => 0)
+    radii: [0, 0, 0, bridge.bottomInnerRadius, 0, bridge.bottomInnerRadius]
   };
 }
 
@@ -3106,6 +3132,7 @@ function syncDesignFields() {
   setDesignFieldValue(els.designHingeMountHeight, construction.hingeMountHeight);
   setDesignFieldValue(els.designHingeMountOffset, construction.hingeMountOffset);
   setDesignFieldValue(els.designBridgeThickness, construction.bridgeThickness);
+  setDesignFieldValue(els.designBridgeBottomInnerRadius, construction.bridgeBottomInnerRadius);
   setDesignFieldValue(els.designTempleStraight, construction.templeStraight);
   setDesignFieldValue(els.designTempleHook, construction.templeHook);
   setDesignFieldValue(els.designTempleHookAngle, construction.templeHookAngle);
@@ -3242,7 +3269,8 @@ function handleDesignOperationChange(event) {
     return;
   }
   const liveBridgeControls = [
-    els.designBridgeThickness
+    els.designBridgeThickness,
+    els.designBridgeBottomInnerRadius
   ];
   if (
     event.type === "input"
@@ -3285,6 +3313,7 @@ function handleDesignOperationChange(event) {
     els.designHingeMountHeight,
     els.designHingeMountOffset,
     els.designBridgeThickness,
+    els.designBridgeBottomInnerRadius,
     els.designTempleStraight,
     els.designTempleHook,
     els.designTempleHookAngle,
@@ -3313,6 +3342,7 @@ function handleDesignOperationChange(event) {
       hingeMountHeight: els.designHingeMountHeight?.value,
       hingeMountOffset: els.designHingeMountOffset?.value,
       bridgeThickness: nextBridgeThickness,
+      bridgeBottomInnerRadius: els.designBridgeBottomInnerRadius?.value,
       bridgeTopJoinOffset: state.designDraft.construction?.bridgeTopJoinOffset,
       bridgeBottomJoinOffset: state.designDraft.construction?.bridgeBottomJoinOffset,
       templeStraight: els.designTempleStraight?.value,
@@ -3520,6 +3550,7 @@ function parseDesignCode(source) {
       bridgeThickness: readNumber("bridge_thickness", state.designDraft.construction?.bridgeThickness),
       bridgeTopJoinOffset: readNumber("bridge_top_join_offset", state.designDraft.construction?.bridgeTopJoinOffset),
       bridgeBottomJoinOffset: readNumber("bridge_bottom_join_offset", state.designDraft.construction?.bridgeBottomJoinOffset),
+      bridgeBottomInnerRadius: readNumber("bridge_bottom_inner_radius", state.designDraft.construction?.bridgeBottomInnerRadius),
       templeStraight: readNumber("temple_straight", state.designDraft.construction?.templeStraight),
       templeHook: readNumber("temple_hook", state.designDraft.construction?.templeHook),
       templeHookAngle: readNumber("temple_hook_angle", state.designDraft.construction?.templeHookAngle),
@@ -7687,6 +7718,7 @@ hinge_mount_offset = ${formatNumber(construction.hingeMountOffset)};
 bridge_thickness = ${formatNumber(construction.bridgeThickness)};
 bridge_top_join_offset = ${formatNumber(construction.bridgeTopJoinOffset)};
 bridge_bottom_join_offset = ${formatNumber(construction.bridgeBottomJoinOffset)};
+bridge_bottom_inner_radius = ${formatNumber(construction.bridgeBottomInnerRadius)};
 hinge_pad_size = ${formatNumber(designHingePadSize)};
 hinge_pad_overlap = ${formatNumber(designHingePadOverlap)};
 hinge_rear_overlap = ${formatNumber(designHingeRearOverlap)};
