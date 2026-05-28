@@ -233,7 +233,7 @@ const designHingeRearOverlap = 0.2;
 // FL-H1 temple bounds after vertical-bore rotation; the authored arm grows from its rear face.
 const designTempleBarCenterY = 2.8;
 const designTempleHingeRearZ = -7.5;
-const designTempleArmJoinOverlap = 0.45;
+const designTempleArmJoinOverlap = 0.9;
 const designTempleProfileStartZ = designTempleHingeRearZ + designTempleArmJoinOverlap;
 const designHingeAssetManifest = {
   frontLeft: "./assets/hinges/front-hinge-left.3mf",
@@ -1059,19 +1059,30 @@ function normalizeDesignStyle(style = {}) {
 }
 
 function createDefaultDesignFeatures(params = defaultParams) {
+  const bevelSeed = parseDesignNumber(params.bevel, defaultParams.bevel);
+  const edgeRadius = THREE.MathUtils.clamp(bevelSeed * 0.18 || 0.28, 0.18, 0.45);
   return {
-    extrude: { enabled: true, depth: Number(params.frame_depth) || defaultParams.frame_depth },
-    fillet: { enabled: false, radius: Math.min(0.3, Number(params.bevel) || defaultParams.bevel) },
+    extrude: { enabled: true, depth: parseDesignNumber(params.frame_depth, defaultParams.frame_depth) },
+    fillet: { enabled: true, radius: edgeRadius },
     chamfer: { enabled: false, amount: 0.4 },
     lensRecess: { enabled: true, depth: defaultDesignConstruction.lensSeatDepth }
   };
 }
 
+function parseDesignNumber(value, fallback = 0) {
+  if (typeof value === "string") {
+    const normalized = Number(value.replace(",", "."));
+    return Number.isFinite(normalized) ? normalized : fallback;
+  }
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
 function normalizeDesignSketch(sketch = {}) {
   const supplied = Array.isArray(sketch.points) ? sketch.points : defaultDesignSketchPoints;
   const points = supplied.slice(0, 20).map((point) => {
-    const x = THREE.MathUtils.clamp(Number(Array.isArray(point) ? point[0] : point?.x) || 0, -0.7, 0.7);
-    const y = THREE.MathUtils.clamp(Number(Array.isArray(point) ? point[1] : point?.y) || 0, -0.7, 0.7);
+    const x = THREE.MathUtils.clamp(parseDesignNumber(Array.isArray(point) ? point[0] : point?.x), -0.7, 0.7);
+    const y = THREE.MathUtils.clamp(parseDesignNumber(Array.isArray(point) ? point[1] : point?.y), -0.7, 0.7);
     return [x, y];
   });
   const suppliedRadii = Array.isArray(sketch.cornerRadii) ? sketch.cornerRadii : null;
@@ -1079,7 +1090,7 @@ function normalizeDesignSketch(sketch = {}) {
     ? defaultDesignSketchRadii
     : Array.from({ length: points.length }, () => 0);
   const cornerRadii = points.map((_, index) => THREE.MathUtils.clamp(
-    Number(suppliedRadii?.[index] ?? fallbackRadii[index] ?? 0) || 0,
+    parseDesignNumber(suppliedRadii?.[index] ?? fallbackRadii[index] ?? 0),
     0,
     30
   ));
@@ -1091,7 +1102,7 @@ function normalizeDesignSketch(sketch = {}) {
 }
 
 function designTempleProfileFromConstruction(construction = defaultDesignConstruction) {
-  const numberOrDefault = (value, fallback) => Number.isFinite(Number(value)) ? Number(value) : fallback;
+  const numberOrDefault = (value, fallback) => parseDesignNumber(value, fallback);
   const height = numberOrDefault(construction.templeBarHeight, defaultDesignConstruction.templeBarHeight);
   const straight = numberOrDefault(construction.templeStraight, defaultDesignConstruction.templeStraight);
   const hook = numberOrDefault(construction.templeHook, defaultDesignConstruction.templeHook);
@@ -1116,28 +1127,29 @@ function normalizeDesignTempleSketch(sketch = {}, construction = defaultDesignCo
   const fallback = designTempleProfileFromConstruction(construction);
   const supplied = Array.isArray(sketch.points) ? sketch.points : fallback.points;
   const points = supplied.slice(0, 24).map((point) => [
-    THREE.MathUtils.clamp(Number(Array.isArray(point) ? point[0] : point?.x) || 0, 0, 150),
-    THREE.MathUtils.clamp(Number(Array.isArray(point) ? point[1] : point?.y) || 0, -80, 20)
+    THREE.MathUtils.clamp(parseDesignNumber(Array.isArray(point) ? point[0] : point?.x), 0, 150),
+    THREE.MathUtils.clamp(parseDesignNumber(Array.isArray(point) ? point[1] : point?.y), -80, 20)
   ]);
   const suppliedRadii = Array.isArray(sketch.cornerRadii) ? sketch.cornerRadii : fallback.cornerRadii;
-  const cornerRadii = points.map((_, index) => THREE.MathUtils.clamp(Number(suppliedRadii[index]) || 0, 0, 12));
+  const cornerRadii = points.map((_, index) => THREE.MathUtils.clamp(parseDesignNumber(suppliedRadii[index]), 0, 12));
   return points.length >= 4 ? { points, cornerRadii } : fallback;
 }
 
 function normalizeDesignFeatures(features = {}, params = defaultParams) {
   const defaults = createDefaultDesignFeatures(params);
   const clamp = (value, min, max, fallback) => {
-    const number = Number(value);
+    const number = parseDesignNumber(value, fallback);
     return THREE.MathUtils.clamp(Number.isFinite(number) ? number : fallback, min, max);
   };
+  const filletRadius = clamp(features.fillet?.radius, 0, 2.4, defaults.fillet.radius);
   return {
     extrude: {
       enabled: features.extrude?.enabled !== false,
       depth: clamp(features.extrude?.depth, 3, 12, defaults.extrude.depth)
     },
     fillet: {
-      enabled: features.fillet?.enabled !== false,
-      radius: clamp(features.fillet?.radius, 0, 2.4, defaults.fillet.radius)
+      enabled: features.fillet?.enabled !== false || filletRadius > 0.001,
+      radius: filletRadius
     },
     chamfer: {
       enabled: Boolean(features.chamfer?.enabled),
@@ -1152,7 +1164,7 @@ function normalizeDesignFeatures(features = {}, params = defaultParams) {
 
 function normalizeDesignConstruction(construction = {}) {
   const bounded = (key, min, max) => {
-    const next = Number(construction[key]);
+    const next = parseDesignNumber(construction[key], defaultDesignConstruction[key]);
     return THREE.MathUtils.clamp(Number.isFinite(next) ? next : defaultDesignConstruction[key], min, max);
   };
   return {
@@ -1188,8 +1200,8 @@ function normalizeDesignSliderRanges(ranges = {}) {
   return Object.fromEntries(designPublicParameterKeys.map((key) => {
     const [, , , schemaMin, schemaMax, schemaStep] = parameterSchema.find(([itemKey]) => itemKey === key);
     const supplied = ranges[key] || {};
-    const min = THREE.MathUtils.clamp(Number.isFinite(Number(supplied.min)) ? Number(supplied.min) : schemaMin, schemaMin, schemaMax);
-    const max = THREE.MathUtils.clamp(Number.isFinite(Number(supplied.max)) ? Number(supplied.max) : schemaMax, schemaMin, schemaMax);
+    const min = THREE.MathUtils.clamp(parseDesignNumber(supplied.min, schemaMin), schemaMin, schemaMax);
+    const max = THREE.MathUtils.clamp(parseDesignNumber(supplied.max, schemaMax), schemaMin, schemaMax);
     return [key, { min: Math.min(min, max), max: Math.max(min, max), step: schemaStep }];
   }));
 }
@@ -1893,7 +1905,7 @@ function offsetDesignPolygon(points, distance) {
 
 function designProfileOutline(width, height, definition, expansion = 0) {
   const sketch = normalizeDesignSketch(definition?.sketch);
-  const distance = Math.max(0, Number(expansion) || 0);
+  const distance = Math.max(0, parseDesignNumber(expansion, 0));
   const points = offsetDesignPolygon(
     sketch.points.map(([x, y]) => ({ x: x * width, y: y * height })),
     distance
@@ -1910,7 +1922,10 @@ function roundedPolygonCorners(points, radii = 0) {
     const next = points[(index + 1) % points.length];
     const previousLength = Math.hypot(previous.x - point.x, previous.y - point.y);
     const nextLength = Math.hypot(next.x - point.x, next.y - point.y);
-    const radius = Array.isArray(radii) ? Number(radii[index]) || 0 : Number(radii) || 0;
+    const radius = Array.isArray(radii)
+      ? parseDesignNumber(radii[index], 0)
+      : parseDesignNumber(radii, 0);
+    const safeRadius = Math.max(0, radius);
     const previousDirection = {
       x: (previous.x - point.x) / Math.max(previousLength, 0.001),
       y: (previous.y - point.y) / Math.max(previousLength, 0.001)
@@ -1919,29 +1934,62 @@ function roundedPolygonCorners(points, radii = 0) {
       x: (next.x - point.x) / Math.max(nextLength, 0.001),
       y: (next.y - point.y) / Math.max(nextLength, 0.001)
     };
-    const interiorAngle = Math.acos(THREE.MathUtils.clamp(
+    const dot = THREE.MathUtils.clamp(
       previousDirection.x * nextDirection.x + previousDirection.y * nextDirection.y,
-      -0.999999,
-      0.999999
-    ));
-    const tangentDistance = Math.max(0, radius) / Math.max(Math.tan(interiorAngle / 2), 0.001);
-    const distance = Math.min(tangentDistance, previousLength * 0.49, nextLength * 0.49);
+      -1,
+      1
+    );
+    const angle = Math.acos(dot);
+    const maxDistance = Math.min(previousLength, nextLength) * 0.48;
+    const circularDistance = safeRadius / Math.max(Math.tan(angle / 2), 0.001);
+    const visibleDistance = safeRadius;
+    const distance = safeRadius > 0 && previousLength > 0.001 && nextLength > 0.001
+      ? Math.min(Math.max(circularDistance, visibleDistance), maxDistance)
+      : 0;
     return {
       point,
       start: {
-        x: point.x + (previous.x - point.x) * distance / Math.max(previousLength, 0.001),
-        y: point.y + (previous.y - point.y) * distance / Math.max(previousLength, 0.001)
+        x: point.x + previousDirection.x * distance,
+        y: point.y + previousDirection.y * distance
       },
       end: {
-        x: point.x + (next.x - point.x) * distance / Math.max(nextLength, 0.001),
-        y: point.y + (next.y - point.y) * distance / Math.max(nextLength, 0.001)
+        x: point.x + nextDirection.x * distance,
+        y: point.y + nextDirection.y * distance
       }
     };
   });
 }
 
+function cleanRoundedPolygonInput(points, radii = 0) {
+  const cleanedPoints = [];
+  const cleanedRadii = [];
+  points.forEach((point, index) => {
+    const radius = Array.isArray(radii)
+      ? parseDesignNumber(radii[index], 0)
+      : parseDesignNumber(radii, 0);
+    const previous = cleanedPoints[cleanedPoints.length - 1];
+    if (previous && Math.hypot(previous.x - point.x, previous.y - point.y) < 0.001) {
+      cleanedRadii[cleanedRadii.length - 1] = Math.max(cleanedRadii[cleanedRadii.length - 1] || 0, radius);
+      return;
+    }
+    cleanedPoints.push(point);
+    cleanedRadii.push(radius);
+  });
+  if (cleanedPoints.length > 2) {
+    const first = cleanedPoints[0];
+    const last = cleanedPoints[cleanedPoints.length - 1];
+    if (Math.hypot(first.x - last.x, first.y - last.y) < 0.001) {
+      cleanedPoints.pop();
+      cleanedRadii[0] = Math.max(cleanedRadii[0] || 0, cleanedRadii.pop() || 0);
+    }
+  }
+  return { points: cleanedPoints, radii: cleanedRadii };
+}
+
 function traceRoundedPolygon(path, points, radii = 0) {
-  const corners = roundedPolygonCorners(points, radii);
+  const clean = cleanRoundedPolygonInput(points, radii);
+  const corners = roundedPolygonCorners(clean.points, clean.radii);
+  if (!corners.length) return;
   path.moveTo(corners[0].start.x, corners[0].start.y);
   corners.forEach((corner, index) => {
     path.quadraticCurveTo(corner.point.x, corner.point.y, corner.end.x, corner.end.y);
@@ -1951,9 +1999,11 @@ function traceRoundedPolygon(path, points, radii = 0) {
   path.closePath();
 }
 
-function sampledRoundedPolygon(points, radii = 0, segmentCount = 8) {
-  const corners = roundedPolygonCorners(points, radii);
+function sampledRoundedPolygon(points, radii = 0, segmentCount = 16) {
+  const clean = cleanRoundedPolygonInput(points, radii);
+  const corners = roundedPolygonCorners(clean.points, clean.radii);
   const samples = [];
+  if (!corners.length) return samples;
   corners.forEach((corner, index) => {
     if (!index) samples.push([corner.start.x, corner.start.y]);
     for (let step = 1; step <= segmentCount; step += 1) {
@@ -1983,6 +2033,70 @@ function designOutlineRing(centerX, p, definition, expansion, mirror = false) {
   return sampledRoundedPolygon(points, outline.radii);
 }
 
+function designOuterRimRing(side, p, definition = state.designDraft) {
+  const center = designLensCenter(p);
+  return designOutlineRing(side * center, p, definition, p.rim_thickness, side < 0);
+}
+
+function designRingIntersectionsAtY(ring, y) {
+  const intersections = [];
+  ring.forEach(([x1, y1], index) => {
+    const [x2, y2] = ring[(index + 1) % ring.length];
+    if (Math.abs(y2 - y1) < 0.0001) {
+      if (Math.abs(y - y1) < 0.25) intersections.push(x1, x2);
+      return;
+    }
+    const minY = Math.min(y1, y2);
+    const maxY = Math.max(y1, y2);
+    if (y < minY - 0.0001 || y > maxY + 0.0001) return;
+    const ratio = (y - y1) / (y2 - y1);
+    if (ratio < -0.0001 || ratio > 1.0001) return;
+    intersections.push(x1 + (x2 - x1) * ratio);
+  });
+  return intersections.filter(Number.isFinite);
+}
+
+function designRimBoundaryX(side, p, definition, y, towardBridge = false) {
+  const ring = designOuterRimRing(side, p, definition);
+  let xs = designRingIntersectionsAtY(ring, y);
+  if (!xs.length) {
+    const band = Math.max(1.2, p.rim_thickness * 0.75);
+    xs = ring.filter(([, pointY]) => Math.abs(pointY - y) <= band).map(([x]) => x);
+  }
+  if (!xs.length) {
+    const nearest = ring.reduce((best, point) => {
+      const distance = Math.abs(point[1] - y);
+      return distance < best.distance ? { distance, x: point[0] } : best;
+    }, { distance: Infinity, x: NaN });
+    if (Number.isFinite(nearest.x)) xs = [nearest.x];
+  }
+  if (!xs.length) return null;
+  if (side > 0) return towardBridge ? Math.min(...xs) : Math.max(...xs);
+  return towardBridge ? Math.max(...xs) : Math.min(...xs);
+}
+
+function designRimBoundaryNearX(side, p, definition, y, targetX) {
+  const ring = designOuterRimRing(side, p, definition);
+  let xs = designRingIntersectionsAtY(ring, y);
+  if (!xs.length) {
+    const band = Math.max(1.4, p.rim_thickness * 0.95);
+    xs = ring
+      .filter(([, pointY]) => Math.abs(pointY - y) <= band)
+      .map(([x]) => x);
+  }
+  if (!xs.length) {
+    const nearest = ring.reduce((best, [x, pointY]) => {
+      const distance = Math.hypot((x - targetX) * 0.65, pointY - y);
+      return distance < best.distance ? { distance, x } : best;
+    }, { distance: Infinity, x: NaN });
+    if (Number.isFinite(nearest.x)) xs = [nearest.x];
+  }
+  if (!xs.length) return null;
+  return xs.reduce((best, x) => (
+    Math.abs(x - targetX) < Math.abs(best - targetX) ? x : best
+  ), xs[0]);
+}
+
 function designRoundedRectRing(width, height, radius, centerX = 0, centerY = 0) {
   const halfWidth = width / 2;
   const halfHeight = height / 2;
@@ -2001,9 +2115,6 @@ function designBridgeProfileRing(p, definition) {
 
 function designFrontPlanarPolygons(p, definition, innerExpansion = 0) {
   const center = designLensCenter(p);
-  const leftPad = designHingePadOrigin(-1, p, definition);
-  const rightPad = designHingePadOrigin(1, p, definition);
-  const padRadius = 0.45;
   const leftRim = polygonClipping.difference(
     [designOutlineRing(-center, p, definition, p.rim_thickness, true)],
     [designOutlineRing(-center, p, definition, innerExpansion, true)]
@@ -2016,8 +2127,10 @@ function designFrontPlanarPolygons(p, definition, innerExpansion = 0) {
     ...leftRim,
     ...rightRim,
     [designBridgeProfileRing(p, definition)],
-    [designRoundedRectRing(designHingePadSize, designHingePadSize, padRadius, leftPad.x, leftPad.y + designHingePadSize / 2)],
-    [designRoundedRectRing(designHingePadSize, designHingePadSize, padRadius, rightPad.x, rightPad.y + designHingePadSize / 2)]
+    [designHingePadRing(-1, p, definition)],
+    [designHingePadConnectorRing(-1, p, definition)],
+    [designHingePadRing(1, p, definition)],
+    [designHingePadConnectorRing(1, p, definition)]
   ];
   return polygonClipping.union(...solids);
 }
@@ -2070,22 +2183,30 @@ function designProfilePath(width, height, definition, expansion = 0, asHole = fa
 
 function designBridgeMetrics(p, definition = state.designDraft) {
   const construction = normalizeDesignConstruction(definition?.construction);
-  const height = THREE.MathUtils.clamp(p.rim_thickness * 0.72, 2, 3);
+  const centerY = p.lens_height * 0.18;
+  const height = THREE.MathUtils.clamp(p.rim_thickness * 0.82, 2.2, 3.8);
   const clearHalfWidth = p.bridge_width / 2;
-  const overlap = THREE.MathUtils.clamp(p.rim_thickness, 0.8, p.rim_thickness + 0.4);
-  const halfWidth = clearHalfWidth + overlap;
-  const maxJoinRadius = Math.min(5.5, p.rim_thickness * 1.55, p.bridge_width * 0.32, p.lens_height * 0.2);
-  const joinRadius = THREE.MathUtils.clamp(construction.bridgeJoinRadius, 0, maxJoinRadius);
+  const overlap = THREE.MathUtils.clamp(p.rim_thickness * 0.48, 0.85, p.rim_thickness);
+  const rimJoinX = designRimBoundaryX(1, p, definition, centerY, true);
+  const halfWidth = Math.max(
+    clearHalfWidth + overlap,
+    Number.isFinite(rimJoinX) ? rimJoinX + overlap : clearHalfWidth + overlap
+  );
+  const maxJoinRadius = Math.min(height / 2 - 0.02, p.rim_thickness * 0.78, overlap * 1.4, 3.2);
+  const joinRadius = THREE.MathUtils.clamp(
+    parseDesignNumber(construction.bridgeJoinRadius, defaultDesignConstruction.bridgeJoinRadius),
+    0,
+    Math.max(0, maxJoinRadius)
+  );
   return {
     height,
-    radius: 0,
-    centerY: p.lens_height * 0.18,
+    centerY,
     width: halfWidth * 2,
     halfWidth,
     clearHalfWidth,
     overlap,
     joinRadius,
-    cornerRadius: Math.min(joinRadius, height / 2 - 0.02)
+    cornerRadius: joinRadius
   };
 }
 
@@ -2104,11 +2225,53 @@ function designBridgeProfileOutline(p, definition = state.designDraft) {
   };
 }
 
+function designHingePadRing(side, p, definition = state.designDraft) {
+  const pad = designHingePadOrigin(side, p, definition);
+  return designRoundedRectRing(
+    designHingePadSize,
+    designHingePadSize,
+    Math.min(0.42, designHingePadSize * 0.16),
+    pad.x,
+    pad.y
+  );
+}
+
+function designHingePadConnectorRing(side, p, definition = state.designDraft) {
+  const center = designLensCenter(p);
+  const pad = designHingePadOrigin(side, p, definition);
+  const padHalf = designHingePadSize / 2;
+  const padInnerX = pad.x - side * padHalf;
+  const fallbackRimOuterX = side * (center + p.lens_width / 2 + p.rim_thickness * 0.88);
+  const rimBoundary = designRimBoundaryNearX(side, p, definition, pad.y, padInnerX);
+  let rimX = Number.isFinite(rimBoundary) ? rimBoundary : fallbackRimOuterX;
+  if ((side > 0 && rimX > padInnerX) || (side < 0 && rimX < padInnerX)) {
+    rimX = fallbackRimOuterX;
+  }
+  const rimOverlap = THREE.MathUtils.clamp(p.rim_thickness * 0.58, 1.8, 3.4);
+  const maxReach = Math.max(p.rim_thickness * 1.65, designHingePadSize * 0.75);
+  const maxReachX = padInnerX - side * maxReach;
+  let rimJoinX = rimX - side * rimOverlap;
+  rimJoinX = side > 0
+    ? Math.max(rimJoinX, maxReachX)
+    : Math.min(rimJoinX, maxReachX);
+  const neckHalf = Math.min(padHalf * 0.44, Math.max(1.05, p.rim_thickness * 0.32));
+  const minX = Math.min(padInnerX, rimJoinX);
+  const maxX = Math.max(padInnerX, rimJoinX);
+  const radius = Math.min(0.22, neckHalf * 0.35, (maxX - minX) * 0.45);
+  return sampledRoundedPolygon([
+    { x: minX, y: pad.y + neckHalf },
+    { x: maxX, y: pad.y + neckHalf },
+    { x: maxX, y: pad.y - neckHalf },
+    { x: minX, y: pad.y - neckHalf }
+  ], radius);
+}
+
 function designEdgeOperation(p, definition) {
   const features = normalizeDesignFeatures(definition?.features, p);
   if (features.chamfer.enabled) return { amount: features.chamfer.amount, segments: 1 };
   if (features.fillet.enabled) return { amount: features.fillet.radius, segments: 3 };
-  return { amount: 0, segments: 0 };
+  const fallbackRadius = THREE.MathUtils.clamp(parseDesignNumber(p.bevel, defaultParams.bevel) * 0.18 || 0.22, 0.14, 0.34);
+  return { amount: fallbackRadius, segments: 2 };
 }
 
 function addDesignFrontBody(p, material, definition, target = designModelGroup) {
@@ -2124,7 +2287,7 @@ function addDesignFrontBody(p, material, definition, target = designModelGroup) 
         bevelSize: Math.max(0.01, edge.amount),
         bevelSegments: edge.segments
       });
-      geometry.center();
+      geometry.translate(0, 0, -depth / 2);
       const layer = new THREE.Mesh(geometry, material);
       layer.position.z = z;
       target.add(layer);
@@ -2874,7 +3037,7 @@ function updateSelectedDesignCorner(radius) {
   if (isDesignBridgeSelection(designSketchSelectedIndex)) {
     const construction = normalizeDesignConstruction({
       ...state.designDraft.construction,
-      bridgeJoinRadius: THREE.MathUtils.clamp(Number(radius) || 0, 0, 10)
+      bridgeJoinRadius: THREE.MathUtils.clamp(parseDesignNumber(radius, 0), 0, 10)
     });
     state.designDraft.construction = construction;
     state.designDraft.manualCode = false;
@@ -2885,7 +3048,7 @@ function updateSelectedDesignCorner(radius) {
     return;
   }
   const sketch = normalizeDesignSketch(state.designDraft.sketch);
-  sketch.cornerRadii[designSketchSelectedIndex] = THREE.MathUtils.clamp(Number(radius) || 0, 0, 30);
+  sketch.cornerRadii[designSketchSelectedIndex] = THREE.MathUtils.clamp(parseDesignNumber(radius, 0), 0, 30);
   state.designDraft.sketch = sketch;
   state.designDraft.manualCode = false;
   syncDesignSelectedCornerField();
@@ -2904,7 +3067,7 @@ function syncDesignTempleSelectedCornerField() {
 
 function updateSelectedDesignTempleCorner(radius) {
   const sketch = normalizeDesignTempleSketch(state.designDraft.templeSketch, state.designDraft.construction);
-  sketch.cornerRadii[designTempleSketchSelectedIndex] = THREE.MathUtils.clamp(Number(radius) || 0, 0, 12);
+  sketch.cornerRadii[designTempleSketchSelectedIndex] = THREE.MathUtils.clamp(parseDesignNumber(radius, 0), 0, 12);
   state.designDraft.templeSketch = sketch;
   state.designDraft.manualCode = false;
   syncDesignTempleSelectedCornerField();
@@ -2966,10 +3129,20 @@ function handleDesignProjectCopyChange() {
 }
 
 function handleDesignOperationChange(event) {
+  if (event.target === els.designSelectedCornerRadius) {
+    updateSelectedDesignCorner(event.target.value);
+    setDesignNote("");
+    return;
+  }
+  if (event.target === els.designTempleSelectedCornerRadius) {
+    updateSelectedDesignTempleCorner(event.target.value);
+    setDesignNote("");
+    return;
+  }
   if (event.type === "input" && event.target.matches('input[type="number"], input[type="text"], textarea')) return;
   const param = event.target.dataset.designParam;
   if (param) {
-    state.designDraft.params[param] = Number(event.target.value);
+    state.designDraft.params[param] = parseDesignNumber(event.target.value, state.designDraft.params[param]);
     const unit = findParam(param)?.[6] || "";
     const output = document.querySelector(`#design-${param}-output`);
     if (output) output.textContent = formatValue(event.target.value, unit);
@@ -2988,19 +3161,12 @@ function handleDesignOperationChange(event) {
       ...state.designDraft.sliderRanges,
       [rangeParam]: {
         ...state.designDraft.sliderRanges?.[rangeParam],
-        [event.target.dataset.publicRangeBound]: Number(event.target.value)
+        [event.target.dataset.publicRangeBound]: parseDesignNumber(
+          event.target.value,
+          state.designDraft.sliderRanges?.[rangeParam]?.[event.target.dataset.publicRangeBound]
+        )
       }
     });
-  }
-  if (event.target === els.designSelectedCornerRadius) {
-    updateSelectedDesignCorner(event.target.value);
-    setDesignNote("");
-    return;
-  }
-  if (event.target === els.designTempleSelectedCornerRadius) {
-    updateSelectedDesignTempleCorner(event.target.value);
-    setDesignNote("");
-    return;
   }
   if ([
     els.designLensSlotWidth,
@@ -7278,10 +7444,11 @@ function sampleDesignProfile(sketch, p) {
   const points = sketch.points.map(([x, y]) => ({ x: x * p.lens_width, y: y * p.lens_height }));
   const corners = roundedPolygonCorners(points, sketch.cornerRadii);
   const path = [];
+  const segments = 16;
   corners.forEach((corner, index) => {
     path.push(corner.start);
-    for (let step = 1; step <= 4; step += 1) {
-      const t = step / 4;
+    for (let step = 1; step <= segments; step += 1) {
+      const t = step / segments;
       const inverse = 1 - t;
       path.push({
         x: inverse * inverse * corner.start.x + 2 * inverse * t * corner.point.x + t * t * corner.end.x,
@@ -7297,10 +7464,11 @@ function sampleDesignTempleProfile(sketch) {
   const points = sketch.points.map(([x, y]) => ({ x, y }));
   const corners = roundedPolygonCorners(points, sketch.cornerRadii);
   const path = [];
+  const segments = 16;
   corners.forEach((corner, index) => {
     path.push(corner.start);
-    for (let step = 1; step <= 4; step += 1) {
-      const t = step / 4;
+    for (let step = 1; step <= segments; step += 1) {
+      const t = step / segments;
       const inverse = 1 - t;
       path.push([
         inverse * inverse * corner.start.x + 2 * inverse * t * corner.point.x + t * t * corner.end.x,
@@ -7336,6 +7504,15 @@ function buildDesignScad(draft = state.designDraft) {
   const templeProfilePath = sampleDesignTempleProfile(templeSketch)
     .map(([x, y]) => `[${formatNumber(x)}, ${formatNumber(y)}]`)
     .join(", ");
+  const bridgeProfilePath = designBridgeProfileRing(p, definition)
+    .map(([x, y]) => `[${formatNumber(x)}, ${formatNumber(y)}]`)
+    .join(", ");
+  const hingeConnectorLeftPath = designHingePadConnectorRing(-1, p, definition)
+    .map(([x, y]) => `[${formatNumber(x)}, ${formatNumber(y)}]`)
+    .join(", ");
+  const hingeConnectorRightPath = designHingePadConnectorRing(1, p, definition)
+    .map(([x, y]) => `[${formatNumber(x)}, ${formatNumber(y)}]`)
+    .join(", ");
   const publicParameters = definition.publicParameters.map((key) => `"${key}"`).join(", ");
   const customerRanges = definition.publicParameters.map((key) => {
     const range = definition.sliderRanges[key];
@@ -7360,6 +7537,9 @@ detail_color = "${style.detailColor}";
 profile_points = [${profilePoints}];
 profile_corner_radii = [${profileCornerRadii}]; // Radius at each authored drawing point.
 profile_path = [${profilePath}]; // Local corner fillets resolved from the drawing.
+bridge_profile_path = [${bridgeProfilePath}]; // Nose bridge profile with editable corner blends.
+hinge_connector_left_path = [${hingeConnectorLeftPath}]; // Keeps the left pad bonded to the rim when mount height changes.
+hinge_connector_right_path = [${hingeConnectorRightPath}]; // Keeps the right pad bonded to the rim when mount height changes.
 temple_profile_points = [${templeProfilePoints}];
 temple_profile_corner_radii = [${templeProfileCornerRadii}]; // Radius at each temple vertex.
 temple_profile_path = [${templeProfilePath}]; // Closed side profile of the printable temple.
@@ -7476,28 +7656,22 @@ module front_hinge(side=1) {
 
 module hinge_pad(side=1) {
   pad_x = side*(head_width/2 - hinge_pad_overlap + hinge_mount_offset);
-  translate([pad_x, hinge_mount_height + hinge_pad_size/2, 0])
+  translate([pad_x, hinge_mount_height, 0])
     soft_bar([hinge_pad_size, hinge_pad_size, front_depth], min(0.55, front_depth*0.18));
 }
 
 module bridge_profile() {
-  bridge_height = max(2, min(3, rim_thickness*0.72));
-  bridge_clear_half_width = bridge_width/2;
-  bridge_overlap = max(0.8, min(rim_thickness, rim_thickness + 0.4));
-  bridge_half_width = bridge_clear_half_width + bridge_overlap;
-  bridge_y = lens_height*0.18;
-  bridge_radius = min(
-    min(max(0, bridge_join_radius), min(5.5, rim_thickness*1.55, bridge_width*0.32, lens_height*0.2)),
-    bridge_height/2 - 0.02
-  );
-  translate([0, bridge_y])
-    rounded_rect([bridge_half_width*2, bridge_height], bridge_radius);
+  polygon(bridge_profile_path);
 }
 
 module hinge_pad_profile(side=1) {
   pad_x = side*(head_width/2 - hinge_pad_overlap + hinge_mount_offset);
-  translate([pad_x, hinge_mount_height + hinge_pad_size/2])
+  translate([pad_x, hinge_mount_height])
     rounded_rect([hinge_pad_size, hinge_pad_size], min(0.55, front_depth*0.18));
+}
+
+module hinge_connector_profile(side=1) {
+  polygon(side < 0 ? hinge_connector_left_path : hinge_connector_right_path);
 }
 
 module front_planar_profile() {
@@ -7507,7 +7681,9 @@ module front_planar_profile() {
     rim_profile(lens_center);
     bridge_profile();
     hinge_pad_profile(-1);
+    hinge_connector_profile(-1);
     hinge_pad_profile(1);
+    hinge_connector_profile(1);
   }
 }
 
