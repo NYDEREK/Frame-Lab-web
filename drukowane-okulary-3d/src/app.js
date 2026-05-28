@@ -15,7 +15,7 @@ const parameterSchema = [
   ["frame_depth", "Front depth", "Extrusion depth", 3, 12, 0.1, "mm"],
   ["temple_length", "Temple length", "Arm length", 70, 180, 1, "mm"],
   ["temple_drop", "Temple drop", "Behind-ear hook", 0, 42, 1, "mm"],
-  ["temple_spread", "Temple spread", "Temple opening angle", 0, 28, 0.5, "°"],
+  ["temple_spread", "Temple spread", "Fixed hinge axis", 0, 0, 0.5, "°"],
   ["nose_pad_width", "Nose pad width", "Support surface", 3, 14, 0.5, "mm"],
   ["nose_pad_drop", "Nose pad position", "Support offset", 0, 18, 0.5, "mm"],
   ["hinge_width", "Hinge width", "Side block", 3, 16, 0.5, "mm"],
@@ -149,9 +149,9 @@ const defaultParams = {
   lens_height: 37,
   rim_thickness: 5.2,
   frame_depth: 5.8,
-  temple_length: 145,
+  temple_length: 100,
   temple_drop: 30,
-  temple_spread: 8,
+  temple_spread: 0,
   nose_pad_width: 8,
   nose_pad_drop: 7,
   hinge_width: 8.5,
@@ -166,9 +166,7 @@ const designParameterGroups = {
     ["lens_height", "Lens height"],
     ["rim_thickness", "Rim thickness"]
   ],
-  temples: [
-    ["temple_spread", "Opening angle"]
-  ]
+  temples: []
 };
 const defaultDesignStyle = {
   lensShape: "soft-square",
@@ -200,22 +198,21 @@ const designPublicParameterKeys = [
   "lens_height",
   "rim_thickness",
   "temple_length",
-  "temple_drop",
-  "temple_spread"
+  "temple_drop"
 ];
 const defaultDesignConstruction = {
   hingeStandard: "FL-H1",
   lensThickness: 1,
   lensSeatWidth: 1.2,
-  lensSeatDepth: 0.35,
-  lensClearance: 0.2,
+  lensSeatDepth: 0.75,
+  lensClearance: 0.12,
   lensChannelOffset: 0,
   hingeMountHeight: 10,
   hingeMountOffset: 0,
   bridgeThickness: 6,
   bridgeTopJoinOffset: 3,
   bridgeBottomJoinOffset: -3,
-  templeStraight: 65,
+  templeStraight: 70,
   templeHook: 30,
   templeHookAngle: 45,
   templeBarHeight: 5.4,
@@ -352,7 +349,7 @@ const seedCollections = [
     category: "sun",
     access: "basic",
     description: "First production-ready modular frame kit.",
-    params: { head_width: 150, bridge_width: 18, lens_width: 52, lens_height: 37, temple_length: 145 },
+    params: { head_width: 150, bridge_width: 18, lens_width: 52, lens_height: 37, temple_length: 100 },
     order: 0
   }
 ];
@@ -391,9 +388,9 @@ lens_width = 52;      // [40:0.5:64]
 lens_height = 37;     // [28:0.5:50]
 rim_thickness = 5.2;  // [2.5:0.1:9]
 frame_depth = 5.8;    // [3:0.1:12]
-temple_length = 145;  // [70:1:180]
+temple_length = 100;  // [70:1:180]
 temple_drop = 30;     // [0:1:42]
-temple_spread = 8;    // [0:0.5:28]
+temple_spread = 0;    // Fixed straight from the hinge axis.
 nose_pad_width = 8;   // [3:0.5:14]
 nose_pad_drop = 7;    // [0:0.5:18]
 hinge_width = 8.5;    // [3:0.5:16]
@@ -1245,6 +1242,7 @@ function designGeometryParams(params = state.designDraft.params) {
     const supplied = Number(values[key]);
     values[key] = THREE.MathUtils.clamp(Number.isFinite(supplied) ? supplied : defaultParams[key], min, max);
   });
+  values.temple_spread = 0;
   values.lens_width = Math.max(20, (values.head_width - values.bridge_width) / 2 - values.rim_thickness * 2);
   return values;
 }
@@ -2382,10 +2380,19 @@ function addDesignFrontBody(p, material, definition, target = designModelGroup) 
   }
 }
 
+function designLensInsertExpansion(construction) {
+  const normalized = normalizeDesignConstruction(construction);
+  return THREE.MathUtils.clamp(
+    normalized.lensSeatDepth - normalized.lensClearance,
+    0,
+    normalized.lensSeatDepth
+  );
+}
+
 function addDesignLens(x, p, material, definition, target = designModelGroup) {
   const construction = normalizeDesignConstruction(definition?.construction);
-  const seatingOverlap = Math.max(0, construction.lensSeatDepth - construction.lensClearance / 2);
-  const shape = designProfilePath(p.lens_width, p.lens_height, definition, seatingOverlap, false, p.corner_radius);
+  const seatingExpansion = designLensInsertExpansion(construction);
+  const shape = ringPath(designOutlineRing(0, p, definition, seatingExpansion));
   const geometry = new THREE.ExtrudeGeometry(shape, { depth: construction.lensThickness, bevelEnabled: false });
   geometry.center();
   const lens = new THREE.Mesh(geometry, material);
@@ -3169,7 +3176,7 @@ function renderDesignProductionChecks() {
   const hingeReady = ["frontLeft", "frontRight", "templeLeft", "templeRight"].every((key) => Boolean(designHingeLibrary[key]));
   const frontLip = (features.extrude.depth - construction.lensSeatWidth) / 2 - construction.lensChannelOffset;
   const rearLip = (features.extrude.depth - construction.lensSeatWidth) / 2 + construction.lensChannelOffset;
-  const effectiveCapture = construction.lensSeatDepth - construction.lensClearance / 2;
+  const effectiveCapture = designLensInsertExpansion(construction);
   const checks = [
     { label: "Hinge interface", value: hingeReady ? "FL-H1 ready" : "Files unavailable", ready: hingeReady },
     { label: "Lens channel", value: `${formatNumber(construction.lensSeatWidth)} mm / ${formatNumber(construction.lensClearance)} mm fit`, ready: construction.lensSeatWidth >= construction.lensThickness + 0.1 },
@@ -4863,13 +4870,12 @@ function applyAssemblyToParams() {
   const rightSize = rightTemple.sizes[state.assembly.rightTemple.size] || firstSize(rightTemple);
   const templeLength = (leftSize.temple_length + rightSize.temple_length) / 2;
   const templeDrop = Math.max(leftSize.temple_drop, rightSize.temple_drop);
-  const templeSpread = (leftSize.temple_spread + rightSize.temple_spread) / 2;
   state.params = {
     ...state.params,
     ...frontSize,
     temple_length: templeLength,
     temple_drop: templeDrop,
-    temple_spread: templeSpread
+    temple_spread: 0
   };
 }
 
@@ -5069,9 +5075,9 @@ function componentToLibraryItem(component) {
     : component.kind === "lens"
       ? {}
     : {
-        temple_length: component.size === "S" ? 135 : component.size === "L" ? 155 : 145,
+        temple_length: 100,
         temple_drop: component.size === "S" ? 22 : component.size === "L" ? 36 : 30,
-        temple_spread: component.size === "S" ? 7 : component.size === "L" ? 9 : 8
+        temple_spread: 0
       };
   return {
     id: component.id,
@@ -7691,6 +7697,7 @@ authored_temple_length = temple_straight + temple_hook;
 active_temple_straight = max(35, temple_straight + temple_length - authored_temple_length);
 max_lens_channel_offset = max(0, (extrude_depth - lens_seat_width)/2 - 0.45);
 active_lens_channel_offset = min(max(lens_channel_offset, -max_lens_channel_offset), max_lens_channel_offset);
+lens_insert_delta = max(0, lens_seat_depth - lens_clearance);
 
 opening_width = max(20, (head_width - bridge_width)/2 - rim_thickness*2);
 outer_lens_width = opening_width + rim_thickness*2;
@@ -7736,7 +7743,7 @@ module lens_insert(cx=0) {
   translate([cx, 0, active_lens_channel_offset])
   scale([cx < 0 ? -1 : 1, 1, 1])
   linear_extrude(height=lens_thickness, center=true, convexity=6)
-  offset(delta=max(0, lens_seat_depth - lens_clearance/2)) lens_profile([opening_width, lens_height], false);
+  offset(delta=lens_insert_delta) lens_profile([opening_width, lens_height], false);
 }
 
 module lens_seat_cut(cx=0) {

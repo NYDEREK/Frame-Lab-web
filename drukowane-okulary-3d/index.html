@@ -161,7 +161,7 @@
                 </label>
                 <label class="auth-field">
                   <span>Temple</span>
-                  <input id="accountTempleLength" type="number" min="100" max="190" inputmode="decimal" placeholder="145" />
+                  <input id="accountTempleLength" type="number" min="100" max="190" inputmode="decimal" placeholder="100" />
                 </label>
               </div>
               <div class="fit-actions">
@@ -397,7 +397,7 @@
           <canvas id="scene"></canvas>
           <span id="metricWidth" class="hidden-utility" hidden>150</span>
           <span id="metricBridge" class="hidden-utility" hidden>18</span>
-          <span id="metricTemple" class="hidden-utility" hidden>145</span>
+          <span id="metricTemple" class="hidden-utility" hidden>100</span>
           <span id="meshStatus" class="hidden-utility" hidden>Preview</span>
         </section>
 
@@ -458,7 +458,7 @@
             <button id="designView3d" type="button">Assembly 3D</button>
           </div>
           <div class="design-stage-footer">
-            <span id="designDimensions">150 mm frame / 18 mm bridge / 95 mm temple</span>
+            <span id="designDimensions">150 mm frame / 18 mm bridge / 100 mm temple</span>
             <span id="designViewHint">Drag profile points to define the front opening</span>
           </div>
         </section>
@@ -519,12 +519,12 @@
               <div class="design-interface-metrics">
                 <div><strong>1.00 mm</strong><small>Acrylic lens</small></div>
                 <div><strong id="designLensSlotMetric">1.20 mm</strong><small>Internal slot</small></div>
-                <div><strong id="designLensCaptureMetric">0.35 mm</strong><small>Edge capture</small></div>
+                <div><strong id="designLensCaptureMetric">0.75 mm</strong><small>Edge capture</small></div>
               </div>
               <div class="design-construction-grid">
                 <label><span>Slot width</span><input id="designLensSlotWidth" type="number" min="1" max="2" step="0.05" value="1.2" /><small>mm</small></label>
-                <label><span>Edge capture</span><input id="designLensCaptureDepth" type="number" min="0.15" max="1.2" step="0.05" value="0.35" /><small>mm</small></label>
-                <label><span>Fit clearance</span><input id="designLensClearance" type="number" min="0" max="0.6" step="0.05" value="0.2" /><small>mm</small></label>
+                <label><span>Edge capture</span><input id="designLensCaptureDepth" type="number" min="0.15" max="1.2" step="0.05" value="0.75" /><small>mm</small></label>
+                <label><span>Fit clearance</span><input id="designLensClearance" type="number" min="0" max="0.6" step="0.01" value="0.12" /><small>mm</small></label>
                 <label><span>Channel offset</span><input id="designLensChannelOffset" type="number" min="-1" max="1" step="0.05" value="0" /><small>mm</small></label>
               </div>
               <p class="design-note">The lens edge sits inside the front body with printed lips on both faces. Clearance reduces the lens outline for fitting.</p>
@@ -560,7 +560,7 @@
                 <input id="designChamferAmount" type="number" min="0" max="2.4" step="0.1" value="0.4" aria-label="Chamfer amount" />
               </label>
               <input id="designLensRecessEnabled" type="checkbox" checked hidden />
-              <input id="designLensRecessDepth" type="number" value="0.35" hidden />
+              <input id="designLensRecessDepth" type="number" value="0.75" hidden />
             </section>
           </section>
           <section id="designFeaturesPanel" class="design-operations" role="tabpanel" hidden>
@@ -583,7 +583,7 @@
               <h3>Temple dimensions</h3>
               <div id="designTempleControls" class="design-controls"></div>
               <div class="design-construction-grid">
-                <label><span>Straight</span><input id="designTempleStraight" type="number" min="35" max="120" step="1" value="65" /><small>mm</small></label>
+                <label><span>Straight</span><input id="designTempleStraight" type="number" min="35" max="120" step="1" value="70" /><small>mm</small></label>
                 <label><span>Hook</span><input id="designTempleHook" type="number" min="10" max="60" step="1" value="30" /><small>mm</small></label>
                 <label><span>Angle</span><input id="designTempleHookAngle" type="number" min="10" max="75" step="1" value="45" /><small>deg</small></label>
                 <label><span>Height</span><input id="designTempleBarHeight" type="number" min="3" max="10" step="0.1" value="5.4" /><small>mm</small></label>
@@ -668,7 +668,7 @@
                 <span>Front hinges</span><strong>Included</strong>
                 <span>Temple hinges</span><strong>Included</strong>
                 <span>Acrylic lenses</span><strong>Generated</strong>
-                <span>Lens channel</span><strong id="designLensChannelSummary">1.20 mm slot / 0.35 mm grip / 0.20 mm clearance</strong>
+                <span>Lens channel</span><strong id="designLensChannelSummary">1.20 mm slot / 0.75 mm grip / 0.12 mm clearance</strong>
               </div>
             </section>
             <section class="design-control-section">
@@ -978,6 +978,6 @@
       document.querySelector("#openDesignLab")?.addEventListener("click", (event) => queueDesignLabDuringBoot(event, false));
       document.querySelector("#startDesignLab")?.addEventListener("click", (event) => queueDesignLabDuringBoot(event, true));
     </script>
-    <script type="module" src="./src/app.js?v=design-lab-bridge-horizontal-20260528-15"></script>
+    <script type="module" src="./src/app.js?v=design-lab-lens-seat-20260528-16"></script>
   </body>
 </html>
