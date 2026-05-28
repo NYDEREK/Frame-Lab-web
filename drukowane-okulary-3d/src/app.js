@@ -2177,9 +2177,67 @@ function designRoundedRectRing(width, height, radius, centerX = 0, centerY = 0) 
   ], Math.min(Math.max(0, radius), halfWidth, halfHeight));
 }
 
+function appendCubicBridgeSamples(points, start, controlA, controlB, end, segments = 18) {
+  if (!points.length) points.push([start.x, start.y]);
+  for (let step = 1; step <= segments; step += 1) {
+    const t = step / segments;
+    const inverse = 1 - t;
+    points.push([
+      inverse ** 3 * start.x
+        + 3 * inverse ** 2 * t * controlA.x
+        + 3 * inverse * t ** 2 * controlB.x
+        + t ** 3 * end.x,
+      inverse ** 3 * start.y
+        + 3 * inverse ** 2 * t * controlA.y
+        + 3 * inverse * t ** 2 * controlB.y
+        + t ** 3 * end.y
+    ]);
+  }
+}
+
 function designBridgeProfileRing(p, definition) {
-  const bridge = designBridgeProfileOutline(p, definition);
-  return sampledRoundedPolygon(bridge.points, bridge.radii);
+  const bridge = designBridgeMetrics(p, definition);
+  const topCenter = { x: 0, y: bridge.topY };
+  const bottomCenter = { x: 0, y: bridge.bottomY };
+  const topRight = { x: bridge.topHalfWidth, y: bridge.topJoinY };
+  const topLeft = { x: -bridge.topHalfWidth, y: bridge.topJoinY };
+  const bottomRight = { x: bridge.bottomHalfWidth, y: bridge.bottomJoinY };
+  const bottomLeft = { x: -bridge.bottomHalfWidth, y: bridge.bottomJoinY };
+  const topBend = Math.min(bridge.topRadius * 1.25, bridge.topHalfWidth * 0.35);
+  const bottomBend = Math.min(bridge.bottomRadius * 1.15, bridge.bottomHalfWidth * 0.35);
+  const topControlY = Math.max(bridge.topY, bridge.topJoinY) + topBend;
+  const bottomControlY = Math.min(bridge.bottomY, bridge.bottomJoinY) - bottomBend;
+  const points = [];
+  appendCubicBridgeSamples(
+    points,
+    topLeft,
+    { x: -bridge.topHalfWidth * 0.72, y: topControlY },
+    { x: -bridge.topHalfWidth * 0.28, y: topControlY },
+    topCenter
+  );
+  appendCubicBridgeSamples(
+    points,
+    topCenter,
+    { x: bridge.topHalfWidth * 0.28, y: topControlY },
+    { x: bridge.topHalfWidth * 0.72, y: topControlY },
+    topRight
+  );
+  points.push([bottomRight.x, bottomRight.y]);
+  appendCubicBridgeSamples(
+    points,
+    bottomRight,
+    { x: bridge.bottomHalfWidth * 0.72, y: bottomControlY },
+    { x: bridge.bottomHalfWidth * 0.28, y: bottomControlY },
+    bottomCenter
+  );
+  appendCubicBridgeSamples(
+    points,
+    bottomCenter,
+    { x: -bridge.bottomHalfWidth * 0.28, y: bottomControlY },
+    { x: -bridge.bottomHalfWidth * 0.72, y: bottomControlY },
+    bottomLeft
+  );
+  return points;
 }
 
 function designFrontPlanarPolygons(p, definition, innerExpansion = 0) {
