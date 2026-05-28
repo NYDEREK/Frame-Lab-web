@@ -2205,8 +2205,8 @@ function designBridgeProfileRing(p, definition) {
   const bottomLeft = { x: -bridge.bottomHalfWidth, y: bridge.bottomJoinY };
   const topBlendLength = Math.min(Math.max(bridge.topRadius * 1.35, 0.3), bridge.topHalfWidth * 0.24, 3.6);
   const bottomBlendLength = Math.min(Math.max(bridge.bottomRadius * 1.25, 0.3), bridge.bottomHalfWidth * 0.24, 4);
-  const topLift = Math.min(bridge.topRadius * 0.24, p.rim_thickness * 0.28, 0.85);
-  const bottomDrop = Math.min(bridge.bottomRadius * 0.22, p.rim_thickness * 0.32, 1);
+  const topInset = Math.min(bridge.topRadius * 0.24, p.rim_thickness * 0.28, 0.85);
+  const bottomInset = Math.min(bridge.bottomRadius * 0.22, p.rim_thickness * 0.32, 1);
   const pointOnRay = (center, end, distanceFromEnd) => {
     const length = Math.hypot(end.x - center.x, end.y - center.y);
     const ratio = Math.max(0, (length - distanceFromEnd) / Math.max(length, 0.001));
@@ -2219,8 +2219,8 @@ function designBridgeProfileRing(p, definition) {
   const topLeftInner = { x: -topRightInner.x, y: topRightInner.y };
   const bottomRightInner = pointOnRay(bottomCenter, bottomRight, bottomBlendLength);
   const bottomLeftInner = { x: -bottomRightInner.x, y: bottomRightInner.y };
-  const topControlY = Math.max(topRight.y, topRightInner.y) + topLift;
-  const bottomControlY = Math.min(bottomRight.y, bottomRightInner.y) - bottomDrop;
+  const topControlY = Math.min(topRight.y, topRightInner.y) - topInset;
+  const bottomControlY = Math.max(bottomRight.y, bottomRightInner.y) + bottomInset;
   const points = [];
   appendQuadraticBridgeSamples(
     points,
