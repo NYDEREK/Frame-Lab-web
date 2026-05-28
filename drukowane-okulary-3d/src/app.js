@@ -1534,8 +1534,8 @@ function designBridgeSelectionHandleIndex(index) {
 function designBridgeHandlePoints(p, definition = state.designDraft) {
   const bridge = designBridgeMetrics(p, definition);
   return [
-    { x: 0, y: bridge.topY },
-    { x: 0, y: bridge.bottomY }
+    { x: bridge.topHalfWidth, y: bridge.topY },
+    { x: bridge.lowerJoinHalfWidth, y: bridge.lowerBlendY }
   ];
 }
 
@@ -3114,7 +3114,7 @@ function syncDesignSelectedCornerField() {
     designSketchSelectedIndex = designBridgeHandleSelectionOffset + handleIndex;
     const isBottomHandle = handleIndex === 1;
     if (els.designSelectedCornerLabel) {
-      els.designSelectedCornerLabel.textContent = isBottomHandle ? "Lower bridge blend radius" : "Upper bridge blend radius";
+      els.designSelectedCornerLabel.textContent = isBottomHandle ? "Lower bridge-to-frame radius" : "Upper bridge-to-frame radius";
     }
     if (els.designSelectedCornerRadius) {
       els.designSelectedCornerRadius.value = String(isBottomHandle ? construction.bridgeBottomRadius || 0 : construction.bridgeTopRadius || 0);
