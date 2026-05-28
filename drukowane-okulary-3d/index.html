@@ -538,7 +538,7 @@
                 <label><span>Upper bridge blend</span><input id="designBridgeTopRadius" type="number" min="0" max="12" step="0.1" value="2.4" /><small>mm</small></label>
                 <label><span>Lower bridge blend</span><input id="designBridgeBottomRadius" type="number" min="0" max="12" step="0.1" value="4.2" /><small>mm</small></label>
               </div>
-              <p class="design-note">Both hinge halves share this vertical screw axis in assembly. The bridge blend handles sit at the frame transitions.</p>
+              <p class="design-note">Both hinge halves share this vertical screw axis in assembly. The bridge blend handles sit on the outer frame transitions.</p>
             </section>
             <section class="design-control-section design-feature-stack">
               <h3>Front operations</h3>
@@ -980,6 +980,6 @@
       document.querySelector("#openDesignLab")?.addEventListener("click", (event) => queueDesignLabDuringBoot(event, false));
       document.querySelector("#startDesignLab")?.addEventListener("click", (event) => queueDesignLabDuringBoot(event, true));
     </script>
-    <script type="module" src="./src/app.js?v=design-lab-bridge-junction-20260528-6"></script>
+    <script type="module" src="./src/app.js?v=design-lab-bridge-outer-20260528-7"></script>
   </body>
 </html>

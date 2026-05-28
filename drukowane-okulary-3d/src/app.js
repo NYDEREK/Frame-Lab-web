@@ -2222,33 +2222,33 @@ function designBridgeMetrics(p, definition = state.designDraft) {
   const lowerY = centerY - height / 2;
   const lowerBlendDrop = THREE.MathUtils.clamp(p.rim_thickness * 1.85, 4.2, 6.4);
   const lowerBlendY = lowerY - lowerBlendDrop;
-  const bridgeHalfWidthAtY = (y) => {
+  const bridgeExteriorHalfWidthAtY = (y) => {
     const outerJoinX = designRimBoundaryX(1, p, definition, y, true);
-    const lensOpeningX = designLensOpeningBoundaryX(1, p, definition, y, true);
-    let halfWidth = Number.isFinite(outerJoinX)
-      ? outerJoinX + overlap
-      : clearHalfWidth + overlap;
-    if (Number.isFinite(lensOpeningX)) {
-      halfWidth = Math.min(halfWidth, lensOpeningX - 0.45);
-    }
-    return Math.max(clearHalfWidth + Math.min(overlap, p.rim_thickness * 0.74), halfWidth);
+    return Number.isFinite(outerJoinX)
+      ? Math.max(clearHalfWidth, outerJoinX)
+      : clearHalfWidth;
   };
-  const topHalfWidth = bridgeHalfWidthAtY(upperY);
+  const bridgeBondHalfWidthAtY = (y) => {
+    const exteriorHalfWidth = bridgeExteriorHalfWidthAtY(y);
+    const lensOpeningX = designLensOpeningBoundaryX(1, p, definition, y, true);
+    const innerLimit = Number.isFinite(lensOpeningX)
+      ? lensOpeningX - 0.45
+      : exteriorHalfWidth + overlap;
+    return Math.max(exteriorHalfWidth, Math.min(exteriorHalfWidth + overlap, innerLimit));
+  };
+  const topHalfWidth = bridgeExteriorHalfWidthAtY(upperY);
   const sideWaistY = centerY - height * 0.08;
-  const sideWaistHalfWidth = Math.min(
-    bridgeHalfWidthAtY(sideWaistY),
-    topHalfWidth + p.rim_thickness * 0.25
+  const sideWaistHalfWidth = Math.max(
+    bridgeBondHalfWidthAtY(sideWaistY),
+    topHalfWidth + Math.min(overlap * 0.5, p.rim_thickness * 0.8)
   );
-  const minimumHalfWidth = clearHalfWidth + Math.min(overlap, p.rim_thickness * 0.74);
-  const lowerJoinHalfWidth = Math.max(
-    minimumHalfWidth,
-    Math.min(bridgeHalfWidthAtY(lowerBlendY), topHalfWidth + p.rim_thickness * 0.65)
-  );
+  const lowerJoinHalfWidth = bridgeExteriorHalfWidthAtY(lowerBlendY);
+  const lowerBondHalfWidth = bridgeBondHalfWidthAtY(lowerBlendY);
   const lowerFlatHalfWidth = Math.max(
-    clearHalfWidth * 0.52,
-    lowerJoinHalfWidth - THREE.MathUtils.clamp(p.rim_thickness * 1.85, 4.6, 6.2)
+    clearHalfWidth * 0.86,
+    lowerJoinHalfWidth - THREE.MathUtils.clamp(p.rim_thickness * 0.35, 0.6, 1.2)
   );
-  const halfWidth = Math.max(topHalfWidth, sideWaistHalfWidth, lowerJoinHalfWidth);
+  const halfWidth = Math.max(topHalfWidth, sideWaistHalfWidth, lowerJoinHalfWidth, lowerBondHalfWidth);
   const maxTopRadius = Math.min(height / 2 - 0.02, p.rim_thickness * 1.25, overlap * 1.05, 4.2);
   const maxBottomRadius = Math.min(lowerBlendDrop * 0.95, p.rim_thickness * 1.8, overlap * 1.35, 6.2);
   const topRadius = THREE.MathUtils.clamp(
@@ -2273,6 +2273,7 @@ function designBridgeMetrics(p, definition = state.designDraft) {
     sideWaistY,
     sideWaistHalfWidth,
     lowerJoinHalfWidth,
+    lowerBondHalfWidth,
     lowerFlatHalfWidth,
     clearHalfWidth,
     overlap,
