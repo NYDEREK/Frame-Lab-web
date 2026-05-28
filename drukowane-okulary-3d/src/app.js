@@ -2340,10 +2340,24 @@ function designHingePadConnectorRing(side, p, definition = state.designDraft) {
 
 function designEdgeOperation(p, definition) {
   const features = normalizeDesignFeatures(definition?.features, p);
-  if (features.chamfer.enabled) return { amount: features.chamfer.amount, segments: 1 };
-  if (features.fillet.enabled) return { amount: features.fillet.radius, segments: 3 };
+  if (features.chamfer.enabled) return { kind: "chamfer", amount: features.chamfer.amount, segments: 1 };
+  if (features.fillet.enabled) return { kind: "fillet", amount: features.fillet.radius, segments: 3 };
   const fallbackRadius = THREE.MathUtils.clamp(parseDesignNumber(p.bevel, defaultParams.bevel) * 0.18 || 0.22, 0.14, 0.34);
-  return { amount: fallbackRadius, segments: 2 };
+  return { kind: "soft", amount: fallbackRadius, segments: 2 };
+}
+
+function designSafeFrontEdgeAmount(edge, p, construction, layerDepth) {
+  const requested = Math.max(0, parseDesignNumber(edge?.amount, 0));
+  if (!requested || !layerDepth) return 0;
+  const depthLimit = Math.max(0, layerDepth * 0.42 - 0.02);
+  const materialLimit = Math.max(0, p.rim_thickness * 0.32);
+  const channelLimit = Math.max(0.08, construction.lensSeatDepth * 0.72);
+  const absoluteLimit = edge?.kind === "chamfer" ? 0.9 : 0.55;
+  return THREE.MathUtils.clamp(
+    requested,
+    0,
+    Math.min(depthLimit, materialLimit, channelLimit, absoluteLimit)
+  );
 }
 
 function addDesignFrontBody(p, material, definition, target = designModelGroup) {
@@ -2352,11 +2366,12 @@ function addDesignFrontBody(p, material, definition, target = designModelGroup) 
   const edge = designEdgeOperation(p, definition);
   const addLayer = (innerExpansion, depth, z, edgeEnabled) => {
     designFrontShapes(p, definition, innerExpansion).forEach((shape) => {
+      const edgeAmount = edgeEnabled ? designSafeFrontEdgeAmount(edge, p, construction, depth) : 0;
       const geometry = new THREE.ExtrudeGeometry(shape, {
         depth,
-        bevelEnabled: edgeEnabled && edge.amount > 0,
-        bevelThickness: Math.max(0.01, edge.amount),
-        bevelSize: Math.max(0.01, edge.amount),
+        bevelEnabled: edgeAmount > 0,
+        bevelThickness: Math.max(0.01, edgeAmount),
+        bevelSize: Math.max(0.01, edgeAmount),
         bevelSegments: edge.segments
       });
       geometry.translate(0, 0, -depth / 2);
@@ -7698,6 +7713,9 @@ active_temple_straight = max(35, temple_straight + temple_length - authored_temp
 max_lens_channel_offset = max(0, (extrude_depth - lens_seat_width)/2 - 0.45);
 active_lens_channel_offset = min(max(lens_channel_offset, -max_lens_channel_offset), max_lens_channel_offset);
 lens_insert_delta = max(0, lens_seat_depth - lens_clearance);
+visible_lip_depth = lens_recess_enabled ? max(0, (front_depth - lens_seat_width)/2 - abs(active_lens_channel_offset)) : front_depth;
+edge_chamfer = chamfer_enabled ? min(chamfer_amount, max(0, visible_lip_depth*0.42 - 0.02), rim_thickness*0.32, lens_seat_depth*0.72, 0.9) : 0;
+chamfer_slice = 0.02;
 
 opening_width = max(20, (head_width - bridge_width)/2 - rim_thickness*2);
 outer_lens_width = opening_width + rim_thickness*2;
@@ -7797,8 +7815,40 @@ module front_planar_profile() {
   }
 }
 
+module chamfered_profile_extrude(height=1, chamfer=0) {
+  safe_height = max(0.02, height);
+  safe_chamfer = min(max(0, chamfer), safe_height/2 - 0.01);
+  if (safe_chamfer <= 0.001) {
+    linear_extrude(height=safe_height, center=true, convexity=10)
+      children();
+  } else {
+    union() {
+      linear_extrude(height=max(0.02, safe_height - safe_chamfer*2), center=true, convexity=10)
+        children();
+      hull() {
+        translate([0, 0, safe_height/2 - safe_chamfer])
+          linear_extrude(height=chamfer_slice, center=true, convexity=10)
+            children();
+        translate([0, 0, safe_height/2])
+          linear_extrude(height=chamfer_slice, center=true, convexity=10)
+            offset(delta=-safe_chamfer)
+              children();
+      }
+      hull() {
+        translate([0, 0, -safe_height/2 + safe_chamfer])
+          linear_extrude(height=chamfer_slice, center=true, convexity=10)
+            children();
+        translate([0, 0, -safe_height/2])
+          linear_extrude(height=chamfer_slice, center=true, convexity=10)
+            offset(delta=-safe_chamfer)
+              children();
+      }
+    }
+  }
+}
+
 module front_body() {
-  linear_extrude(height=front_depth, center=true, convexity=10) {
+  chamfered_profile_extrude(front_depth, edge_chamfer) {
     front_planar_profile();
   }
 }
