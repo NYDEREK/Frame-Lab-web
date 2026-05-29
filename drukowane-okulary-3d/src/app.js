@@ -1575,13 +1575,16 @@ function updateDraggedDesignBridgeHandle(event, metrics) {
 }
 
 function drawSketchProfile(ctx, centerX, metrics, expansion, fill, stroke, mirror = false) {
-  const outline = designProfileOutline(metrics.lensWidth, metrics.lensHeight, state.designDraft, expansion);
-  const shapedPoints = outline.points.map((point) => ({
-    x: centerX + (mirror ? -point.x : point.x) * metrics.scale,
-    y: metrics.centerY - point.y * metrics.scale
+  const p = { ...metrics.p, lens_width: metrics.lensWidth, lens_height: metrics.lensHeight };
+  const shapedPoints = designLocalOutlineRing(p, state.designDraft, expansion).map(([x, y]) => ({
+    x: centerX + (mirror ? -x : x) * metrics.scale,
+    y: metrics.centerY - y * metrics.scale
   }));
+  if (!shapedPoints.length) return;
   ctx.beginPath();
-  traceRoundedPolygon(ctx, shapedPoints, outline.radii.map((radius) => radius * metrics.scale));
+  ctx.moveTo(shapedPoints[0].x, shapedPoints[0].y);
+  shapedPoints.slice(1).forEach((point) => ctx.lineTo(point.x, point.y));
+  ctx.closePath();
   if (fill) {
     ctx.fillStyle = fill;
     ctx.fill();
@@ -2064,17 +2067,126 @@ function sampledRoundedPolygon(points, radii = 0, segmentCount = 16) {
   return samples;
 }
 
+function designRingArea(ring) {
+  return ring.reduce((area, point, index) => {
+    const next = ring[(index + 1) % ring.length];
+    return area + point[0] * next[1] - next[0] * point[1];
+  }, 0) / 2;
+}
+
+function designCleanRing(ring) {
+  const cleaned = [];
+  ring.forEach((point) => {
+    const x = Number(point?.[0]);
+    const y = Number(point?.[1]);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+    const rounded = [Number(x.toFixed(4)), Number(y.toFixed(4))];
+    const previous = cleaned[cleaned.length - 1];
+    if (previous && Math.hypot(previous[0] - rounded[0], previous[1] - rounded[1]) < 0.001) return;
+    cleaned.push(rounded);
+  });
+  if (cleaned.length > 2) {
+    const first = cleaned[0];
+    const last = cleaned[cleaned.length - 1];
+    if (Math.hypot(first[0] - last[0], first[1] - last[1]) < 0.001) cleaned.pop();
+  }
+  return cleaned;
+}
+
+function designCircleRing(cx, cy, radius, segments = 14) {
+  return Array.from({ length: segments }, (_, index) => {
+    const angle = (Math.PI * 2 * index) / segments;
+    return [cx + Math.cos(angle) * radius, cy + Math.sin(angle) * radius];
+  });
+}
+
+function designSegmentCapsuleRing(start, end, radius, arcSegments = 7) {
+  const dx = end[0] - start[0];
+  const dy = end[1] - start[1];
+  const length = Math.hypot(dx, dy);
+  if (length < 0.001) return designCircleRing(start[0], start[1], radius, arcSegments * 2);
+  const normalAngle = Math.atan2(dx / length, -dy / length);
+  const points = [
+    [start[0] + Math.cos(normalAngle) * radius, start[1] + Math.sin(normalAngle) * radius],
+    [end[0] + Math.cos(normalAngle) * radius, end[1] + Math.sin(normalAngle) * radius]
+  ];
+  for (let step = 1; step <= arcSegments; step += 1) {
+    const angle = normalAngle - (Math.PI * step) / arcSegments;
+    points.push([end[0] + Math.cos(angle) * radius, end[1] + Math.sin(angle) * radius]);
+  }
+  points.push([
+    start[0] + Math.cos(normalAngle - Math.PI) * radius,
+    start[1] + Math.sin(normalAngle - Math.PI) * radius
+  ]);
+  for (let step = 1; step <= arcSegments; step += 1) {
+    const angle = normalAngle - Math.PI - (Math.PI * step) / arcSegments;
+    points.push([start[0] + Math.cos(angle) * radius, start[1] + Math.sin(angle) * radius]);
+  }
+  return designCleanRing(points);
+}
+
+function designFallbackOffsetRing(ring, distance) {
+  const offset = offsetDesignPolygon(ring.map(([x, y]) => ({ x, y })), distance);
+  return designCleanRing(offset.map(({ x, y }) => [x, y]));
+}
+
+function designBufferedRing(ring, distance) {
+  const radius = Math.max(0, parseDesignNumber(distance, 0));
+  const base = designCleanRing(ring);
+  if (base.length < 3 || radius < 0.001) return base;
+  try {
+    const geometries = [[base]];
+    base.forEach((point, index) => {
+      const next = base[(index + 1) % base.length];
+      const capsule = designSegmentCapsuleRing(point, next, radius);
+      if (capsule.length >= 3) geometries.push([capsule]);
+    });
+    const union = polygonClipping.union(...geometries);
+    const candidates = [];
+    union.forEach((polygon) => {
+      const outer = designCleanRing(polygon?.[0] || []);
+      if (outer.length >= 3) candidates.push(outer);
+    });
+    if (!candidates.length) return designFallbackOffsetRing(base, radius);
+    return candidates.reduce((best, candidate) => (
+      Math.abs(designRingArea(candidate)) > Math.abs(designRingArea(best)) ? candidate : best
+    ), candidates[0]);
+  } catch {
+    return designFallbackOffsetRing(base, radius);
+  }
+}
+
+const designLocalOutlineRingCache = new Map();
+
+function designLocalOutlineRing(p, definition, expansion = 0) {
+  const sketch = normalizeDesignSketch(definition?.sketch);
+  const distance = Math.max(0, parseDesignNumber(expansion, 0));
+  const key = [
+    p.lens_width.toFixed(3),
+    p.lens_height.toFixed(3),
+    distance.toFixed(3),
+    sketch.points.map(([x, y]) => `${Number(x).toFixed(4)},${Number(y).toFixed(4)}`).join(";"),
+    sketch.cornerRadii.map((radius) => Number(radius).toFixed(3)).join(";")
+  ].join("|");
+  const cached = designLocalOutlineRingCache.get(key);
+  if (cached) return cached;
+  const points = sketch.points.map(([x, y]) => ({ x: x * p.lens_width, y: y * p.lens_height }));
+  const base = sampledRoundedPolygon(points, sketch.cornerRadii);
+  const ring = designBufferedRing(base, distance);
+  if (designLocalOutlineRingCache.size > 80) designLocalOutlineRingCache.clear();
+  designLocalOutlineRingCache.set(key, ring);
+  return ring;
+}
+
 function designLensCenter(p) {
   return p.bridge_width / 2 + (p.lens_width + p.rim_thickness * 2) / 2;
 }
 
 function designOutlineRing(centerX, p, definition, expansion, mirror = false) {
-  const outline = designProfileOutline(p.lens_width, p.lens_height, definition, expansion);
-  const points = outline.points.map(({ x, y }) => ({
-    x: centerX + (mirror ? -x : x),
+  return designLocalOutlineRing(p, definition, expansion).map(([x, y]) => [
+    centerX + (mirror ? -x : x),
     y
-  }));
-  return sampledRoundedPolygon(points, outline.radii);
+  ]);
 }
 
 function designOuterRimRing(side, p, definition = state.designDraft) {
