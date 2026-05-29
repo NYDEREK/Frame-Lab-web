@@ -222,6 +222,7 @@ const defaultDesignConstruction = {
   templePatternSpacing: 9,
   templeTextSize: 4,
   templeTextPosition: 36,
+  templeTextYOffset: 0,
   templeTextDepth: 0.45
 };
 // The visible front remains planar: a side landing carries the mechanical hinge behind it.
@@ -908,6 +909,7 @@ let designSketchDragIndex = -1;
 let designSketchSelectedIndex = 0;
 let designTempleSketchDragIndex = -1;
 let designTempleSketchSelectedIndex = 0;
+let designTempleTextDragState = null;
 let designHingeLibrary = {};
 let designTextFont = null;
 let designTextFontLoading = false;
@@ -1188,7 +1190,8 @@ function normalizeDesignConstruction(construction = {}) {
     templeTextureDepth: bounded("templeTextureDepth", 0.2, 1.2),
     templePatternSpacing: bounded("templePatternSpacing", 5, 18),
     templeTextSize: bounded("templeTextSize", 2, 8),
-    templeTextPosition: bounded("templeTextPosition", 8, 75),
+    templeTextPosition: bounded("templeTextPosition", 8, 120),
+    templeTextYOffset: bounded("templeTextYOffset", -5, 5),
     templeTextDepth: bounded("templeTextDepth", 0.15, 1.2)
   };
 }
@@ -1359,11 +1362,19 @@ function setupDesignSketch() {
     return closest;
   };
   els.designSketchCanvas.addEventListener("pointerdown", (event) => {
-    if (state.designDraft.step === "left-temple") {
+    if (state.designDraft.step === "left-temple" || state.designDraft.step === "right-temple") {
+      const mirrored = state.designDraft.step === "right-temple";
       const metrics = templeSketchMetrics();
       if (!metrics) return;
       const rect = els.designSketchCanvas.getBoundingClientRect();
       const point = { x: event.clientX - rect.left, y: event.clientY - rect.top };
+      if (templeTextHitTest(point, metrics, mirrored)) {
+        designTempleTextDragState = { mirrored };
+        els.designSketchCanvas.setPointerCapture(event.pointerId);
+        drawDesignSketch();
+        return;
+      }
+      if (mirrored) return;
       let closest = -1;
       let distance = 16;
       metrics.screenPoints.forEach((handle, index) => {
@@ -1399,6 +1410,10 @@ function setupDesignSketch() {
     drawDesignSketch();
   });
   els.designSketchCanvas.addEventListener("pointermove", (event) => {
+    if (designTempleTextDragState) {
+      updateDraggedTempleText(event, templeSketchMetrics(), designTempleTextDragState.mirrored);
+      return;
+    }
     if (designTempleSketchDragIndex >= 0) {
       const metrics = templeSketchMetrics();
       const rect = els.designSketchCanvas.getBoundingClientRect();
@@ -1441,6 +1456,7 @@ function setupDesignSketch() {
   const finish = () => {
     designSketchDragIndex = -1;
     designTempleSketchDragIndex = -1;
+    designTempleTextDragState = null;
   };
   els.designSketchCanvas.addEventListener("pointerup", finish);
   els.designSketchCanvas.addEventListener("pointercancel", finish);
@@ -1510,6 +1526,69 @@ function templeSketchMetrics() {
   const origin = { x: 86, y: Math.max(180, rect.height * 0.38) };
   const screenPoints = profile.points.map(([x, y]) => ({ x: origin.x + x * scale, y: origin.y - y * scale }));
   return { rect, construction: c, profile, scale, origin, screenPoints, totalWidth, top, bottom };
+}
+
+function templeSketchScreenX(metrics, x, mirrored = false) {
+  const screenX = metrics.origin.x + x * metrics.scale;
+  return mirrored ? metrics.rect.width - screenX : screenX;
+}
+
+function templeTextScreenFontSize(construction, scale) {
+  return Math.max(10, Math.min(28, construction.templeTextSize * scale * 0.7));
+}
+
+function templeTextScreenBox(metrics, mirrored = false, label = "") {
+  const { construction: c, origin, scale } = metrics;
+  const fontSize = templeTextScreenFontSize(c, scale);
+  const width = Math.max(42, String(label || "").length * fontSize * 0.58) + 16;
+  const height = Math.max(18, fontSize * 1.35);
+  const center = {
+    x: templeSketchScreenX(metrics, c.templeTextPosition, mirrored),
+    y: origin.y - c.templeTextYOffset * scale
+  };
+  return {
+    ...center,
+    fontSize,
+    width,
+    height,
+    left: center.x - width / 2,
+    right: center.x + width / 2,
+    top: center.y - height / 2,
+    bottom: center.y + height / 2
+  };
+}
+
+function templeTextHitTest(point, metrics, mirrored = false) {
+  const style = normalizeDesignStyle(state.designDraft.style);
+  if (style.templeDetailMode !== "text") return false;
+  const label = mirrored ? style.rightTempleText : style.leftTempleText;
+  if (!label) return false;
+  const box = templeTextScreenBox(metrics, mirrored, label);
+  return point.x >= box.left - 8 && point.x <= box.right + 8 && point.y >= box.top - 8 && point.y <= box.bottom + 8;
+}
+
+function updateDraggedTempleText(event, metrics, mirrored = false) {
+  if (!metrics || !els.designSketchCanvas) return;
+  const rect = els.designSketchCanvas.getBoundingClientRect();
+  const screenX = event.clientX - rect.left;
+  const screenY = event.clientY - rect.top;
+  const localX = mirrored
+    ? (metrics.rect.width - screenX - metrics.origin.x) / metrics.scale
+    : (screenX - metrics.origin.x) / metrics.scale;
+  const localY = (metrics.origin.y - screenY) / metrics.scale;
+  const current = normalizeDesignConstruction(state.designDraft.construction);
+  const profileWidth = Math.max(...metrics.profile.points.map(([x]) => x), current.templeStraight + current.templeHook);
+  const maxPosition = Math.max(8, Math.min(120, profileWidth - 6));
+  const verticalLimit = Math.max(0.2, Math.min(5, current.templeBarHeight / 2 - current.templeTextSize * 0.28));
+  state.designDraft.construction = normalizeDesignConstruction({
+    ...state.designDraft.construction,
+    templeTextPosition: THREE.MathUtils.clamp(localX, 8, maxPosition),
+    templeTextYOffset: THREE.MathUtils.clamp(localY, -verticalLimit, verticalLimit)
+  });
+  state.designDraft.manualCode = false;
+  syncDesignFields();
+  syncDesignCode();
+  renderDesignPreview({ fitView: false });
 }
 
 function sketchScreenPoint(index, metrics) {
@@ -1664,6 +1743,48 @@ function prepareDesignDrawingCanvas(canvas, rect) {
   return { ctx, colors };
 }
 
+function drawTempleHingeDatum(ctx, metrics, mirrored, colors) {
+  const { origin, scale } = metrics;
+  const hingeLength = 6.25;
+  const hingeHeight = 4.5;
+  const overlap = designTempleArmJoinOverlap;
+  const bodyStart = templeSketchScreenX(metrics, -hingeLength + overlap, mirrored);
+  const bodyEnd = templeSketchScreenX(metrics, overlap, mirrored);
+  const left = Math.min(bodyStart, bodyEnd);
+  const width = Math.abs(bodyEnd - bodyStart);
+  const height = hingeHeight * scale;
+  const top = origin.y - height / 2;
+  const rearFaceX = templeSketchScreenX(metrics, overlap, mirrored);
+  const screwX = templeSketchScreenX(metrics, -hingeLength * 0.45 + overlap, mirrored);
+  ctx.save();
+  ctx.fillStyle = "rgba(0, 0, 0, 0.2)";
+  ctx.fillRect(left + scale * 0.28, top + scale * 0.22, width, height);
+  ctx.fillStyle = colors.accent;
+  ctx.strokeStyle = colors.stroke;
+  ctx.lineWidth = 1.4;
+  ctx.beginPath();
+  if (typeof ctx.roundRect === "function") ctx.roundRect(left, top, width, height, Math.min(3, height * 0.18));
+  else ctx.rect(left, top, width, height);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = "rgba(255,255,255,.14)";
+  ctx.fillRect(left + width * 0.08, top + height * 0.16, width * 0.52, height * 0.16);
+  ctx.strokeStyle = colors.background;
+  ctx.lineWidth = 1.6;
+  ctx.beginPath();
+  ctx.moveTo(rearFaceX, top - scale * 0.18);
+  ctx.lineTo(rearFaceX, top + height + scale * 0.18);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(screwX, origin.y, Math.max(2.4, height * 0.18), 0, Math.PI * 2);
+  ctx.fillStyle = colors.background;
+  ctx.fill();
+  ctx.strokeStyle = colors.text;
+  ctx.lineWidth = 1.1;
+  ctx.stroke();
+  ctx.restore();
+}
+
 function drawTempleSketch(mirrored = false) {
   const canvas = els.designSketchCanvas;
   const metrics = templeSketchMetrics();
@@ -1674,7 +1795,6 @@ function drawTempleSketch(mirrored = false) {
   const flipX = (x) => mirrored ? rect.width - x : x;
   const point = ({ x, y }) => ({ x: flipX(x), y });
   const displayPoints = screenPoints.map(point);
-  const a = displayPoints[0];
   ctx.strokeStyle = colors.axis;
   ctx.beginPath();
   ctx.moveTo(0, origin.y);
@@ -1721,28 +1841,26 @@ function drawTempleSketch(mirrored = false) {
   if (style.templeDetailMode === "text") {
     const label = mirrored ? style.rightTempleText : style.leftTempleText;
     if (label) {
-      const labelX = point({ x: origin.x + c.templeTextPosition * scale, y: origin.y }).x;
+      const textBox = templeTextScreenBox(metrics, mirrored, label);
       ctx.save();
       ctx.fillStyle = colors.dimension;
-      ctx.font = `700 ${Math.max(10, Math.min(28, c.templeTextSize * scale * 0.7))}px Inter, Arial, sans-serif`;
+      ctx.font = `700 ${textBox.fontSize}px Inter, Arial, sans-serif`;
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      ctx.fillText(label, labelX, origin.y);
+      ctx.fillText(label, textBox.x, textBox.y);
+      ctx.globalAlpha = designTempleTextDragState?.mirrored === mirrored ? 0.95 : 0.42;
+      ctx.strokeStyle = colors.dimension;
+      ctx.lineWidth = 1.2;
+      ctx.strokeRect(textBox.left, textBox.top, textBox.width, textBox.height);
+      ctx.globalAlpha = 1;
+      ctx.beginPath();
+      ctx.arc(textBox.x, textBox.y, Math.max(3.2, textBox.height * 0.12), 0, Math.PI * 2);
+      ctx.fillStyle = colors.accent;
+      ctx.fill();
       ctx.restore();
     }
   }
-  const hingeLength = 6.25 * scale;
-  const hingeHeight = 6 * scale;
-  ctx.fillStyle = colors.accent;
-  const hingeCenterY = origin.y;
-  ctx.fillRect(a.x - (mirrored ? 0 : hingeLength), hingeCenterY - hingeHeight / 2, hingeLength, hingeHeight);
-  ctx.beginPath();
-  ctx.arc(a.x - (mirrored ? -hingeLength * 0.52 : hingeLength * 0.52), hingeCenterY, Math.max(2.5, hingeHeight * 0.17), 0, Math.PI * 2);
-  ctx.fillStyle = colors.background;
-  ctx.fill();
-  ctx.strokeStyle = colors.text;
-  ctx.lineWidth = 1.2;
-  ctx.stroke();
+  drawTempleHingeDatum(ctx, metrics, mirrored, colors);
   if (!mirrored) {
     displayPoints.forEach((handle, index) => {
       ctx.beginPath();
@@ -2655,7 +2773,7 @@ function addDesignTextRelief(text, side, temple, material, construction) {
   mark.rotation.y = side < 0 ? -Math.PI / 2 : Math.PI / 2;
   mark.position.set(
     side * (2.5 + construction.templeDepth / 2 - construction.templeTextDepth * 0.35),
-    designTempleBarCenterY,
+    designTempleBarCenterY + construction.templeTextYOffset,
     designTempleProfileStartZ - construction.templeTextPosition
   );
   temple.add(mark);
@@ -3360,6 +3478,7 @@ function handleDesignOperationChange(event) {
     event.type === "input"
     && event.target.matches('input[type="number"], input[type="text"], textarea')
     && !liveBridgeControls.includes(event.target)
+    && ![els.designTempleText, els.designRightTempleText].includes(event.target)
   ) return;
   const param = event.target.dataset.designParam;
   if (param) {
@@ -3642,6 +3761,7 @@ function parseDesignCode(source) {
       templePatternSpacing: readNumber("temple_pattern_spacing", state.designDraft.construction?.templePatternSpacing),
       templeTextSize: readNumber("temple_text_size", state.designDraft.construction?.templeTextSize),
       templeTextPosition: readNumber("temple_text_position", state.designDraft.construction?.templeTextPosition),
+      templeTextYOffset: readNumber("temple_text_y_offset", state.designDraft.construction?.templeTextYOffset),
       templeTextDepth: readNumber("temple_text_depth", state.designDraft.construction?.templeTextDepth)
     }),
     features: normalizeDesignFeatures({
@@ -7815,6 +7935,7 @@ temple_texture_depth = ${formatNumber(construction.templeTextureDepth)};
 temple_pattern_spacing = ${formatNumber(construction.templePatternSpacing)};
 temple_text_size = ${formatNumber(construction.templeTextSize)};
 temple_text_position = ${formatNumber(construction.templeTextPosition)};
+temple_text_y_offset = ${formatNumber(construction.templeTextYOffset)};
 temple_text_depth = ${formatNumber(construction.templeTextDepth)};
 temple_bar_center_y = ${formatNumber(designTempleBarCenterY)}; // Center of FL-H1 temple body after rotation.
 temple_hinge_rear_z = ${formatNumber(designTempleHingeRearZ)}; // Rear face of FL-H1 temple body after orientation.
@@ -7997,7 +8118,7 @@ module temple_pattern_relief(side=1) {
 module temple_mark(side=1) {
   text_value = side < 0 ? left_temple_text : right_temple_text;
   if (temple_detail_mode == "text" && text_value != "")
-    translate([side*2.5 + side*(temple_depth/2 - temple_text_depth*0.35), temple_bar_center_y-temple_text_size/2, temple_arm_start_z-temple_text_position])
+    translate([side*2.5 + side*(temple_depth/2 - temple_text_depth*0.35), temple_bar_center_y + temple_text_y_offset - temple_text_size/2, temple_arm_start_z-temple_text_position])
     rotate([90, side > 0 ? 90 : -90, 0])
     linear_extrude(height=temple_text_depth)
     text(text_value, size=temple_text_size, halign="center", valign="center");
