@@ -235,7 +235,7 @@ const designTempleBarCenterY = 2.8;
 const designTempleHingeRearZ = -7.5;
 const designTempleArmJoinOverlap = 0.9;
 const designTempleProfileStartZ = designTempleHingeRearZ + designTempleArmJoinOverlap;
-const designTempleTextSafeStart = 30;
+const designTempleTextSafeStart = 12;
 const designTempleTextEndPadding = 8;
 const designHingeAssetManifest = {
   frontLeft: "./assets/hinges/front-hinge-left.3mf",
@@ -1850,13 +1850,13 @@ function drawTempleTextSafetyZone(ctx, metrics, mirrored, colors, displayPoints)
   ctx.beginPath();
   traceRoundedPolygon(ctx, displayPoints, metrics.profile.cornerRadii.map((radius) => radius * metrics.scale));
   ctx.clip();
-  ctx.fillStyle = "rgba(10, 11, 11, 0.28)";
+  ctx.fillStyle = "rgba(10, 11, 11, 0.14)";
   ctx.fillRect(left, metrics.origin.y - 30 * metrics.scale, width, 60 * metrics.scale);
   ctx.restore();
   ctx.save();
-  ctx.strokeStyle = colors.background;
-  ctx.lineWidth = 2;
-  ctx.setLineDash([5, 4]);
+  ctx.strokeStyle = "rgba(245, 229, 195, 0.45)";
+  ctx.lineWidth = 1.4;
+  ctx.setLineDash([4, 5]);
   ctx.beginPath();
   ctx.moveTo(endX, metrics.origin.y - Math.max(18, metrics.construction.templeBarHeight * metrics.scale * 0.85));
   ctx.lineTo(endX, metrics.origin.y + Math.max(18, metrics.construction.templeBarHeight * metrics.scale * 0.85));
@@ -3409,11 +3409,11 @@ function syncDesignFields() {
   if (els.designDetailColor) els.designDetailColor.value = style.detailColor;
   const features = normalizeDesignFeatures(draft.features, draft.params);
   if (els.designExtrudeEnabled) els.designExtrudeEnabled.checked = features.extrude.enabled;
-  setDesignFieldValue(els.designExtrudeDepth, features.extrude.depth);
+  setDesignSliderFieldValue(els.designExtrudeDepth, features.extrude.depth, "mm");
   if (els.designFilletEnabled) els.designFilletEnabled.checked = features.fillet.enabled;
-  setDesignFieldValue(els.designFilletRadius, features.fillet.radius);
+  setDesignSliderFieldValue(els.designFilletRadius, features.fillet.radius, "mm");
   if (els.designChamferEnabled) els.designChamferEnabled.checked = features.chamfer.enabled;
-  setDesignFieldValue(els.designChamferAmount, features.chamfer.amount);
+  setDesignSliderFieldValue(els.designChamferAmount, features.chamfer.amount, "mm");
   if (els.designLensRecessEnabled) els.designLensRecessEnabled.checked = features.lensRecess.enabled;
   setDesignFieldValue(els.designLensRecessDepth, features.lensRecess.depth);
   const rawConstruction = normalizeDesignConstruction(draft.construction);

@@ -1092,6 +1092,27 @@ small,
   accent-color: var(--accent);
 }
 
+.design-primary-operations {
+  grid-template-columns: 1fr;
+}
+
+.design-construction-grid .design-slider-toggle span {
+  display: flex;
+  align-items: center;
+  gap: 0.42rem;
+}
+
+.design-construction-grid .design-slider-toggle input[type="checkbox"] {
+  width: 1rem;
+  min-width: 1rem;
+  height: 1rem;
+  accent-color: var(--accent);
+}
+
+.design-construction-grid .design-slider-toggle input[type="range"] {
+  min-height: 1.35rem;
+}
+
 .design-construction-grid small {
   color: var(--muted);
   align-self: center;

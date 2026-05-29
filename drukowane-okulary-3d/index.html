@@ -16,7 +16,7 @@
         document.documentElement.dataset.appError = event.reason?.message || String(event.reason || "promise");
       });
     </script>
-    <link rel="stylesheet" href="./styles.css?v=design-lab-temple-safe-sliders-20260529-1" />
+    <link rel="stylesheet" href="./styles.css?v=design-lab-controls-cleanup-20260529-1" />
     <script type="importmap">
       {
         "imports": {
@@ -447,7 +447,6 @@
           <canvas id="designScene" class="design-view-hidden"></canvas>
           <canvas id="designSketchCanvas" aria-label="Technical sketch editor"></canvas>
           <div class="design-stage-header">
-            <button id="exitDesignLab" type="button" class="ghost">Back to collections</button>
             <div>
               <p class="eyebrow">Parametric collection authoring</p>
               <h2>Design Lab</h2>
@@ -502,6 +501,25 @@
             <section class="design-control-section">
               <h3>Front dimensions</h3>
               <div id="designFrontControls" class="design-controls"></div>
+              <div class="design-construction-grid design-primary-operations">
+                <label class="design-slider-toggle">
+                  <span><input id="designExtrudeEnabled" type="checkbox" checked /> Extrude depth</span>
+                  <input id="designExtrudeDepth" type="range" min="3" max="12" step="0.1" value="3" aria-label="Extrude depth" />
+                  <small>3 mm</small>
+                </label>
+                <label class="design-slider-toggle">
+                  <span><input id="designChamferEnabled" type="checkbox" /> Chamfer</span>
+                  <input id="designChamferAmount" type="range" min="0" max="2.4" step="0.1" value="0.4" aria-label="Chamfer amount" />
+                  <small>0.4 mm</small>
+                </label>
+                <label class="design-slider-toggle">
+                  <span><input id="designFilletEnabled" type="checkbox" /> Edge radius</span>
+                  <input id="designFilletRadius" type="range" min="0" max="2.4" step="0.1" value="0.3" aria-label="Fillet radius" />
+                  <small>0.3 mm</small>
+                </label>
+              </div>
+              <input id="designLensRecessEnabled" type="checkbox" checked hidden />
+              <input id="designLensRecessDepth" type="number" value="0.75" hidden />
               <p class="design-note">The lens opening is resolved from overall width, bridge and rim thickness to keep the drawn front dimensionally consistent.</p>
             </section>
             <section class="design-control-section">
@@ -537,30 +555,6 @@
                 <label><span>Bridge thickness</span><input id="designBridgeThickness" type="number" min="3" max="12" step="0.1" value="6" /><small>mm</small></label>
               </div>
               <p class="design-note">Both hinge halves share this vertical screw axis in assembly. Drag bridge handles to move horizontal bridge lines.</p>
-            </section>
-            <section class="design-control-section design-feature-stack">
-              <h3>Front operations</h3>
-              <label class="design-feature enabled">
-                <span><strong>Profile</strong><small>Mirrored front outline</small></span>
-                <em>Base</em>
-              </label>
-              <label class="design-feature">
-                <span><strong>Extrude</strong><small>Frame body depth</small></span>
-                <input id="designExtrudeEnabled" type="checkbox" checked />
-                <input id="designExtrudeDepth" type="number" min="3" max="12" step="0.1" value="3" aria-label="Extrude depth" />
-              </label>
-              <label class="design-feature">
-                <span><strong>Edge finish</strong><small>Optional print edge softening</small></span>
-                <input id="designFilletEnabled" type="checkbox" />
-                <input id="designFilletRadius" type="number" min="0" max="2.4" step="0.1" value="0.3" aria-label="Fillet radius" />
-              </label>
-              <label class="design-feature">
-                <span><strong>Chamfer</strong><small>Planar edge break</small></span>
-                <input id="designChamferEnabled" type="checkbox" />
-                <input id="designChamferAmount" type="number" min="0" max="2.4" step="0.1" value="0.4" aria-label="Chamfer amount" />
-              </label>
-              <input id="designLensRecessEnabled" type="checkbox" checked hidden />
-              <input id="designLensRecessDepth" type="number" value="0.75" hidden />
             </section>
           </section>
           <section id="designFeaturesPanel" class="design-operations" role="tabpanel" hidden>
@@ -978,6 +972,6 @@
       document.querySelector("#openDesignLab")?.addEventListener("click", (event) => queueDesignLabDuringBoot(event, false));
       document.querySelector("#startDesignLab")?.addEventListener("click", (event) => queueDesignLabDuringBoot(event, true));
     </script>
-    <script type="module" src="./src/app.js?v=design-lab-temple-safe-sliders-20260529-1"></script>
+    <script type="module" src="./src/app.js?v=design-lab-controls-cleanup-20260529-1"></script>
   </body>
 </html>
