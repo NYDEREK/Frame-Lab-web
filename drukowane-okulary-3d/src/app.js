@@ -828,9 +828,6 @@ const els = {
 	  storageDebugPanel: document.querySelector("#storageDebugPanel"),
 	  planContentEditor: document.querySelector("#planContentEditor"),
 	  pageContentEditor: document.querySelector("#pageContentEditor"),
-	  sizeGuideHeading: document.querySelector("#sizeGuideHeading"),
-	  sizeGuideIntro: document.querySelector("#sizeGuideIntro"),
-	  sizeGuideRows: document.querySelector("#sizeGuideRows"),
 	  printGuideHeading: document.querySelector("#printGuideHeading"),
 	  printGuideIntro: document.querySelector("#printGuideIntro"),
 	  printGuideFigure: document.querySelector("#printGuideFigure"),
@@ -4554,26 +4551,6 @@ function renderPlanCards() {
 
 function renderMarketingContent() {
   const content = normalizeContentSettings(state.brandSettings.content);
-  if (els.sizeGuideHeading) els.sizeGuideHeading.textContent = content.sizes.heading;
-  if (els.sizeGuideIntro) els.sizeGuideIntro.textContent = content.sizes.intro;
-  if (els.sizeGuideRows) {
-    els.sizeGuideRows.innerHTML = content.sizes.rows.map((row) => `
-      <article class="size-card">
-        <div class="size-card-head">
-          <strong>${escapeHtml(row.size)}</strong>
-          <span>${escapeHtml(row.label)}</span>
-        </div>
-        <dl>
-          <div><dt>Face width</dt><dd>${row.headMin}-${row.headMax} mm</dd></div>
-          <div><dt>Frame width</dt><dd>${escapeHtml(row.frameWidth)}</dd></div>
-          <div><dt>Lens width</dt><dd>${escapeHtml(row.lensWidth)}</dd></div>
-          <div><dt>Bridge</dt><dd>${row.bridgeMin}-${row.bridgeMax} mm</dd></div>
-          <div><dt>Temple</dt><dd>${row.templeMin}-${row.templeMax} mm</dd></div>
-        </dl>
-        <p>${escapeHtml(row.note)}</p>
-      </article>
-    `).join("");
-  }
   if (els.printGuideHeading) els.printGuideHeading.textContent = content.printGuide.heading;
   if (els.printGuideIntro) els.printGuideIntro.textContent = content.printGuide.intro;
   if (els.printGuideFigure && els.printGuideImage) {
@@ -4624,28 +4601,6 @@ function renderContentEditors() {
   }
   if (els.pageContentEditor) {
     els.pageContentEditor.innerHTML = `
-      <fieldset class="content-editor-card wide">
-        <legend>Sizes</legend>
-        <input data-content-field="sizes.heading" type="text" value="${escapeAttr(content.sizes.heading)}" placeholder="Sizes" />
-        <textarea data-content-field="sizes.intro" rows="3">${escapeHtml(content.sizes.intro)}</textarea>
-        <div class="size-editor-grid">
-          ${content.sizes.rows.map((row) => `
-            <div class="size-editor-row" data-size-editor="${escapeHtml(row.size)}">
-              <strong>${escapeHtml(row.size)}</strong>
-              <input data-size-field="label" type="text" value="${escapeAttr(row.label)}" aria-label="${escapeAttr(row.size)} label" />
-              <input data-size-field="headMin" type="number" value="${row.headMin}" aria-label="${escapeAttr(row.size)} head min" />
-              <input data-size-field="headMax" type="number" value="${row.headMax}" aria-label="${escapeAttr(row.size)} head max" />
-              <input data-size-field="frameWidth" type="text" value="${escapeAttr(row.frameWidth)}" aria-label="${escapeAttr(row.size)} frame width" />
-              <input data-size-field="lensWidth" type="text" value="${escapeAttr(row.lensWidth)}" aria-label="${escapeAttr(row.size)} lens width" />
-              <input data-size-field="bridgeMin" type="number" value="${row.bridgeMin}" aria-label="${escapeAttr(row.size)} bridge min" />
-              <input data-size-field="bridgeMax" type="number" value="${row.bridgeMax}" aria-label="${escapeAttr(row.size)} bridge max" />
-              <input data-size-field="templeMin" type="number" value="${row.templeMin}" aria-label="${escapeAttr(row.size)} temple min" />
-              <input data-size-field="templeMax" type="number" value="${row.templeMax}" aria-label="${escapeAttr(row.size)} temple max" />
-              <input data-size-field="note" type="text" value="${escapeAttr(row.note)}" aria-label="${escapeAttr(row.size)} note" />
-            </div>
-          `).join("")}
-        </div>
-      </fieldset>
       <fieldset class="content-editor-card wide">
         <legend>How to print it</legend>
         <input data-content-field="printGuide.heading" type="text" value="${escapeAttr(content.printGuide.heading)}" />
@@ -4704,16 +4659,6 @@ function readContentSettingsFromEditor() {
   els.pageContentEditor?.querySelectorAll("[data-content-field]").forEach((field) => {
     setContentPath(content, field.dataset.contentField, field.value);
   });
-  const sizeById = new Map(content.sizes.rows.map((row) => [row.size, { ...row }]));
-  els.pageContentEditor?.querySelectorAll("[data-size-editor]").forEach((rowEl) => {
-    const sizeId = rowEl.dataset.sizeEditor;
-    const row = sizeById.get(sizeId);
-    if (!row) return;
-    rowEl.querySelectorAll("[data-size-field]").forEach((field) => {
-      row[field.dataset.sizeField] = field.value;
-    });
-  });
-  content.sizes.rows = content.sizes.rows.map((row) => sizeById.get(row.size) || row);
   const roadmapField = els.pageContentEditor?.querySelector('[data-list-field="roadmap.items"]');
   if (roadmapField) content.roadmap.items = parseRoadmapItems(roadmapField.value);
   const faqField = els.pageContentEditor?.querySelector('[data-list-field="faq.items"]');
