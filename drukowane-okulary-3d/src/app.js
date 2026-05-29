@@ -2521,7 +2521,7 @@ function addDesignLens(x, p, material, definition, target = designModelGroup) {
   const seatingExpansion = designLensInsertExpansion(construction);
   const shape = ringPath(designOutlineRing(0, p, definition, seatingExpansion));
   const geometry = new THREE.ExtrudeGeometry(shape, { depth: construction.lensThickness, bevelEnabled: false });
-  geometry.center();
+  geometry.translate(0, 0, -construction.lensThickness / 2);
   const lens = new THREE.Mesh(geometry, material);
   lens.position.set(x, 0, construction.lensChannelOffset);
   lens.scale.x = x < 0 ? -1 : 1;
