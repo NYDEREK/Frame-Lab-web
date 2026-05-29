@@ -219,6 +219,8 @@ const defaultDesignConstruction = {
   templeBarHeight: 5.4,
   templeDepth: 3.6,
   templeCornerRadius: 1.4,
+  templeChamferEnabled: false,
+  templeChamferAmount: 0.35,
   templeTextureDepth: 0.45,
   templePatternSpacing: 9,
   templeTextSize: 4,
@@ -760,6 +762,8 @@ const els = {
   designTempleSharpCorner: document.querySelector("#designTempleSharpCorner"),
   designTempleSelectedCornerLabel: document.querySelector("#designTempleSelectedCornerLabel"),
   designTempleSelectedCornerRadius: document.querySelector("#designTempleSelectedCornerRadius"),
+  designTempleChamferEnabled: document.querySelector("#designTempleChamferEnabled"),
+  designTempleChamferAmount: document.querySelector("#designTempleChamferAmount"),
   designViewSketch: document.querySelector("#designViewSketch"),
   designView3d: document.querySelector("#designView3d"),
   designViewHint: document.querySelector("#designViewHint"),
@@ -1086,6 +1090,17 @@ function parseDesignNumber(value, fallback = 0) {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function parseDesignBoolean(value, fallback = false) {
+  if (value === undefined || value === null) return fallback;
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (["true", "1", "yes", "on"].includes(normalized)) return true;
+    if (["false", "0", "no", "off"].includes(normalized)) return false;
+    return fallback;
+  }
+  return Boolean(value);
+}
+
 function normalizeDesignSketch(sketch = {}) {
   const supplied = Array.isArray(sketch.points) ? sketch.points : defaultDesignSketchPoints;
   const points = supplied.slice(0, 20).map((point) => {
@@ -1194,6 +1209,8 @@ function normalizeDesignConstruction(construction = {}) {
     templeBarHeight: bounded("templeBarHeight", 3, 10),
     templeDepth: bounded("templeDepth", 2.4, 6),
     templeCornerRadius: bounded("templeCornerRadius", 0, 4),
+    templeChamferEnabled: parseDesignBoolean(construction.templeChamferEnabled, defaultDesignConstruction.templeChamferEnabled),
+    templeChamferAmount: bounded("templeChamferAmount", 0, 1.2),
     templeTextureDepth: bounded("templeTextureDepth", 0.2, 1.2),
     templePatternSpacing: bounded("templePatternSpacing", 5, 18),
     templeTextSize: bounded("templeTextSize", 2, 8),
@@ -2826,6 +2843,14 @@ function designTempleProfileGeometry(definition, p) {
   const construction = normalizeDesignConstruction(definition?.construction);
   const profile = normalizeDesignTempleSketch(definition?.templeSketch, construction);
   const armWidth = construction.templeDepth;
+  const templeChamfer = construction.templeChamferEnabled
+    ? Math.min(
+        construction.templeChamferAmount,
+        Math.max(0, armWidth / 2 - 0.02),
+        Math.max(0, construction.templeBarHeight * 0.22),
+        0.9
+      )
+    : 0;
   const shape = new THREE.Shape();
   traceRoundedPolygon(
     shape,
@@ -2834,10 +2859,10 @@ function designTempleProfileGeometry(definition, p) {
   );
   const geometry = new THREE.ExtrudeGeometry(shape, {
     depth: armWidth,
-    bevelEnabled: p.bevel > 0,
-    bevelThickness: Math.min(0.18, p.bevel * 0.4),
-    bevelSize: Math.min(0.18, p.bevel * 0.4),
-    bevelSegments: p.bevel > 0 ? 2 : 0
+    bevelEnabled: templeChamfer > 0,
+    bevelThickness: Math.max(0.01, templeChamfer),
+    bevelSize: Math.max(0.01, templeChamfer),
+    bevelSegments: templeChamfer > 0 ? 1 : 0
   });
   geometry.translate(0, 0, -armWidth / 2);
   geometry.rotateY(Math.PI / 2);
@@ -3495,6 +3520,8 @@ function syncDesignFields() {
   setDesignSliderFieldValue(els.designTempleBarHeight, construction.templeBarHeight, "mm");
   setDesignSliderFieldValue(els.designTempleDepth, construction.templeDepth, "mm");
   setDesignSliderFieldValue(els.designTempleCornerRadius, construction.templeCornerRadius, "mm");
+  if (els.designTempleChamferEnabled) els.designTempleChamferEnabled.checked = construction.templeChamferEnabled;
+  setDesignSliderFieldValue(els.designTempleChamferAmount, construction.templeChamferAmount, "mm");
   setDesignSliderFieldValue(els.designTempleTextureDepth, construction.templeTextureDepth, "mm");
   setDesignSliderFieldValue(els.designTemplePatternSpacing, construction.templePatternSpacing, "mm");
   setDesignSliderFieldValue(els.designTempleTextSize, construction.templeTextSize, "mm");
@@ -3675,6 +3702,8 @@ function handleDesignOperationChange(event) {
     els.designTempleBarHeight,
     els.designTempleDepth,
     els.designTempleCornerRadius,
+    els.designTempleChamferEnabled,
+    els.designTempleChamferAmount,
     els.designTempleTextureDepth,
     els.designTemplePatternSpacing,
     els.designTempleTextSize,
@@ -3705,6 +3734,8 @@ function handleDesignOperationChange(event) {
       templeBarHeight: els.designTempleBarHeight?.value,
       templeDepth: els.designTempleDepth?.value,
       templeCornerRadius: els.designTempleCornerRadius?.value,
+      templeChamferEnabled: els.designTempleChamferEnabled?.checked,
+      templeChamferAmount: els.designTempleChamferAmount?.value,
       templeTextureDepth: els.designTempleTextureDepth?.value,
       templePatternSpacing: els.designTemplePatternSpacing?.value,
       templeTextSize: els.designTempleTextSize?.value,
@@ -3925,6 +3956,8 @@ function parseDesignCode(source) {
       templeBarHeight: readNumber("temple_bar_height", state.designDraft.construction?.templeBarHeight),
       templeDepth: readNumber("temple_depth", state.designDraft.construction?.templeDepth),
       templeCornerRadius: readNumber("temple_corner_radius", state.designDraft.construction?.templeCornerRadius),
+      templeChamferEnabled: readBool("temple_chamfer_enabled", state.designDraft.construction?.templeChamferEnabled),
+      templeChamferAmount: readNumber("temple_chamfer_amount", state.designDraft.construction?.templeChamferAmount),
       templeTextureDepth: readNumber("temple_texture_depth", state.designDraft.construction?.templeTextureDepth),
       templePatternSpacing: readNumber("temple_pattern_spacing", state.designDraft.construction?.templePatternSpacing),
       templeTextSize: readNumber("temple_text_size", state.designDraft.construction?.templeTextSize),
@@ -8102,6 +8135,8 @@ temple_hook_angle = ${formatNumber(construction.templeHookAngle)};
 temple_bar_height = ${formatNumber(construction.templeBarHeight)};
 temple_depth = ${formatNumber(construction.templeDepth)};
 temple_corner_radius = ${formatNumber(construction.templeCornerRadius)};
+temple_chamfer_enabled = ${construction.templeChamferEnabled ? "true" : "false"};
+temple_chamfer_amount = ${formatNumber(construction.templeChamferAmount)};
 temple_texture_depth = ${formatNumber(construction.templeTextureDepth)};
 temple_pattern_spacing = ${formatNumber(construction.templePatternSpacing)};
 temple_text_size = ${formatNumber(construction.templeTextSize)};
@@ -8119,6 +8154,7 @@ active_lens_channel_offset = min(max(lens_channel_offset, -max_lens_channel_offs
 lens_insert_delta = max(0, lens_seat_depth - lens_clearance);
 visible_lip_depth = lens_recess_enabled ? max(0, (front_depth - lens_seat_width)/2 - abs(active_lens_channel_offset)) : front_depth;
 edge_chamfer = chamfer_enabled ? min(chamfer_amount, max(0, visible_lip_depth*0.42 - 0.02), rim_thickness*0.32, lens_seat_depth*0.72, 0.9) : 0;
+temple_edge_chamfer = temple_chamfer_enabled ? min(temple_chamfer_amount, max(0, temple_depth/2 - 0.02), max(0, temple_bar_height*0.22), 0.9) : 0;
 chamfer_slice = 0.02;
 
 opening_width = max(20, (head_width - bridge_width)/2 - rim_thickness*2);
@@ -8306,7 +8342,7 @@ module temple_hinge(side=1) {
 module temple_profile_body(side=1) {
   translate([side*2.5, temple_bar_center_y, temple_arm_start_z])
   rotate([0, 90, 0])
-  linear_extrude(height=temple_depth, center=true, convexity=8)
+  chamfered_profile_extrude(temple_depth, temple_edge_chamfer)
     drawn_temple_profile();
 }
 

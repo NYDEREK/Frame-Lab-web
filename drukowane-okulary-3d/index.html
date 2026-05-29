@@ -16,7 +16,7 @@
         document.documentElement.dataset.appError = event.reason?.message || String(event.reason || "promise");
       });
     </script>
-    <link rel="stylesheet" href="./styles.css?v=design-lab-temple-ui-cleanup-20260530-1" />
+    <link rel="stylesheet" href="./styles.css?v=design-lab-temple-points-order-20260530-1" />
     <script type="importmap">
       {
         "imports": {
@@ -559,6 +559,19 @@
             </section>
           </section>
           <section id="designFeaturesPanel" class="design-operations" role="tabpanel" hidden>
+            <section class="design-control-section design-temple-point-section">
+              <div class="design-section-heading">
+                <h3>Temple points</h3>
+                <div class="design-sketch-actions">
+                  <button id="addTemplePoint" type="button" class="compact">+ Point</button>
+                  <button id="removeTemplePoint" type="button" class="compact">Remove</button>
+                  <button id="designTempleSharpCorner" type="button" class="compact">Sharp</button>
+                </div>
+              </div>
+              <div class="design-construction-grid">
+                <label><span id="designTempleSelectedCornerLabel">Point 1 radius</span><input id="designTempleSelectedCornerRadius" type="range" min="0" max="12" step="0.1" value="0" /><small>0 mm</small></label>
+              </div>
+            </section>
             <section class="design-control-section">
               <h3>Temple dimensions</h3>
               <div id="designTempleControls" class="design-controls"></div>
@@ -584,21 +597,13 @@
                 </div>
               </div>
             </section>
-            <section class="design-control-section design-temple-point-section">
-              <div class="design-section-heading">
-                <h3>Temple points</h3>
-                <div class="design-sketch-actions">
-                  <button id="addTemplePoint" type="button" class="compact">+ Point</button>
-                  <button id="removeTemplePoint" type="button" class="compact">Remove</button>
-                  <button id="designTempleSharpCorner" type="button" class="compact">Sharp</button>
-                </div>
-              </div>
-              <div class="design-construction-grid">
-                <label><span id="designTempleSelectedCornerLabel">Point 1 radius</span><input id="designTempleSelectedCornerRadius" type="range" min="0" max="12" step="0.1" value="0" /><small>0 mm</small></label>
-              </div>
-            </section>
             <section class="design-control-section design-details">
               <h3>Surface detail</h3>
+              <label class="design-slider-toggle">
+                <span><input id="designTempleChamferEnabled" type="checkbox" /> Chamfer</span>
+                <input id="designTempleChamferAmount" type="range" min="0" max="1.2" step="0.05" value="0.35" aria-label="Temple chamfer amount" />
+                <small>0.35 mm</small>
+              </label>
               <label>
                 <span>Detail mode</span>
                 <select id="designTempleDetailMode" class="component-select">
@@ -962,6 +967,6 @@
       document.querySelector("#openDesignLab")?.addEventListener("click", (event) => queueDesignLabDuringBoot(event, false));
       document.querySelector("#startDesignLab")?.addEventListener("click", (event) => queueDesignLabDuringBoot(event, true));
     </script>
-    <script type="module" src="./src/app.js?v=design-lab-temple-ui-cleanup-20260530-1"></script>
+    <script type="module" src="./src/app.js?v=design-lab-temple-points-order-20260530-1"></script>
   </body>
 </html>
