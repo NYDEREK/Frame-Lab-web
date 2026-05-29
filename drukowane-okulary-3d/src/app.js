@@ -50,7 +50,7 @@ const translations = {
     heroTitle: "Your next frame is 3D printed.",
     heroText: "Choose a collection, combine a front with temples, and prepare a clean production kit for additive manufacturing.",
     heroBrowse: "View collections",
-    heroEditor: "Open editor",
+    heroEditor: "Open Creator",
     builderKicker: "",
     builderHeading: "Components",
     frameSize: "Frame size",
@@ -713,8 +713,6 @@ const els = {
 	  openHome: document.querySelector("#openHome"),
 	  openConfigurator: document.querySelector("#openConfigurator"),
 	  openGallery: document.querySelector("#openGallery"),
-	  openDesignLab: document.querySelector("#openDesignLab"),
-	  openSizes: document.querySelector("#openSizes"),
 	  openPrintGuide: document.querySelector("#openPrintGuide"),
 	  openRoadmap: document.querySelector("#openRoadmap"),
 	  openLicenseInfo: document.querySelector("#openLicenseInfo"),
@@ -2766,6 +2764,7 @@ function containedBevelExtrudeOptions(depth, edgeAmount, bevelSegments = 1) {
       bevelEnabled: true,
       bevelThickness: safeBevel,
       bevelSize: safeBevel,
+      bevelOffset: -safeBevel,
       bevelSegments: Math.max(1, Math.round(bevelSegments))
     },
     centerOffset: coreDepth / 2
@@ -3149,7 +3148,6 @@ function bindUi() {
     scrollGalleryIntoView();
   });
   [
-    [els.openSizes, "#sizeGuidePanel"],
     [els.openPrintGuide, "#printGuidePanel"],
     [els.openRoadmap, "#roadmapPanel"],
     [els.openLicenseInfo, "#licenseInfoPanel"],
@@ -3239,11 +3237,7 @@ function bindUi() {
   els.refreshStorageDebug?.addEventListener("click", () => loadStorageDebug());
   els.generateLicenseCodes.addEventListener("click", () => generateLicenseCodes());
   els.heroBrowse.addEventListener("click", scrollGalleryIntoView);
-  els.heroEditor.addEventListener("click", openHeroEditorTarget);
-  els.openDesignLab?.addEventListener("click", (event) => {
-    event.preventDefault();
-    navigateToView("design-lab");
-  });
+  els.heroEditor.addEventListener("click", () => navigateToView("design-lab"));
   els.startDesignLab?.addEventListener("click", () => {
     resetDesignDraft();
     navigateToView("design-lab");
@@ -4244,9 +4238,9 @@ async function handleDesignSubmissionReviewClick(event) {
     if (action === "approve") {
       state.models = await loadStoredModels();
       renderGallery();
-      log(`Published Design Lab project: ${payload.submission.name}.`);
+      log(`Published Creator project: ${payload.submission.name}.`);
     } else {
-      log(`Rejected Design Lab project: ${payload.submission.name}.`);
+      log(`Rejected Creator project: ${payload.submission.name}.`);
     }
     await loadDesignSubmissions();
     await loadStorageDebug({ silent: true });
@@ -6265,7 +6259,6 @@ function setActiveSection(section) {
     document.querySelectorAll(".topbar-tabs .nav-link").forEach((link) => link.classList.remove("active"));
     els.openStudio.classList.toggle("active", (showStudio || showCollectionEditor) && isDeveloper());
     els.openLicenses.classList.toggle("active", showLicenses && isDeveloper());
-    els.openDesignLab?.classList.toggle("active", showDesignLab);
   }
   if (showEditor) {
     resize();
@@ -6288,7 +6281,6 @@ function homeNavigationEntries() {
   return [
     { selector: "#top", element: document.querySelector(".hero-page"), link: els.openHome },
     { selector: "#galleryPanel", element: els.galleryPanel, link: els.openGallery },
-    { selector: "#sizeGuidePanel", element: document.querySelector("#sizeGuidePanel"), link: els.openSizes },
     { selector: "#printGuidePanel", element: document.querySelector("#printGuidePanel"), link: els.openPrintGuide },
     { selector: "#roadmapPanel", element: document.querySelector("#roadmapPanel"), link: els.openRoadmap },
     { selector: "#licenseInfoPanel", element: document.querySelector("#licenseInfoPanel"), link: els.openLicenseInfo },
@@ -7223,7 +7215,7 @@ function renderDeveloperCollectionList() {
   els.developerCollectionList.innerHTML = galleryModels().map((model) => {
     const components = normalizeModelComponents(model.components) || { front: [], temples: [], leftTemples: [], rightTemples: [], lenses: [] };
     const active = state.editingModelId === model.id;
-    const summary = model.design ? "Design Lab · parametric OpenSCAD" : [
+    const summary = model.design ? "Creator · parametric OpenSCAD" : [
       `${components.front.length} front`,
       `${components.leftTemples.length} left temple`,
       `${components.rightTemples.length} right temple`,
@@ -8095,8 +8087,8 @@ function buildDesignScad(draft = state.designDraft) {
   const paramLines = parameterSchema
     .map(([key, label, , min, max, step]) => `${key} = ${formatNumber(p[key])}; // [${min}:${step}:${max}] ${label}`)
     .join("\n");
-  return `// Frame Lab Design Lab project
-// Parametric sunglasses: edit values here or in Design Lab.
+  return `// Frame Lab Creator project
+// Parametric sunglasses: edit values here or in Creator.
 
 ${paramLines}
 lens_shape = "${style.lensShape}";
@@ -8261,7 +8253,7 @@ module hinge_connector_profile(side=1) {
 }
 
 module front_planar_profile() {
-  // All front interfaces are joined before extrusion, matching the Design Lab preview.
+  // All front interfaces are joined before extrusion, matching the Creator preview.
   union() {
     rim_profile(-lens_center);
     rim_profile(lens_center);

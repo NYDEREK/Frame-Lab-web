@@ -16,7 +16,7 @@
         document.documentElement.dataset.appError = event.reason?.message || String(event.reason || "promise");
       });
     </script>
-    <link rel="stylesheet" href="./styles.css?v=design-lab-chamfer-contained-20260530-1" />
+    <link rel="stylesheet" href="./styles.css?v=creator-entry-20260530-2" />
     <script type="importmap">
       {
         "imports": {
@@ -258,8 +258,6 @@
           <nav class="topbar-tabs" aria-label="Navigation" data-i18n-attr="aria-label:navLabel">
             <a id="openHome" class="nav-link active" href="#top" data-i18n="tabHome">Start</a>
             <a id="openGallery" class="nav-link" href="#galleryPanel" data-i18n="tabGallery">Collections</a>
-            <a id="openDesignLab" class="nav-link" href="#design-lab">Design Lab</a>
-            <a id="openSizes" class="nav-link" href="#sizeGuidePanel">Sizes</a>
             <a id="openPrintGuide" class="nav-link" href="#printGuidePanel">Print</a>
             <a id="openRoadmap" class="nav-link" href="#roadmapPanel">Roadmap</a>
             <a id="openLicenseInfo" class="nav-link" href="#licenseInfoPanel">License</a>
@@ -285,8 +283,8 @@
             <h2 id="heroTitle" data-i18n="heroTitle">Your next frame is 3D printed.</h2>
             <p id="heroText" data-i18n="heroText">Choose a collection, combine a front with temples, and prepare a clean production kit for additive manufacturing.</p>
             <div class="hero-actions">
-              <button id="heroBrowse" type="button" class="accent" data-i18n="heroBrowse">View collections</button>
-              <button id="heroEditor" type="button" class="ghost" data-i18n="heroEditor">Open editor</button>
+              <button id="heroEditor" type="button" class="accent hero-creator-button" data-i18n="heroEditor">Open Creator</button>
+              <button id="heroBrowse" type="button" class="ghost" data-i18n="heroBrowse">View collections</button>
             </div>
           </div>
         </section>
@@ -449,7 +447,7 @@
           <div class="design-stage-header">
             <div>
               <p class="eyebrow">Parametric collection authoring</p>
-              <h2>Design Lab</h2>
+              <h2>Creator</h2>
             </div>
           </div>
           <div class="design-view-switch" role="group" aria-label="Design view">
@@ -694,7 +692,7 @@
           <div class="section-head">
             <div>
               <p class="eyebrow">Submissions</p>
-              <h3>Design Lab review</h3>
+              <h3>Creator review</h3>
             </div>
           </div>
           <div id="designSubmissionList" class="design-submission-list">
@@ -744,10 +742,6 @@
           <div class="hero-settings-grid">
             <input id="heroTitleInput" type="text" data-i18n-attr="placeholder:heroTitlePlaceholder" placeholder="Hero title" />
             <input id="heroTextInput" type="text" data-i18n-attr="placeholder:heroTextPlaceholder" placeholder="Hero text" />
-            <label class="hero-target-control">
-              <span>Open editor target</span>
-              <select id="heroEditorTarget" class="component-select" aria-label="Collection opened by hero editor button"></select>
-            </label>
             <label class="file-button" for="heroImageInput">
               <input id="heroImageInput" type="file" accept="image/*" />
               <span data-i18n="heroImageFile">Hero image</span>
@@ -942,17 +936,11 @@
         if (window.location.hash !== "#design-lab") {
           window.history.pushState({ frameLabRoute: "#design-lab" }, "", "#design-lab");
         }
-        showBootLoader("Loading Design Lab", "Preparing drawing tools and 3D previews...");
+        showBootLoader("Loading Creator", "Preparing drawing tools and 3D previews...");
       };
-      document.querySelector("#heroEditor")?.addEventListener("click", () => {
-        if (window.frameLabBoot.ready) return;
-        window.frameLabBoot.editorRequested = true;
-        window.frameLabBoot.designLabRequested = false;
-        showBootLoader("Loading editor", "Preparing frame options and 3D previews...");
-      });
-      document.querySelector("#openDesignLab")?.addEventListener("click", (event) => queueDesignLabDuringBoot(event, false));
+      document.querySelector("#heroEditor")?.addEventListener("click", (event) => queueDesignLabDuringBoot(event, false));
       document.querySelector("#startDesignLab")?.addEventListener("click", (event) => queueDesignLabDuringBoot(event, true));
     </script>
-    <script type="module" src="./src/app.js?v=design-lab-chamfer-contained-20260530-1"></script>
+    <script type="module" src="./src/app.js?v=creator-entry-20260530-2"></script>
   </body>
 </html>

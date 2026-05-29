@@ -1531,6 +1531,18 @@ small,
   min-width: 10.5rem;
 }
 
+.hero-creator-button {
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--accent-2) 48%, transparent),
+    0 1rem 2.2rem color-mix(in srgb, var(--accent) 32%, transparent);
+}
+
+.hero-creator-button:hover {
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--accent-2) 70%, transparent),
+    0 1.2rem 2.6rem color-mix(in srgb, var(--accent) 42%, transparent);
+}
+
 .hero-product {
   position: absolute;
   inset: 0;
