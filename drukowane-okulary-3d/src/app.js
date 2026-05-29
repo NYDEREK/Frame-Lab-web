@@ -235,6 +235,8 @@ const designTempleBarCenterY = 2.8;
 const designTempleHingeRearZ = -7.5;
 const designTempleArmJoinOverlap = 0.9;
 const designTempleProfileStartZ = designTempleHingeRearZ + designTempleArmJoinOverlap;
+const designTempleTextSafeStart = 30;
+const designTempleTextEndPadding = 8;
 const designHingeAssetManifest = {
   frontLeft: "./assets/hinges/front-hinge-left.3mf",
   frontRight: "./assets/hinges/front-hinge-right.3mf",
@@ -1196,6 +1198,51 @@ function normalizeDesignConstruction(construction = {}) {
   };
 }
 
+function estimateTempleTextWidth(text = "", construction = defaultDesignConstruction) {
+  const size = parseDesignNumber(construction.templeTextSize, defaultDesignConstruction.templeTextSize);
+  const weight = String(text || "").split("").reduce((total, char) => {
+    if (char === " ") return total + 0.34;
+    if ("ilI1.,'|".includes(char)) return total + 0.3;
+    if ("MW@#".includes(char)) return total + 0.92;
+    if (char === char.toUpperCase() && /[A-Z0-9]/.test(char)) return total + 0.68;
+    return total + 0.56;
+  }, 0);
+  return Math.max(0, weight * size + (text ? size * 0.42 : 0));
+}
+
+function designTempleTextBounds(construction, profile, label = "") {
+  const width = estimateTempleTextWidth(label, construction);
+  const profileWidth = Math.max(...profile.points.map(([x]) => x), construction.templeStraight + construction.templeHook, 1);
+  const safeStart = Math.min(designTempleTextSafeStart, Math.max(8, profileWidth - designTempleTextEndPadding));
+  const minPosition = Math.min(
+    Math.max(8, profileWidth - designTempleTextEndPadding),
+    safeStart + width / 2
+  );
+  const maxPosition = Math.max(minPosition, profileWidth - designTempleTextEndPadding - width / 2);
+  const verticalLimit = Math.max(0.2, Math.min(5, construction.templeBarHeight / 2 - construction.templeTextSize * 0.28));
+  return { width, safeStart, minPosition, maxPosition, verticalLimit, profileWidth };
+}
+
+function longestTempleTextLabel(style) {
+  return [style.leftTempleText, style.rightTempleText].reduce((best, label) => (
+    String(label || "").length > String(best || "").length ? label : best
+  ), "");
+}
+
+function normalizeDesignTempleTextPlacement(construction, templeSketch, style) {
+  const c = normalizeDesignConstruction(construction);
+  if (style.templeDetailMode !== "text") return c;
+  const label = longestTempleTextLabel(style);
+  if (!label) return c;
+  const profile = normalizeDesignTempleSketch(templeSketch, c);
+  const bounds = designTempleTextBounds(c, profile, label);
+  return {
+    ...c,
+    templeTextPosition: THREE.MathUtils.clamp(c.templeTextPosition, bounds.minPosition, bounds.maxPosition),
+    templeTextYOffset: THREE.MathUtils.clamp(c.templeTextYOffset, -bounds.verticalLimit, bounds.verticalLimit)
+  };
+}
+
 function normalizeDesignPublicParameters(keys = defaultDesignPublicParameters) {
   const source = Array.isArray(keys) ? keys : defaultDesignPublicParameters;
   return [...new Set(source.filter((key) => designPublicParameterKeys.includes(key)))];
@@ -1226,12 +1273,15 @@ function normalizeParametricDesign(design = {}) {
 }
 
 function designDefinitionFromDraft(draft = state.designDraft) {
-  const construction = normalizeDesignConstruction(draft.construction);
+  const style = normalizeDesignStyle(draft.style);
+  let construction = normalizeDesignConstruction(draft.construction);
+  const templeSketch = normalizeDesignTempleSketch(draft.templeSketch, construction);
+  construction = normalizeDesignTempleTextPlacement(construction, templeSketch, style);
   return {
     type: "parametric-openscad",
-    ...normalizeDesignStyle(draft.style),
+    ...style,
     sketch: normalizeDesignSketch(draft.sketch),
-    templeSketch: normalizeDesignTempleSketch(draft.templeSketch, construction),
+    templeSketch,
     features: normalizeDesignFeatures(draft.features, draft.params),
     construction,
     publicParameters: normalizeDesignPublicParameters(draft.publicParameters),
@@ -1514,7 +1564,10 @@ function templeSketchMetrics() {
   if (!els.designSketchCanvas) return null;
   const rect = els.designSketchCanvas.getBoundingClientRect();
   if (!rect.width || !rect.height) return null;
-  const c = normalizeDesignConstruction(state.designDraft.construction);
+  const style = normalizeDesignStyle(state.designDraft.style);
+  let c = normalizeDesignConstruction(state.designDraft.construction);
+  const rawProfile = normalizeDesignTempleSketch(state.designDraft.templeSketch, c);
+  c = normalizeDesignTempleTextPlacement(c, rawProfile, style);
   const profile = normalizeDesignTempleSketch(state.designDraft.templeSketch, c);
   const usableWidth = Math.max(100, rect.width - 156);
   const usableHeight = Math.max(100, rect.height - 180);
@@ -1540,7 +1593,7 @@ function templeTextScreenFontSize(construction, scale) {
 function templeTextScreenBox(metrics, mirrored = false, label = "") {
   const { construction: c, origin, scale } = metrics;
   const fontSize = templeTextScreenFontSize(c, scale);
-  const width = Math.max(42, String(label || "").length * fontSize * 0.58) + 16;
+  const width = Math.max(42, estimateTempleTextWidth(label, c) * scale) + 16;
   const height = Math.max(18, fontSize * 1.35);
   const center = {
     x: templeSketchScreenX(metrics, c.templeTextPosition, mirrored),
@@ -1577,13 +1630,13 @@ function updateDraggedTempleText(event, metrics, mirrored = false) {
     : (screenX - metrics.origin.x) / metrics.scale;
   const localY = (metrics.origin.y - screenY) / metrics.scale;
   const current = normalizeDesignConstruction(state.designDraft.construction);
-  const profileWidth = Math.max(...metrics.profile.points.map(([x]) => x), current.templeStraight + current.templeHook);
-  const maxPosition = Math.max(8, Math.min(120, profileWidth - 6));
-  const verticalLimit = Math.max(0.2, Math.min(5, current.templeBarHeight / 2 - current.templeTextSize * 0.28));
+  const style = normalizeDesignStyle(state.designDraft.style);
+  const label = longestTempleTextLabel(style);
+  const bounds = designTempleTextBounds(current, metrics.profile, label);
   state.designDraft.construction = normalizeDesignConstruction({
     ...state.designDraft.construction,
-    templeTextPosition: THREE.MathUtils.clamp(localX, 8, maxPosition),
-    templeTextYOffset: THREE.MathUtils.clamp(localY, -verticalLimit, verticalLimit)
+    templeTextPosition: THREE.MathUtils.clamp(localX, bounds.minPosition, bounds.maxPosition),
+    templeTextYOffset: THREE.MathUtils.clamp(localY, -bounds.verticalLimit, bounds.verticalLimit)
   });
   state.designDraft.manualCode = false;
   syncDesignFields();
@@ -1785,6 +1838,32 @@ function drawTempleHingeDatum(ctx, metrics, mirrored, colors) {
   ctx.restore();
 }
 
+function drawTempleTextSafetyZone(ctx, metrics, mirrored, colors, displayPoints) {
+  const style = normalizeDesignStyle(state.designDraft.style);
+  const bounds = designTempleTextBounds(metrics.construction, metrics.profile, longestTempleTextLabel(style));
+  const startX = templeSketchScreenX(metrics, 0, mirrored);
+  const endX = templeSketchScreenX(metrics, bounds.safeStart, mirrored);
+  const left = Math.min(startX, endX);
+  const width = Math.abs(endX - startX);
+  if (width < 1) return;
+  ctx.save();
+  ctx.beginPath();
+  traceRoundedPolygon(ctx, displayPoints, metrics.profile.cornerRadii.map((radius) => radius * metrics.scale));
+  ctx.clip();
+  ctx.fillStyle = "rgba(10, 11, 11, 0.28)";
+  ctx.fillRect(left, metrics.origin.y - 30 * metrics.scale, width, 60 * metrics.scale);
+  ctx.restore();
+  ctx.save();
+  ctx.strokeStyle = colors.background;
+  ctx.lineWidth = 2;
+  ctx.setLineDash([5, 4]);
+  ctx.beginPath();
+  ctx.moveTo(endX, metrics.origin.y - Math.max(18, metrics.construction.templeBarHeight * metrics.scale * 0.85));
+  ctx.lineTo(endX, metrics.origin.y + Math.max(18, metrics.construction.templeBarHeight * metrics.scale * 0.85));
+  ctx.stroke();
+  ctx.restore();
+}
+
 function drawTempleSketch(mirrored = false) {
   const canvas = els.designSketchCanvas;
   const metrics = templeSketchMetrics();
@@ -1808,6 +1887,7 @@ function drawTempleSketch(mirrored = false) {
   traceRoundedPolygon(ctx, displayPoints, profile.cornerRadii.map((radius) => radius * scale));
   ctx.fill();
   ctx.stroke();
+  drawTempleTextSafetyZone(ctx, metrics, mirrored, colors, displayPoints);
   if (style.templeDetailMode === "texture") {
     ctx.save();
     ctx.beginPath();
@@ -2705,7 +2785,12 @@ function designTempleProfileGeometry(definition, p) {
 }
 
 function addDesignTemple(side, p, outerLensWidth, frameMaterial, detailMaterial, style, definition, target = designModelGroup) {
-  const construction = effectiveTempleConstruction(definition, p);
+  const baseConstruction = effectiveTempleConstruction(definition, p);
+  const construction = normalizeDesignTempleTextPlacement(
+    baseConstruction,
+    normalizeDesignTempleSketch(definition?.templeSketch, baseConstruction),
+    style
+  );
   const temple = new THREE.Group();
   temple.position.copy(designHingeDatum(side, p, definition));
   temple.rotation.y = side * THREE.MathUtils.degToRad(p.temple_spread);
@@ -3284,6 +3369,14 @@ function setDesignFieldValue(field, value) {
   if (field && document.activeElement !== field) field.value = String(value);
 }
 
+function setDesignSliderFieldValue(field, value, unit = "") {
+  setDesignFieldValue(field, value);
+  const label = field?.nextElementSibling;
+  if (label?.tagName === "SMALL") {
+    label.textContent = `${formatNumber(value)}${unit ? ` ${unit}` : ""}`;
+  }
+}
+
 function syncDesignFields() {
   const draft = state.designDraft;
   setDesignFieldValue(els.designName, draft.name);
@@ -3323,7 +3416,12 @@ function syncDesignFields() {
   setDesignFieldValue(els.designChamferAmount, features.chamfer.amount);
   if (els.designLensRecessEnabled) els.designLensRecessEnabled.checked = features.lensRecess.enabled;
   setDesignFieldValue(els.designLensRecessDepth, features.lensRecess.depth);
-  const construction = normalizeDesignConstruction(draft.construction);
+  const rawConstruction = normalizeDesignConstruction(draft.construction);
+  const construction = normalizeDesignTempleTextPlacement(
+    rawConstruction,
+    normalizeDesignTempleSketch(draft.templeSketch, rawConstruction),
+    style
+  );
   setDesignFieldValue(els.designLensSlotWidth, construction.lensSeatWidth);
   setDesignFieldValue(els.designLensCaptureDepth, construction.lensSeatDepth);
   setDesignFieldValue(els.designLensClearance, construction.lensClearance);
@@ -3336,17 +3434,17 @@ function syncDesignFields() {
   setDesignFieldValue(els.designHingeMountHeight, construction.hingeMountHeight);
   setDesignFieldValue(els.designHingeMountOffset, construction.hingeMountOffset);
   setDesignFieldValue(els.designBridgeThickness, construction.bridgeThickness);
-  setDesignFieldValue(els.designTempleStraight, construction.templeStraight);
-  setDesignFieldValue(els.designTempleHook, construction.templeHook);
-  setDesignFieldValue(els.designTempleHookAngle, construction.templeHookAngle);
-  setDesignFieldValue(els.designTempleBarHeight, construction.templeBarHeight);
-  setDesignFieldValue(els.designTempleDepth, construction.templeDepth);
-  setDesignFieldValue(els.designTempleCornerRadius, construction.templeCornerRadius);
-  setDesignFieldValue(els.designTempleTextureDepth, construction.templeTextureDepth);
-  setDesignFieldValue(els.designTemplePatternSpacing, construction.templePatternSpacing);
-  setDesignFieldValue(els.designTempleTextSize, construction.templeTextSize);
-  setDesignFieldValue(els.designTempleTextPosition, construction.templeTextPosition);
-  setDesignFieldValue(els.designTempleTextDepth, construction.templeTextDepth);
+  setDesignSliderFieldValue(els.designTempleStraight, construction.templeStraight, "mm");
+  setDesignSliderFieldValue(els.designTempleHook, construction.templeHook, "mm");
+  setDesignSliderFieldValue(els.designTempleHookAngle, construction.templeHookAngle, "deg");
+  setDesignSliderFieldValue(els.designTempleBarHeight, construction.templeBarHeight, "mm");
+  setDesignSliderFieldValue(els.designTempleDepth, construction.templeDepth, "mm");
+  setDesignSliderFieldValue(els.designTempleCornerRadius, construction.templeCornerRadius, "mm");
+  setDesignSliderFieldValue(els.designTempleTextureDepth, construction.templeTextureDepth, "mm");
+  setDesignSliderFieldValue(els.designTemplePatternSpacing, construction.templePatternSpacing, "mm");
+  setDesignSliderFieldValue(els.designTempleTextSize, construction.templeTextSize, "mm");
+  setDesignSliderFieldValue(els.designTempleTextPosition, construction.templeTextPosition, "mm");
+  setDesignSliderFieldValue(els.designTempleTextDepth, construction.templeTextDepth, "mm");
   syncDesignSelectedCornerField();
   syncDesignTempleSelectedCornerField();
   renderDesignProductionChecks();
@@ -3393,7 +3491,7 @@ function syncDesignTempleSelectedCornerField() {
   designTempleSketchSelectedIndex = Math.max(0, Math.min(designTempleSketchSelectedIndex, sketch.points.length - 1));
   if (els.designTempleSelectedCornerLabel) els.designTempleSelectedCornerLabel.textContent = `Point ${designTempleSketchSelectedIndex + 1} radius`;
   if (els.designTempleSelectedCornerRadius) {
-    els.designTempleSelectedCornerRadius.value = String(sketch.cornerRadii[designTempleSketchSelectedIndex] || 0);
+    setDesignSliderFieldValue(els.designTempleSelectedCornerRadius, sketch.cornerRadii[designTempleSketchSelectedIndex] || 0, "mm");
   }
 }
 
@@ -3600,6 +3698,11 @@ function handleDesignOperationChange(event) {
     lensColor: els.designLensColor?.value,
     detailColor: els.designDetailColor?.value
   });
+  state.designDraft.construction = normalizeDesignTempleTextPlacement(
+    state.designDraft.construction,
+    state.designDraft.templeSketch,
+    state.designDraft.style
+  );
   state.designDraft.manualCode = false;
   syncDesignFields();
   syncDesignCode();

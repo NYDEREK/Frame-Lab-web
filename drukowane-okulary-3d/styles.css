@@ -1088,10 +1088,15 @@ small,
   font-weight: 760;
 }
 
+.design-construction-grid input[type="range"] {
+  accent-color: var(--accent);
+}
+
 .design-construction-grid small {
   color: var(--muted);
   align-self: center;
   font-size: 0.69rem;
+  font-variant-numeric: tabular-nums;
 }
 
 .design-assembly-checks {
