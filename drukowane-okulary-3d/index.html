@@ -16,7 +16,7 @@
         document.documentElement.dataset.appError = event.reason?.message || String(event.reason || "promise");
       });
     </script>
-    <link rel="stylesheet" href="./styles.css?v=design-lab-add-text-section-20260530-1" />
+    <link rel="stylesheet" href="./styles.css?v=design-lab-temple-ui-cleanup-20260530-1" />
     <script type="importmap">
       {
         "imports": {
@@ -560,21 +560,6 @@
           </section>
           <section id="designFeaturesPanel" class="design-operations" role="tabpanel" hidden>
             <section class="design-control-section">
-              <div class="design-section-heading">
-                <h3>Left temple drawing</h3>
-                <div class="design-sketch-actions">
-                  <button id="addTemplePoint" type="button" class="compact">+ Point</button>
-                  <button id="removeTemplePoint" type="button" class="compact">Remove</button>
-                </div>
-              </div>
-              <div class="design-interface-spec">
-                <strong>Temple Hinge Left</strong>
-                <span>Production connector included</span>
-                <small>4.5 x 6.25 x 3.6 mm supplied body</small>
-              </div>
-              <p class="design-note">The authored side profile begins inside the supplied hinge. Drag points to shape one printable temple body.</p>
-            </section>
-            <section class="design-control-section">
               <h3>Temple dimensions</h3>
               <div id="designTempleControls" class="design-controls"></div>
               <div class="design-construction-grid">
@@ -586,11 +571,8 @@
               </div>
             </section>
             <section class="design-control-section design-details design-temple-text-section">
-              <div class="design-section-heading">
-                <h3>Temple text</h3>
-                <button id="designAddTempleText" type="button" class="compact accent">Add text</button>
-              </div>
-              <div id="designTempleTextControls" class="design-detail-fields" hidden>
+              <h3>Temple text</h3>
+              <div id="designTempleTextControls" class="design-detail-fields">
                 <label class="design-text-field">
                   <span>Left temple text</span>
                   <input id="designTempleText" type="text" maxlength="24" placeholder="Frame Lab" />
@@ -602,17 +584,21 @@
                 </div>
               </div>
             </section>
-            <section class="design-control-section">
+            <section class="design-control-section design-temple-point-section">
               <div class="design-section-heading">
-                <h3>Selected temple corner</h3>
-                <button id="designTempleSharpCorner" type="button" class="compact">Sharp</button>
+                <h3>Temple points</h3>
+                <div class="design-sketch-actions">
+                  <button id="addTemplePoint" type="button" class="compact">+ Point</button>
+                  <button id="removeTemplePoint" type="button" class="compact">Remove</button>
+                  <button id="designTempleSharpCorner" type="button" class="compact">Sharp</button>
+                </div>
               </div>
               <div class="design-construction-grid">
                 <label><span id="designTempleSelectedCornerLabel">Point 1 radius</span><input id="designTempleSelectedCornerRadius" type="range" min="0" max="12" step="0.1" value="0" /><small>0 mm</small></label>
               </div>
             </section>
             <section class="design-control-section design-details">
-              <h3>Left side detail</h3>
+              <h3>Surface detail</h3>
               <label>
                 <span>Detail mode</span>
                 <select id="designTempleDetailMode" class="component-select">
@@ -621,9 +607,7 @@
                   <option value="texture">Relief texture</option>
                 </select>
               </label>
-              <div class="design-construction-grid">
-                <label><span>Rounding</span><input id="designTempleCornerRadius" type="range" min="0" max="4" step="0.1" value="1.4" /><small>1.4 mm</small></label>
-              </div>
+              <input id="designTempleCornerRadius" type="hidden" value="1.4" />
               <div id="designTempleTextureControls" class="design-detail-fields" hidden>
                 <label>
                   <span>Pattern</span>
@@ -651,18 +635,14 @@
               <p class="design-note">The mechanical geometry stays symmetric. Add separate right-side detail so engraving is readable, not mirrored.</p>
             </section>
             <section class="design-control-section design-details">
-              <div class="design-section-heading">
-                <h3>Right temple text</h3>
-                <button id="designAddRightTempleText" type="button" class="compact accent">Add text</button>
-              </div>
-              <div id="designRightTempleTextControls" class="design-detail-fields" hidden>
+              <h3>Right temple text</h3>
+              <div id="designRightTempleTextControls" class="design-detail-fields">
                 <label class="design-text-field">
                   <span>Right temple text</span>
                   <input id="designRightTempleText" type="text" maxlength="24" placeholder="Frame Lab" />
                 </label>
                 <p class="design-note">Uses the same size and placement as the left temple.</p>
               </div>
-              <p id="designRightTempleDetailNote" class="design-note">The selected relief texture is mirrored with the temple geometry.</p>
             </section>
           </section>
           <section id="designAssemblyPanel" class="design-operations" role="tabpanel" hidden>
@@ -982,6 +962,6 @@
       document.querySelector("#openDesignLab")?.addEventListener("click", (event) => queueDesignLabDuringBoot(event, false));
       document.querySelector("#startDesignLab")?.addEventListener("click", (event) => queueDesignLabDuringBoot(event, true));
     </script>
-    <script type="module" src="./src/app.js?v=design-lab-add-text-section-20260530-1"></script>
+    <script type="module" src="./src/app.js?v=design-lab-temple-ui-cleanup-20260530-1"></script>
   </body>
 </html>

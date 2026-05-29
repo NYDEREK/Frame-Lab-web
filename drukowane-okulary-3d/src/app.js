@@ -741,9 +741,6 @@ const els = {
   designTempleTextureControls: document.querySelector("#designTempleTextureControls"),
   designTempleTextControls: document.querySelector("#designTempleTextControls"),
   designRightTempleTextControls: document.querySelector("#designRightTempleTextControls"),
-  designRightTempleDetailNote: document.querySelector("#designRightTempleDetailNote"),
-  designAddTempleText: document.querySelector("#designAddTempleText"),
-  designAddRightTempleText: document.querySelector("#designAddRightTempleText"),
   designTempleText: document.querySelector("#designTempleText"),
   designRightTempleText: document.querySelector("#designRightTempleText"),
   designBrowBar: document.querySelector("#designBrowBar"),
@@ -3233,8 +3230,6 @@ function bindUi() {
   els.addSketchPoint?.addEventListener("click", addDesignSketchPoint);
   els.removeSketchPoint?.addEventListener("click", removeDesignSketchPoint);
   els.designSharpCorner?.addEventListener("click", () => updateSelectedDesignCorner(0));
-  els.designAddTempleText?.addEventListener("click", () => activateDesignTempleText(els.designTempleText));
-  els.designAddRightTempleText?.addEventListener("click", () => activateDesignTempleText(els.designRightTempleText));
   els.addTemplePoint?.addEventListener("click", addDesignTempleSketchPoint);
   els.removeTemplePoint?.addEventListener("click", removeDesignTempleSketchPoint);
   els.designTempleSharpCorner?.addEventListener("click", () => updateSelectedDesignTempleCorner(0));
@@ -3458,14 +3453,8 @@ function syncDesignFields() {
   if (els.designTempleDetailMode) els.designTempleDetailMode.value = style.templeDetailMode;
   if (els.designTemplePattern) els.designTemplePattern.value = style.templePattern;
   if (els.designTempleTextureControls) els.designTempleTextureControls.hidden = style.templeDetailMode !== "texture";
-  if (els.designTempleTextControls) els.designTempleTextControls.hidden = style.templeDetailMode !== "text";
-  if (els.designRightTempleTextControls) els.designRightTempleTextControls.hidden = style.templeDetailMode !== "text";
-  if (els.designRightTempleDetailNote) {
-    els.designRightTempleDetailNote.hidden = style.templeDetailMode === "text";
-    els.designRightTempleDetailNote.textContent = style.templeDetailMode === "texture"
-      ? "The relief texture follows the mirrored temple geometry."
-      : "Select raised text or a relief texture on the left temple.";
-  }
+  if (els.designTempleTextControls) els.designTempleTextControls.hidden = false;
+  if (els.designRightTempleTextControls) els.designRightTempleTextControls.hidden = false;
   setDesignFieldValue(els.designTempleText, style.leftTempleText);
   setDesignFieldValue(els.designRightTempleText, style.rightTempleText);
   if (els.designBrowBar) els.designBrowBar.checked = style.browBar;
@@ -3569,24 +3558,6 @@ function updateSelectedDesignTempleCorner(radius) {
   syncDesignTempleSelectedCornerField();
   syncDesignCode();
   renderDesignPreview({ fitView: false });
-}
-
-function activateDesignTempleText(fieldToFocus = els.designTempleText) {
-  state.designDraft.style = normalizeDesignStyle({
-    ...state.designDraft.style,
-    templeDetailMode: "text"
-  });
-  state.designDraft.construction = normalizeDesignTempleTextPlacement(
-    state.designDraft.construction,
-    state.designDraft.templeSketch,
-    state.designDraft.style
-  );
-  state.designDraft.manualCode = false;
-  syncDesignFields();
-  syncDesignCode();
-  renderDesignPreview({ fitView: false });
-  setDesignNote("");
-  requestAnimationFrame(() => fieldToFocus?.focus());
 }
 
 function syncDesignCode() {
@@ -3769,14 +3740,22 @@ function handleDesignOperationChange(event) {
     state.designDraft.sketch = { symmetric: true, ...designProfilePreset(els.designLensShape.value) };
     designSketchSelectedIndex = 0;
   }
+  const nextLeftTempleText = els.designTempleText?.value || "";
+  const nextRightTempleText = els.designRightTempleText?.value || "";
+  let nextTempleDetailMode = els.designTempleDetailMode?.value || state.designDraft.style.templeDetailMode;
+  if ([els.designTempleText, els.designRightTempleText].includes(event.target)) {
+    nextTempleDetailMode = nextLeftTempleText.trim() || nextRightTempleText.trim()
+      ? "text"
+      : nextTempleDetailMode === "text" ? "none" : nextTempleDetailMode;
+  }
   state.designDraft.style = normalizeDesignStyle({
     ...state.designDraft.style,
     lensShape: els.designLensShape?.value || state.designDraft.style.lensShape,
-    templeDetailMode: els.designTempleDetailMode?.value,
+    templeDetailMode: nextTempleDetailMode,
     templePattern: els.designTemplePattern?.value,
-    templeText: els.designTempleText?.value,
-    leftTempleText: els.designTempleText?.value,
-    rightTempleText: els.designRightTempleText?.value,
+    templeText: nextLeftTempleText,
+    leftTempleText: nextLeftTempleText,
+    rightTempleText: nextRightTempleText,
     browBar: false,
     frameColor: els.designFrameColor?.value,
     templeColor: els.designTempleColor?.value,
