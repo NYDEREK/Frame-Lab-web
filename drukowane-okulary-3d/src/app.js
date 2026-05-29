@@ -3543,6 +3543,8 @@ function syncDesignSelectedCornerField() {
     if (els.designSelectedCornerRadius) {
       els.designSelectedCornerRadius.value = "";
       els.designSelectedCornerRadius.disabled = true;
+      const unitLabel = els.designSelectedCornerRadius.nextElementSibling;
+      if (unitLabel?.tagName === "SMALL") unitLabel.textContent = "";
     }
     return;
   }
@@ -3550,7 +3552,7 @@ function syncDesignSelectedCornerField() {
   if (els.designSelectedCornerLabel) els.designSelectedCornerLabel.textContent = `Point ${designSketchSelectedIndex + 1} radius`;
   if (els.designSelectedCornerRadius) {
     els.designSelectedCornerRadius.disabled = false;
-    els.designSelectedCornerRadius.value = String(sketch.cornerRadii[designSketchSelectedIndex] || 0);
+    setDesignSliderFieldValue(els.designSelectedCornerRadius, sketch.cornerRadii[designSketchSelectedIndex] || 0, "mm");
   }
 }
 

@@ -16,7 +16,7 @@
         document.documentElement.dataset.appError = event.reason?.message || String(event.reason || "promise");
       });
     </script>
-    <link rel="stylesheet" href="./styles.css?v=design-lab-temple-points-order-20260530-1" />
+    <link rel="stylesheet" href="./styles.css?v=design-lab-section-cleanup-20260530-1" />
     <script type="importmap">
       {
         "imports": {
@@ -484,19 +484,17 @@
             </div>
           </section>
           <section id="designOperationsPanel" class="design-operations" role="tabpanel">
-            <section class="design-control-section">
+            <section class="design-control-section design-front-point-section">
               <div class="design-section-heading">
-                <h3>Front drawing</h3>
+                <h3>Front points</h3>
                 <div class="design-sketch-actions">
                   <button id="addSketchPoint" type="button" class="compact">+ Point</button>
                   <button id="removeSketchPoint" type="button" class="compact">Remove</button>
+                  <button id="designSharpCorner" type="button" class="compact">Sharp</button>
                 </div>
               </div>
-              <p class="design-note">Draw one closed lens opening. The second opening and the acrylic lenses are generated automatically.</p>
-              <div class="design-interface-spec">
-                <strong>FL hinge standard</strong>
-                <span>Front Hinge Left + Right</span>
-                <small>Vertical screw bore / top access</small>
+              <div class="design-construction-grid">
+                <label><span id="designSelectedCornerLabel">Point 1 radius</span><input id="designSelectedCornerRadius" type="range" min="0" max="30" step="0.5" value="0" /><small>0 mm</small></label>
               </div>
             </section>
             <section class="design-control-section">
@@ -508,30 +506,9 @@
                   <input id="designExtrudeDepth" type="range" min="3" max="12" step="0.1" value="3" aria-label="Extrude depth" />
                   <small>3 mm</small>
                 </label>
-                <label class="design-slider-toggle">
-                  <span><input id="designChamferEnabled" type="checkbox" /> Chamfer</span>
-                  <input id="designChamferAmount" type="range" min="0" max="2.4" step="0.1" value="0.4" aria-label="Chamfer amount" />
-                  <small>0.4 mm</small>
-                </label>
-                <label class="design-slider-toggle">
-                  <span><input id="designFilletEnabled" type="checkbox" /> Edge radius</span>
-                  <input id="designFilletRadius" type="range" min="0" max="2.4" step="0.1" value="0.3" aria-label="Fillet radius" />
-                  <small>0.3 mm</small>
-                </label>
               </div>
               <input id="designLensRecessEnabled" type="checkbox" checked hidden />
               <input id="designLensRecessDepth" type="number" value="0.75" hidden />
-              <p class="design-note">The lens opening is resolved from overall width, bridge and rim thickness to keep the drawn front dimensionally consistent.</p>
-            </section>
-            <section class="design-control-section">
-              <div class="design-section-heading">
-                <h3>Selected corner</h3>
-                <button id="designSharpCorner" type="button" class="compact">Sharp</button>
-              </div>
-              <p class="design-note">Select a point in the drawing and round only that corner.</p>
-              <div class="design-construction-grid">
-                <label><span id="designSelectedCornerLabel">Point 1 radius</span><input id="designSelectedCornerRadius" type="number" min="0" max="30" step="0.5" value="0" /><small>mm</small></label>
-              </div>
             </section>
             <section class="design-control-section">
               <h3>Lens channel</h3>
@@ -546,7 +523,6 @@
                 <label><span>Fit clearance</span><input id="designLensClearance" type="number" min="0" max="0.6" step="0.01" value="0.12" /><small>mm</small></label>
                 <label><span>Channel offset</span><input id="designLensChannelOffset" type="number" min="-1" max="1" step="0.05" value="0" /><small>mm</small></label>
               </div>
-              <p class="design-note">The lens edge sits inside the front body with printed lips on both faces. Clearance reduces the lens outline for fitting.</p>
             </section>
             <section class="design-control-section">
               <h3>Interface placement</h3>
@@ -555,7 +531,19 @@
                 <label><span>Side inset</span><input id="designHingeMountOffset" type="number" min="-4" max="0" step="0.5" value="0" /><small>mm</small></label>
                 <label><span>Bridge thickness</span><input id="designBridgeThickness" type="number" min="3" max="12" step="0.1" value="6" /><small>mm</small></label>
               </div>
-              <p class="design-note">Both hinge halves share this vertical screw axis in assembly. Drag bridge handles to move horizontal bridge lines.</p>
+            </section>
+            <section class="design-control-section design-details">
+              <h3>Surface detail</h3>
+              <label class="design-slider-toggle">
+                <span><input id="designChamferEnabled" type="checkbox" /> Chamfer</span>
+                <input id="designChamferAmount" type="range" min="0" max="2.4" step="0.1" value="0.4" aria-label="Chamfer amount" />
+                <small>0.4 mm</small>
+              </label>
+              <label class="design-slider-toggle">
+                <span><input id="designFilletEnabled" type="checkbox" /> Edge radius</span>
+                <input id="designFilletRadius" type="range" min="0" max="2.4" step="0.1" value="0.3" aria-label="Fillet radius" />
+                <small>0.3 mm</small>
+              </label>
             </section>
           </section>
           <section id="designFeaturesPanel" class="design-operations" role="tabpanel" hidden>
@@ -630,15 +618,6 @@
             </section>
           </section>
           <section id="designRightTemplePanel" class="design-operations" role="tabpanel" hidden>
-            <section class="design-control-section">
-              <h3>Right temple</h3>
-              <div class="design-interface-spec">
-                <strong>Temple Hinge Right</strong>
-                <span>Mirrored fit from left side</span>
-                <small>Geometry inherits the validated left temple path</small>
-              </div>
-              <p class="design-note">The mechanical geometry stays symmetric. Add separate right-side detail so engraving is readable, not mirrored.</p>
-            </section>
             <section class="design-control-section design-details">
               <h3>Right temple text</h3>
               <div id="designRightTempleTextControls" class="design-detail-fields">
@@ -649,10 +628,18 @@
                 <p class="design-note">Uses the same size and placement as the left temple.</p>
               </div>
             </section>
+            <section class="design-control-section">
+              <h3>Mirrored geometry</h3>
+              <div class="design-interface-spec">
+                <strong>Temple Hinge Right</strong>
+                <span>Mirrored fit from left side</span>
+                <small>Geometry inherits the validated left temple path</small>
+              </div>
+            </section>
           </section>
           <section id="designAssemblyPanel" class="design-operations" role="tabpanel" hidden>
             <section class="design-control-section">
-              <h3>Ready assembly</h3>
+              <h3>Assembly checks</h3>
               <div class="design-assembly-checks">
                 <span>Front hinges</span><strong>Included</strong>
                 <span>Temple hinges</span><strong>Included</strong>
@@ -662,7 +649,6 @@
             </section>
             <section class="design-control-section">
               <h3>Customer sliders</h3>
-              <p class="design-note">Choose dimensions exposed to the customer when this frame is published.</p>
               <div id="designPublicParameters" class="design-public-parameters"></div>
             </section>
           </section>
@@ -967,6 +953,6 @@
       document.querySelector("#openDesignLab")?.addEventListener("click", (event) => queueDesignLabDuringBoot(event, false));
       document.querySelector("#startDesignLab")?.addEventListener("click", (event) => queueDesignLabDuringBoot(event, true));
     </script>
-    <script type="module" src="./src/app.js?v=design-lab-temple-points-order-20260530-1"></script>
+    <script type="module" src="./src/app.js?v=design-lab-section-cleanup-20260530-1"></script>
   </body>
 </html>
