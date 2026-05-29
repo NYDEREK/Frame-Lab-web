@@ -767,7 +767,6 @@ const els = {
   designViewSketch: document.querySelector("#designViewSketch"),
   designView3d: document.querySelector("#designView3d"),
   designViewHint: document.querySelector("#designViewHint"),
-  designExtrudeEnabled: document.querySelector("#designExtrudeEnabled"),
   designExtrudeDepth: document.querySelector("#designExtrudeDepth"),
   designFilletEnabled: document.querySelector("#designFilletEnabled"),
   designFilletRadius: document.querySelector("#designFilletRadius"),
@@ -1167,7 +1166,7 @@ function normalizeDesignFeatures(features = {}, params = defaultParams) {
   const filletRadius = clamp(features.fillet?.radius, 0, 2.4, defaults.fillet.radius);
   return {
     extrude: {
-      enabled: features.extrude?.enabled !== false,
+      enabled: true,
       depth: clamp(features.extrude?.depth, 3, 12, defaults.extrude.depth)
     },
     fillet: {
@@ -2747,6 +2746,32 @@ function designSafeFrontEdgeAmount(edge, p, construction, layerDepth) {
   );
 }
 
+function containedBevelExtrudeOptions(depth, edgeAmount, bevelSegments = 1) {
+  const safeDepth = Math.max(0.02, parseDesignNumber(depth, 0.02));
+  const safeBevel = THREE.MathUtils.clamp(
+    parseDesignNumber(edgeAmount, 0),
+    0,
+    Math.max(0, safeDepth / 2 - 0.01)
+  );
+  if (safeBevel <= 0.001) {
+    return {
+      options: { depth: safeDepth, bevelEnabled: false },
+      centerOffset: safeDepth / 2
+    };
+  }
+  const coreDepth = Math.max(0.02, safeDepth - safeBevel * 2);
+  return {
+    options: {
+      depth: coreDepth,
+      bevelEnabled: true,
+      bevelThickness: safeBevel,
+      bevelSize: safeBevel,
+      bevelSegments: Math.max(1, Math.round(bevelSegments))
+    },
+    centerOffset: coreDepth / 2
+  };
+}
+
 function addDesignFrontBody(p, material, definition, target = designModelGroup) {
   const features = normalizeDesignFeatures(definition?.features, p);
   const construction = normalizeDesignConstruction(definition?.construction);
@@ -2754,14 +2779,9 @@ function addDesignFrontBody(p, material, definition, target = designModelGroup) 
   const addLayer = (innerExpansion, depth, z, edgeEnabled) => {
     designFrontShapes(p, definition, innerExpansion).forEach((shape) => {
       const edgeAmount = edgeEnabled ? designSafeFrontEdgeAmount(edge, p, construction, depth) : 0;
-      const geometry = new THREE.ExtrudeGeometry(shape, {
-        depth,
-        bevelEnabled: edgeAmount > 0,
-        bevelThickness: Math.max(0.01, edgeAmount),
-        bevelSize: Math.max(0.01, edgeAmount),
-        bevelSegments: edge.segments
-      });
-      geometry.translate(0, 0, -depth / 2);
+      const extrusion = containedBevelExtrudeOptions(depth, edgeAmount, edge.segments);
+      const geometry = new THREE.ExtrudeGeometry(shape, extrusion.options);
+      geometry.translate(0, 0, -extrusion.centerOffset);
       const layer = new THREE.Mesh(geometry, material);
       layer.position.z = z;
       target.add(layer);
@@ -2857,14 +2877,9 @@ function designTempleProfileGeometry(definition, p) {
     profile.points.map(([x, y]) => ({ x, y })),
     profile.cornerRadii
   );
-  const geometry = new THREE.ExtrudeGeometry(shape, {
-    depth: armWidth,
-    bevelEnabled: templeChamfer > 0,
-    bevelThickness: Math.max(0.01, templeChamfer),
-    bevelSize: Math.max(0.01, templeChamfer),
-    bevelSegments: templeChamfer > 0 ? 1 : 0
-  });
-  geometry.translate(0, 0, -armWidth / 2);
+  const extrusion = containedBevelExtrudeOptions(armWidth, templeChamfer, 1);
+  const geometry = new THREE.ExtrudeGeometry(shape, extrusion.options);
+  geometry.translate(0, 0, -extrusion.centerOffset);
   geometry.rotateY(Math.PI / 2);
   return geometry;
 }
@@ -3488,7 +3503,6 @@ function syncDesignFields() {
   if (els.designLensColor) els.designLensColor.value = style.lensColor;
   if (els.designDetailColor) els.designDetailColor.value = style.detailColor;
   const features = normalizeDesignFeatures(draft.features, draft.params);
-  if (els.designExtrudeEnabled) els.designExtrudeEnabled.checked = features.extrude.enabled;
   setDesignSliderFieldValue(els.designExtrudeDepth, features.extrude.depth, "mm");
   if (els.designFilletEnabled) els.designFilletEnabled.checked = features.fillet.enabled;
   setDesignSliderFieldValue(els.designFilletRadius, features.fillet.radius, "mm");
@@ -3761,7 +3775,7 @@ function handleDesignOperationChange(event) {
     }
   }
   const features = normalizeDesignFeatures({
-    extrude: { enabled: els.designExtrudeEnabled?.checked, depth: els.designExtrudeDepth?.value },
+    extrude: { depth: els.designExtrudeDepth?.value },
     fillet: { enabled: els.designFilletEnabled?.checked, radius: els.designFilletRadius?.value },
     chamfer: { enabled: els.designChamferEnabled?.checked, amount: els.designChamferAmount?.value },
     lensRecess: { enabled: els.designLensRecessEnabled?.checked, depth: els.designLensRecessDepth?.value }
@@ -3969,7 +3983,7 @@ function parseDesignCode(source) {
     }),
     features: normalizeDesignFeatures({
       extrude: {
-        enabled: readBool("extrude_enabled", currentFeatures.extrude.enabled),
+        enabled: true,
         depth: readNumber("extrude_depth", currentFeatures.extrude.depth)
       },
       fillet: {
@@ -8107,7 +8121,7 @@ temple_profile_corner_radii = [${templeProfileCornerRadii}]; // Radius at each t
 temple_profile_path = [${templeProfilePath}]; // Closed side profile of the printable temple.
 customer_sliders = [${publicParameters}]; // Exposed controls in Frame Lab.
 customer_slider_ranges = [${customerRanges}]; // Safe customer adjustment limits.
-extrude_enabled = ${features.extrude.enabled ? "true" : "false"};
+extrude_enabled = true; // Front depth is always active; kept for legacy exports.
 extrude_depth = ${formatNumber(features.extrude.depth)};
 fillet_enabled = ${features.fillet.enabled ? "true" : "false"};
 fillet_radius = ${formatNumber(features.fillet.radius)};
@@ -8128,7 +8142,7 @@ bridge_bottom_join_offset = ${formatNumber(construction.bridgeBottomJoinOffset)}
 hinge_pad_size = ${formatNumber(designHingePadSize)};
 hinge_pad_overlap = ${formatNumber(designHingePadOverlap)};
 hinge_rear_overlap = ${formatNumber(designHingeRearOverlap)};
-front_depth = extrude_enabled ? extrude_depth : 0.2;
+front_depth = extrude_depth;
 front_face_z = front_depth / 2;
 hinge_rear_z = -front_face_z + hinge_rear_overlap; // Mechanical hinge is bonded behind the planar pad.
 temple_straight = ${formatNumber(construction.templeStraight)};

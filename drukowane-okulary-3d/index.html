@@ -16,7 +16,7 @@
         document.documentElement.dataset.appError = event.reason?.message || String(event.reason || "promise");
       });
     </script>
-    <link rel="stylesheet" href="./styles.css?v=design-lab-section-cleanup-20260530-1" />
+    <link rel="stylesheet" href="./styles.css?v=design-lab-chamfer-contained-20260530-1" />
     <script type="importmap">
       {
         "imports": {
@@ -501,8 +501,8 @@
               <h3>Front dimensions</h3>
               <div id="designFrontControls" class="design-controls"></div>
               <div class="design-construction-grid design-primary-operations">
-                <label class="design-slider-toggle">
-                  <span><input id="designExtrudeEnabled" type="checkbox" checked /> Extrude depth</span>
+                <label>
+                  <span>Extrude depth</span>
                   <input id="designExtrudeDepth" type="range" min="3" max="12" step="0.1" value="3" aria-label="Extrude depth" />
                   <small>3 mm</small>
                 </label>
@@ -569,6 +569,11 @@
                 <label><span>Angle</span><input id="designTempleHookAngle" type="range" min="10" max="75" step="1" value="45" /><small>45 deg</small></label>
                 <label><span>Height</span><input id="designTempleBarHeight" type="range" min="3" max="10" step="0.1" value="5.4" /><small>5.4 mm</small></label>
                 <label><span>Depth</span><input id="designTempleDepth" type="range" min="2.4" max="6" step="0.1" value="3.6" /><small>3.6 mm</small></label>
+                <label class="design-slider-toggle">
+                  <span><input id="designTempleChamferEnabled" type="checkbox" /> Chamfer</span>
+                  <input id="designTempleChamferAmount" type="range" min="0" max="1.2" step="0.05" value="0.35" aria-label="Temple chamfer amount" />
+                  <small>0.35 mm</small>
+                </label>
               </div>
             </section>
             <section class="design-control-section design-details design-temple-text-section">
@@ -587,11 +592,6 @@
             </section>
             <section class="design-control-section design-details">
               <h3>Surface detail</h3>
-              <label class="design-slider-toggle">
-                <span><input id="designTempleChamferEnabled" type="checkbox" /> Chamfer</span>
-                <input id="designTempleChamferAmount" type="range" min="0" max="1.2" step="0.05" value="0.35" aria-label="Temple chamfer amount" />
-                <small>0.35 mm</small>
-              </label>
               <label>
                 <span>Detail mode</span>
                 <select id="designTempleDetailMode" class="component-select">
@@ -953,6 +953,6 @@
       document.querySelector("#openDesignLab")?.addEventListener("click", (event) => queueDesignLabDuringBoot(event, false));
       document.querySelector("#startDesignLab")?.addEventListener("click", (event) => queueDesignLabDuringBoot(event, true));
     </script>
-    <script type="module" src="./src/app.js?v=design-lab-section-cleanup-20260530-1"></script>
+    <script type="module" src="./src/app.js?v=design-lab-chamfer-contained-20260530-1"></script>
   </body>
 </html>
