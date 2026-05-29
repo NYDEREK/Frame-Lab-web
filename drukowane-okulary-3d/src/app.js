@@ -235,7 +235,7 @@ const designTempleBarCenterY = 2.8;
 const designTempleHingeRearZ = -7.5;
 const designTempleArmJoinOverlap = 0.9;
 const designTempleProfileStartZ = designTempleHingeRearZ + designTempleArmJoinOverlap;
-const designTempleTextSafeStart = 12;
+const designTempleTextSafeStart = 0;
 const designTempleTextEndPadding = 8;
 const designHingeAssetManifest = {
   frontLeft: "./assets/hinges/front-hinge-left.3mf",
@@ -1194,7 +1194,7 @@ function normalizeDesignConstruction(construction = {}) {
     templeTextureDepth: bounded("templeTextureDepth", 0.2, 1.2),
     templePatternSpacing: bounded("templePatternSpacing", 5, 18),
     templeTextSize: bounded("templeTextSize", 2, 8),
-    templeTextPosition: bounded("templeTextPosition", 8, 120),
+    templeTextPosition: bounded("templeTextPosition", 0, 120),
     templeTextYOffset: bounded("templeTextYOffset", -5, 5),
     templeTextDepth: bounded("templeTextDepth", 0.15, 1.2)
   };
@@ -2088,8 +2088,22 @@ function fitDesignCamera() {
   if (box.isEmpty()) return;
   const sphere = box.getBoundingSphere(new THREE.Sphere());
   designCameraDistance = Math.max(92, sphere.radius * 2.12);
-  designCameraTarget.copy(sphere.center);
+  designCameraTarget.set(0, 0, 0);
   updateDesignCamera();
+}
+
+function centerDesignModelForAssemblyPivot() {
+  if (!designModelGroup) return;
+  const currentRotation = designModelGroup.rotation.clone();
+  designModelGroup.rotation.set(0, 0, 0);
+  designModelGroup.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(designModelGroup);
+  if (!box.isEmpty()) {
+    const center = box.getCenter(new THREE.Vector3()).sub(designModelGroup.position);
+    designModelGroup.children.forEach((child) => child.position.sub(center));
+  }
+  designModelGroup.rotation.copy(currentRotation);
+  designModelGroup.updateMatrixWorld(true);
 }
 
 function renderDesignPreview(options = {}) {
@@ -2122,8 +2136,7 @@ function renderDesignPreview(options = {}) {
       frameMaterial
     );
   });
-  const centerPoint = new THREE.Box3().setFromObject(designModelGroup).getCenter(new THREE.Vector3());
-  designModelGroup.children.forEach((child) => child.position.sub(centerPoint));
+  centerDesignModelForAssemblyPivot();
   if (fitView) {
     designZoomScale = 1;
     fitDesignCamera();
