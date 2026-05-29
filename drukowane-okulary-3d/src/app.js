@@ -915,6 +915,8 @@ let designTempleTextDragState = null;
 let designHingeLibrary = {};
 let designTextFont = null;
 let designTextFontLoading = false;
+const designTempleTextWidthCache = new Map();
+let designTempleTextMeasureCanvas = null;
 let designCameraDistance = 260;
 let designZoomScale = 1;
 const designCameraTarget = new THREE.Vector3();
@@ -1199,15 +1201,34 @@ function normalizeDesignConstruction(construction = {}) {
 }
 
 function estimateTempleTextWidth(text = "", construction = defaultDesignConstruction) {
+  const label = String(text || "");
   const size = parseDesignNumber(construction.templeTextSize, defaultDesignConstruction.templeTextSize);
-  const weight = String(text || "").split("").reduce((total, char) => {
+  if (label && designTextFont) {
+    const cacheKey = `${label}\u0000${formatNumber(size)}`;
+    if (!designTempleTextWidthCache.has(cacheKey)) {
+      const geometry = new TextGeometry(label, {
+        font: designTextFont,
+        size,
+        depth: 0.01,
+        curveSegments: 1,
+        bevelEnabled: false
+      });
+      geometry.computeBoundingBox();
+      const box = geometry.boundingBox;
+      const width = box ? Math.max(0, box.max.x - box.min.x) : 0;
+      geometry.dispose();
+      designTempleTextWidthCache.set(cacheKey, width);
+    }
+    return designTempleTextWidthCache.get(cacheKey);
+  }
+  const weight = label.split("").reduce((total, char) => {
     if (char === " ") return total + 0.34;
     if ("ilI1.,'|".includes(char)) return total + 0.3;
     if ("MW@#".includes(char)) return total + 0.92;
     if (char === char.toUpperCase() && /[A-Z0-9]/.test(char)) return total + 0.68;
     return total + 0.56;
   }, 0);
-  return Math.max(0, weight * size + (text ? size * 0.42 : 0));
+  return Math.max(0, weight * size * 0.9);
 }
 
 function designTempleTextBounds(construction, profile, label = "") {
@@ -1586,15 +1607,28 @@ function templeSketchScreenX(metrics, x, mirrored = false) {
   return mirrored ? metrics.rect.width - screenX : screenX;
 }
 
-function templeTextScreenFontSize(construction, scale) {
-  return Math.max(10, Math.min(28, construction.templeTextSize * scale * 0.7));
+function measureTempleTextScreenWidth(label, fontSize) {
+  if (!label) return 0;
+  if (!designTempleTextMeasureCanvas) designTempleTextMeasureCanvas = document.createElement("canvas");
+  const ctx = designTempleTextMeasureCanvas.getContext("2d");
+  ctx.font = `700 ${fontSize}px Inter, Arial, sans-serif`;
+  return ctx.measureText(label).width;
+}
+
+function templeTextScreenFontSize(construction, scale, label = "") {
+  const size = parseDesignNumber(construction.templeTextSize, defaultDesignConstruction.templeTextSize);
+  const fallback = Math.max(10, Math.min(80, size * scale));
+  const targetWidth = estimateTempleTextWidth(label, construction) * scale;
+  const sampleWidth = measureTempleTextScreenWidth(label, 100);
+  if (!label || targetWidth <= 0 || sampleWidth <= 0) return fallback;
+  return Math.max(10, Math.min(80, targetWidth / sampleWidth * 100));
 }
 
 function templeTextScreenBox(metrics, mirrored = false, label = "") {
   const { construction: c, origin, scale } = metrics;
-  const fontSize = templeTextScreenFontSize(c, scale);
-  const width = Math.max(42, estimateTempleTextWidth(label, c) * scale) + 16;
-  const height = Math.max(18, fontSize * 1.35);
+  const fontSize = templeTextScreenFontSize(c, scale, label);
+  const width = Math.max(12, measureTempleTextScreenWidth(label, fontSize));
+  const height = Math.max(14, fontSize * 1.05);
   const center = {
     x: templeSketchScreenX(metrics, c.templeTextPosition, mirrored),
     y: origin.y - c.templeTextYOffset * scale
