@@ -177,6 +177,7 @@ const defaultDesignStyle = {
   rightTempleText: "",
   browBar: false,
   frameColor: "#ff741f",
+  templeColor: "#ff741f",
   lensColor: "#202529",
   detailColor: "#e59a62"
 };
@@ -741,10 +742,13 @@ const els = {
   designTempleTextControls: document.querySelector("#designTempleTextControls"),
   designRightTempleTextControls: document.querySelector("#designRightTempleTextControls"),
   designRightTempleDetailNote: document.querySelector("#designRightTempleDetailNote"),
+  designAddTempleText: document.querySelector("#designAddTempleText"),
+  designAddRightTempleText: document.querySelector("#designAddRightTempleText"),
   designTempleText: document.querySelector("#designTempleText"),
   designRightTempleText: document.querySelector("#designRightTempleText"),
   designBrowBar: document.querySelector("#designBrowBar"),
   designFrameColor: document.querySelector("#designFrameColor"),
+  designTempleColor: document.querySelector("#designTempleColor"),
   designLensColor: document.querySelector("#designLensColor"),
   designDetailColor: document.querySelector("#designDetailColor"),
   designPublicParameters: document.querySelector("#designPublicParameters"),
@@ -1042,6 +1046,7 @@ function createDefaultDesignDraft() {
 function normalizeDesignStyle(style = {}) {
   const leftTempleText = String(style.leftTempleText ?? style.templeText ?? "").trim().slice(0, 24);
   const rightTempleText = String(style.rightTempleText ?? style.templeText ?? "").trim().slice(0, 24);
+  const frameColor = sanitizeHexColor(style.frameColor ?? style.frontColor, defaultDesignStyle.frameColor);
   const legacyPattern = style.templePattern;
   const templePattern = ["ribs", "diamond", "wave"].includes(legacyPattern)
     ? legacyPattern
@@ -1057,7 +1062,8 @@ function normalizeDesignStyle(style = {}) {
     leftTempleText,
     rightTempleText,
     browBar: false,
-    frameColor: sanitizeHexColor(style.frameColor, defaultDesignStyle.frameColor),
+    frameColor,
+    templeColor: sanitizeHexColor(style.templeColor, frameColor),
     lensColor: sanitizeHexColor(style.lensColor, defaultDesignStyle.lensColor),
     detailColor: sanitizeHexColor(style.detailColor, defaultDesignStyle.detailColor)
   };
@@ -1434,7 +1440,7 @@ function setupDesignSketch() {
   };
   els.designSketchCanvas.addEventListener("pointerdown", (event) => {
     if (state.designDraft.step === "left-temple" || state.designDraft.step === "right-temple") {
-      const mirrored = state.designDraft.step === "right-temple";
+      const mirrored = state.designDraft.step === "left-temple";
       const metrics = templeSketchMetrics();
       if (!metrics) return;
       const rect = els.designSketchCanvas.getBoundingClientRect();
@@ -1445,11 +1451,12 @@ function setupDesignSketch() {
         drawDesignSketch();
         return;
       }
-      if (mirrored) return;
+      if (state.designDraft.step !== "left-temple") return;
       let closest = -1;
       let distance = 16;
       metrics.screenPoints.forEach((handle, index) => {
-        const nextDistance = Math.hypot(point.x - handle.x, point.y - handle.y);
+        const displayX = mirrored ? metrics.rect.width - handle.x : handle.x;
+        const nextDistance = Math.hypot(point.x - displayX, point.y - handle.y);
         if (nextDistance < distance) {
           closest = index;
           distance = nextDistance;
@@ -1490,7 +1497,15 @@ function setupDesignSketch() {
       const rect = els.designSketchCanvas.getBoundingClientRect();
       if (!metrics || !rect) return;
       const profile = normalizeDesignTempleSketch(state.designDraft.templeSketch, state.designDraft.construction);
-      const nextX = THREE.MathUtils.clamp((event.clientX - rect.left - metrics.origin.x) / metrics.scale, 0, 150);
+      const mirrored = state.designDraft.step === "left-temple";
+      const screenX = event.clientX - rect.left;
+      const nextX = THREE.MathUtils.clamp(
+        mirrored
+          ? (metrics.rect.width - screenX - metrics.origin.x) / metrics.scale
+          : (screenX - metrics.origin.x) / metrics.scale,
+        0,
+        150
+      );
       const nextY = THREE.MathUtils.clamp((metrics.origin.y - (event.clientY - rect.top)) / metrics.scale, -80, 20);
       profile.points[designTempleSketchDragIndex] = [
         designTempleSketchDragIndex === 0 || designTempleSketchDragIndex === profile.points.length - 1 ? 0 : nextX,
@@ -1648,7 +1663,7 @@ function templeTextScreenBox(metrics, mirrored = false, label = "") {
 function templeTextHitTest(point, metrics, mirrored = false) {
   const style = normalizeDesignStyle(state.designDraft.style);
   if (style.templeDetailMode !== "text") return false;
-  const label = mirrored ? style.rightTempleText : style.leftTempleText;
+  const label = mirrored ? style.leftTempleText : style.rightTempleText;
   if (!label) return false;
   const box = templeTextScreenBox(metrics, mirrored, label);
   return point.x >= box.left - 8 && point.x <= box.right + 8 && point.y >= box.top - 8 && point.y <= box.bottom + 8;
@@ -1953,7 +1968,7 @@ function drawTempleSketch(mirrored = false) {
     ctx.restore();
   }
   if (style.templeDetailMode === "text") {
-    const label = mirrored ? style.rightTempleText : style.leftTempleText;
+    const label = mirrored ? style.leftTempleText : style.rightTempleText;
     if (label) {
       const textBox = templeTextScreenBox(metrics, mirrored, label);
       ctx.save();
@@ -1975,7 +1990,7 @@ function drawTempleSketch(mirrored = false) {
     }
   }
   drawTempleHingeDatum(ctx, metrics, mirrored, colors);
-  if (!mirrored) {
+  if (state.designDraft.step === "left-temple") {
     displayPoints.forEach((handle, index) => {
       ctx.beginPath();
       ctx.arc(handle.x, handle.y, index === designTempleSketchSelectedIndex ? 7 : 5, 0, Math.PI * 2);
@@ -1994,7 +2009,7 @@ function drawTempleSketch(mirrored = false) {
   ctx.fillStyle = colors.text;
   ctx.font = "700 13px Inter, Arial, sans-serif";
   ctx.textAlign = mirrored ? "right" : "left";
-  ctx.fillText(mirrored ? "TEMPLE HINGE RIGHT / MIRRORED PATH" : "TEMPLE HINGE LEFT / DATUM", mirrored ? rect.width - 38 : 38, 188);
+  ctx.fillText(mirrored ? "TEMPLE HINGE LEFT / WEARER SIDE" : "TEMPLE HINGE RIGHT / WEARER SIDE", mirrored ? rect.width - 38 : 38, 188);
   ctx.font = "500 12px Inter, Arial, sans-serif";
   ctx.fillStyle = colors.muted;
   ctx.fillText("Closed extruded profile / select a vertex to round it", mirrored ? rect.width - 38 : 38, 208);
@@ -2005,7 +2020,7 @@ function drawDesignSketch() {
   const metrics = designSketchMetrics();
   if (!canvas || !metrics) return;
   if (state.designDraft.step === "left-temple" || state.designDraft.step === "right-temple") {
-    drawTempleSketch(state.designDraft.step === "right-temple");
+    drawTempleSketch(state.designDraft.step === "left-temple");
     return;
   }
   const { ctx, colors } = prepareDesignDrawingCanvas(canvas, metrics.rect);
@@ -2114,7 +2129,8 @@ function renderDesignPreview(options = {}) {
   const style = normalizeDesignStyle(definition);
   designModelGroup.clear();
   designModelGroup.rotation.set(designViewerRotation.x, designViewerRotation.y, designViewerRotation.z);
-  const frameMaterial = new THREE.MeshStandardMaterial({ color: style.frameColor, roughness: 0.37, metalness: 0.035 });
+  const frontMaterial = new THREE.MeshStandardMaterial({ color: style.frameColor, roughness: 0.37, metalness: 0.035 });
+  const templeMaterial = new THREE.MeshStandardMaterial({ color: style.templeColor, roughness: 0.37, metalness: 0.035 });
   const detailMaterial = new THREE.MeshStandardMaterial({ color: style.detailColor, roughness: 0.42, metalness: 0.02 });
   const lensMaterial = new THREE.MeshPhysicalMaterial({
     color: style.lensColor,
@@ -2126,14 +2142,14 @@ function renderDesignPreview(options = {}) {
   });
   const outerLensWidth = p.lens_width + p.rim_thickness * 2;
   const center = p.bridge_width / 2 + outerLensWidth / 2;
-  addDesignFrontBody(p, frameMaterial, definition);
+  addDesignFrontBody(p, frontMaterial, definition);
   [-1, 1].forEach((side) => {
     addDesignLens(side * center, p, lensMaterial, definition);
-    addDesignTemple(side, p, outerLensWidth, frameMaterial, detailMaterial, style, definition);
+    addDesignTemple(side, p, outerLensWidth, templeMaterial, detailMaterial, style, definition);
     addDesignHingeAsset(
       side < 0 ? "frontRight" : "frontLeft",
       designHingeDatum(side, p, definition),
-      frameMaterial
+      frontMaterial
     );
   });
   centerDesignModelForAssemblyPivot();
@@ -2851,7 +2867,7 @@ function addDesignTemple(side, p, outerLensWidth, frameMaterial, detailMaterial,
   if (style.templeDetailMode === "texture") {
     addDesignTempleRelief(side, temple, detailMaterial, construction, style.templePattern);
   }
-  const templeText = side < 0 ? style.leftTempleText : style.rightTempleText;
+  const templeText = side < 0 ? style.rightTempleText : style.leftTempleText;
   if (style.templeDetailMode === "text" && templeText) {
     addDesignTextRelief(templeText, side, temple, frameMaterial, construction);
   }
@@ -3217,6 +3233,8 @@ function bindUi() {
   els.addSketchPoint?.addEventListener("click", addDesignSketchPoint);
   els.removeSketchPoint?.addEventListener("click", removeDesignSketchPoint);
   els.designSharpCorner?.addEventListener("click", () => updateSelectedDesignCorner(0));
+  els.designAddTempleText?.addEventListener("click", () => activateDesignTempleText(els.designTempleText));
+  els.designAddRightTempleText?.addEventListener("click", () => activateDesignTempleText(els.designRightTempleText));
   els.addTemplePoint?.addEventListener("click", addDesignTempleSketchPoint);
   els.removeTemplePoint?.addEventListener("click", removeDesignTempleSketchPoint);
   els.designTempleSharpCorner?.addEventListener("click", () => updateSelectedDesignTempleCorner(0));
@@ -3452,6 +3470,7 @@ function syncDesignFields() {
   setDesignFieldValue(els.designRightTempleText, style.rightTempleText);
   if (els.designBrowBar) els.designBrowBar.checked = style.browBar;
   if (els.designFrameColor) els.designFrameColor.value = style.frameColor;
+  if (els.designTempleColor) els.designTempleColor.value = style.templeColor;
   if (els.designLensColor) els.designLensColor.value = style.lensColor;
   if (els.designDetailColor) els.designDetailColor.value = style.detailColor;
   const features = normalizeDesignFeatures(draft.features, draft.params);
@@ -3550,6 +3569,24 @@ function updateSelectedDesignTempleCorner(radius) {
   syncDesignTempleSelectedCornerField();
   syncDesignCode();
   renderDesignPreview({ fitView: false });
+}
+
+function activateDesignTempleText(fieldToFocus = els.designTempleText) {
+  state.designDraft.style = normalizeDesignStyle({
+    ...state.designDraft.style,
+    templeDetailMode: "text"
+  });
+  state.designDraft.construction = normalizeDesignTempleTextPlacement(
+    state.designDraft.construction,
+    state.designDraft.templeSketch,
+    state.designDraft.style
+  );
+  state.designDraft.manualCode = false;
+  syncDesignFields();
+  syncDesignCode();
+  renderDesignPreview({ fitView: false });
+  setDesignNote("");
+  requestAnimationFrame(() => fieldToFocus?.focus());
 }
 
 function syncDesignCode() {
@@ -3742,6 +3779,7 @@ function handleDesignOperationChange(event) {
     rightTempleText: els.designRightTempleText?.value,
     browBar: false,
     frameColor: els.designFrameColor?.value,
+    templeColor: els.designTempleColor?.value,
     lensColor: els.designLensColor?.value,
     detailColor: els.designDetailColor?.value
   });
@@ -3850,7 +3888,8 @@ function parseDesignCode(source) {
   const shapeValue = source.match(/(?:^|\n)\s*lens_shape\s*=\s*"([^"]*)"\s*;/)?.[1];
   const browValue = source.match(/(?:^|\n)\s*brow_bar_enabled\s*=\s*(true|false)\s*;/)?.[1];
   const colorValues = {
-    frameColor: source.match(/(?:^|\n)\s*frame_color\s*=\s*"(#[0-9a-fA-F]{6})"\s*;/)?.[1],
+    frameColor: source.match(/(?:^|\n)\s*(?:front_color|frame_color)\s*=\s*"(#[0-9a-fA-F]{6})"\s*;/)?.[1],
+    templeColor: source.match(/(?:^|\n)\s*temple_color\s*=\s*"(#[0-9a-fA-F]{6})"\s*;/)?.[1],
     lensColor: source.match(/(?:^|\n)\s*lens_color\s*=\s*"(#[0-9a-fA-F]{6})"\s*;/)?.[1],
     detailColor: source.match(/(?:^|\n)\s*detail_color\s*=\s*"(#[0-9a-fA-F]{6})"\s*;/)?.[1]
   };
@@ -5798,19 +5837,20 @@ function renderPublishedDesignPreview() {
   const p = designGeometryParams(state.params);
   const definition = normalizeParametricDesign(state.activeParametricDesign);
   const style = normalizeDesignStyle(definition);
-  const frameMaterial = new THREE.MeshStandardMaterial({ color: style.frameColor, roughness: 0.37, metalness: 0.035 });
+  const frontMaterial = new THREE.MeshStandardMaterial({ color: style.frameColor, roughness: 0.37, metalness: 0.035 });
+  const templeMaterial = new THREE.MeshStandardMaterial({ color: style.templeColor, roughness: 0.37, metalness: 0.035 });
   const detailMaterial = new THREE.MeshStandardMaterial({ color: style.detailColor, roughness: 0.42, metalness: 0.02 });
   const lensMaterial = new THREE.MeshPhysicalMaterial({ color: style.lensColor, transparent: true, opacity: 0.62, roughness: 0.16, transmission: 0.24 });
   const outerLensWidth = p.lens_width + p.rim_thickness * 2;
   const center = p.bridge_width / 2 + outerLensWidth / 2;
-  addDesignFrontBody(p, frameMaterial, definition, modelGroup);
+  addDesignFrontBody(p, frontMaterial, definition, modelGroup);
   [-1, 1].forEach((side) => {
     addDesignLens(side * center, p, lensMaterial, definition, modelGroup);
-    addDesignTemple(side, p, outerLensWidth, frameMaterial, detailMaterial, style, definition, modelGroup);
+    addDesignTemple(side, p, outerLensWidth, templeMaterial, detailMaterial, style, definition, modelGroup);
     addDesignHingeAsset(
       side < 0 ? "frontRight" : "frontLeft",
       designHingeDatum(side, p, definition),
-      frameMaterial,
+      frontMaterial,
       modelGroup
     );
   });
@@ -8037,7 +8077,9 @@ temple_pattern = "${style.templePattern}";
 left_temple_text = "${leftText}";
 right_temple_text = "${rightText}";
 brow_bar_enabled = ${style.browBar ? "true" : "false"};
-frame_color = "${style.frameColor}";
+front_color = "${style.frameColor}";
+temple_color = "${style.templeColor}";
+frame_color = "${style.frameColor}"; // Legacy alias for older Frame Lab exports.
 lens_color = "${style.lensColor}";
 detail_color = "${style.detailColor}";
 profile_points = [${profilePoints}];
@@ -8266,7 +8308,7 @@ module temple_pattern_relief(side=1) {
 }
 
 module temple_mark(side=1) {
-  text_value = side < 0 ? left_temple_text : right_temple_text;
+  text_value = side < 0 ? right_temple_text : left_temple_text;
   if (temple_detail_mode == "text" && text_value != "")
     translate([side*2.5 + side*(temple_depth/2 - temple_text_depth*0.35), temple_bar_center_y + temple_text_y_offset - temple_text_size/2, temple_arm_start_z-temple_text_position])
     rotate([90, side > 0 ? 90 : -90, 0])
@@ -8302,8 +8344,10 @@ module temple(side=1) {
 }
 
 module frame() {
-  color(frame_color) {
+  color(front_color) {
     front();
+  }
+  color(temple_color) {
     temple(-1);
     temple(1);
   }

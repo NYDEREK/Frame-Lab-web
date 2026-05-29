@@ -16,7 +16,7 @@
         document.documentElement.dataset.appError = event.reason?.message || String(event.reason || "promise");
       });
     </script>
-    <link rel="stylesheet" href="./styles.css?v=design-lab-temple-text-to-mount-20260530-1" />
+    <link rel="stylesheet" href="./styles.css?v=design-lab-add-text-section-20260530-1" />
     <script type="importmap">
       {
         "imports": {
@@ -477,7 +477,8 @@
           <section id="designAppearancePanel" class="design-control-section design-details design-global-appearance">
             <h3>Appearance</h3>
             <div class="design-colors">
-              <label><span>Frame</span><input id="designFrameColor" type="color" value="#ff741f" /></label>
+              <label><span>Front</span><input id="designFrameColor" type="color" value="#ff741f" /></label>
+              <label><span>Temples</span><input id="designTempleColor" type="color" value="#ff741f" /></label>
               <label><span>Lens</span><input id="designLensColor" type="color" value="#202529" /></label>
               <label><span>Detail</span><input id="designDetailColor" type="color" value="#e59a62" /></label>
             </div>
@@ -584,6 +585,23 @@
                 <label><span>Depth</span><input id="designTempleDepth" type="range" min="2.4" max="6" step="0.1" value="3.6" /><small>3.6 mm</small></label>
               </div>
             </section>
+            <section class="design-control-section design-details design-temple-text-section">
+              <div class="design-section-heading">
+                <h3>Temple text</h3>
+                <button id="designAddTempleText" type="button" class="compact accent">Add text</button>
+              </div>
+              <div id="designTempleTextControls" class="design-detail-fields" hidden>
+                <label class="design-text-field">
+                  <span>Left temple text</span>
+                  <input id="designTempleText" type="text" maxlength="24" placeholder="Frame Lab" />
+                </label>
+                <div class="design-construction-grid">
+                  <label><span>Text size</span><input id="designTempleTextSize" type="range" min="2" max="8" step="0.1" value="4" /><small>4 mm</small></label>
+                  <label><span>Position</span><input id="designTempleTextPosition" type="range" min="0" max="120" step="1" value="36" /><small>36 mm</small></label>
+                  <label><span>Relief depth</span><input id="designTempleTextDepth" type="range" min="0.15" max="1.2" step="0.05" value="0.45" /><small>0.45 mm</small></label>
+                </div>
+              </div>
+            </section>
             <section class="design-control-section">
               <div class="design-section-heading">
                 <h3>Selected temple corner</h3>
@@ -620,17 +638,6 @@
                   <label><span>Spacing</span><input id="designTemplePatternSpacing" type="range" min="5" max="18" step="1" value="9" /><small>9 mm</small></label>
                 </div>
               </div>
-              <div id="designTempleTextControls" class="design-detail-fields" hidden>
-                <label class="design-text-field">
-                  <span>Left temple text</span>
-                  <input id="designTempleText" type="text" maxlength="24" placeholder="Frame Lab" />
-                </label>
-                <div class="design-construction-grid">
-                  <label><span>Text size</span><input id="designTempleTextSize" type="range" min="2" max="8" step="0.1" value="4" /><small>4 mm</small></label>
-                  <label><span>Position</span><input id="designTempleTextPosition" type="range" min="0" max="120" step="1" value="36" /><small>36 mm</small></label>
-                  <label><span>Relief depth</span><input id="designTempleTextDepth" type="range" min="0.15" max="1.2" step="0.05" value="0.45" /><small>0.45 mm</small></label>
-                </div>
-              </div>
             </section>
           </section>
           <section id="designRightTemplePanel" class="design-operations" role="tabpanel" hidden>
@@ -644,7 +651,10 @@
               <p class="design-note">The mechanical geometry stays symmetric. Add separate right-side detail so engraving is readable, not mirrored.</p>
             </section>
             <section class="design-control-section design-details">
-              <h3>Right side detail</h3>
+              <div class="design-section-heading">
+                <h3>Right temple text</h3>
+                <button id="designAddRightTempleText" type="button" class="compact accent">Add text</button>
+              </div>
               <div id="designRightTempleTextControls" class="design-detail-fields" hidden>
                 <label class="design-text-field">
                   <span>Right temple text</span>
@@ -972,6 +982,6 @@
       document.querySelector("#openDesignLab")?.addEventListener("click", (event) => queueDesignLabDuringBoot(event, false));
       document.querySelector("#startDesignLab")?.addEventListener("click", (event) => queueDesignLabDuringBoot(event, true));
     </script>
-    <script type="module" src="./src/app.js?v=design-lab-temple-text-to-mount-20260530-1"></script>
+    <script type="module" src="./src/app.js?v=design-lab-add-text-section-20260530-1"></script>
   </body>
 </html>
