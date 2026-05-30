@@ -648,6 +648,7 @@ const state = {
   system: {
     storage: { persistent: false, source: "unknown", message: "" }
   },
+  selectedPlanId: "",
   assemblySize: "M",
   assembly: {
     front: { modelId: "frame001-front", size: "M" },
@@ -3179,6 +3180,10 @@ function bindUi() {
     redeemLicenseCode("public-plans");
   });
   els.redeemPublicPlanLicenseCode?.addEventListener("click", () => redeemLicenseCode("public-plans"));
+  els.pricingGrid?.addEventListener("click", selectPricingPlan);
+  els.publicPricingGrid?.addEventListener("click", selectPricingPlan);
+  els.pricingGrid?.addEventListener("keydown", handlePricingPlanKeydown);
+  els.publicPricingGrid?.addEventListener("keydown", handlePricingPlanKeydown);
   els.plansCarouselPrevious?.addEventListener("click", () => scrollPlansCarousel(-1));
   els.plansCarouselNext?.addEventListener("click", () => scrollPlansCarousel(1));
   els.signOutAccount.addEventListener("click", () => signOutAccount());
@@ -4669,12 +4674,12 @@ function renderPlanCards() {
       : "MakerWorld";
   });
   const cards = plans.map((plan) => {
-    const featured = plan.plan === "commercial_lifetime";
     const active = plan.access !== "free" && state.account.plan === plan.access;
+    const selected = state.selectedPlanId === plan.plan;
     const benefits = (plan.plan === "supporter" ? [] : normalizePlanBenefits(plan.benefits, [plan.exports, plan.description]))
       .filter((benefit) => !/makerworld/i.test(benefit));
     return `
-      <article class="pricing-card${featured ? " featured" : ""}${active ? " active" : ""}${plan.access === "free" ? " supporter" : ""}">
+      <article class="pricing-card${selected ? " selected" : ""}${active ? " active" : ""}${plan.access === "free" ? " supporter" : ""}" data-plan-id="${escapeAttr(plan.plan)}" role="button" tabindex="0" aria-pressed="${selected ? "true" : "false"}">
         <header>
           <span>${escapeHtml(plan.name)}</span>
           ${active ? `<small class="plan-active-label">Active access</small>` : ""}
@@ -4691,6 +4696,22 @@ function renderPlanCards() {
   }).join("");
   if (els.pricingGrid) els.pricingGrid.innerHTML = cards;
   if (els.publicPricingGrid) els.publicPricingGrid.innerHTML = cards;
+}
+
+function selectPricingPlan(event) {
+  const card = event.target.closest(".pricing-card[data-plan-id]");
+  if (!card) return;
+  state.selectedPlanId = card.dataset.planId || "";
+  renderPlanCards();
+}
+
+function handlePricingPlanKeydown(event) {
+  if (event.key !== "Enter" && event.key !== " ") return;
+  const card = event.target.closest(".pricing-card[data-plan-id]");
+  if (!card) return;
+  event.preventDefault();
+  state.selectedPlanId = card.dataset.planId || "";
+  renderPlanCards();
 }
 
 function scrollPlansCarousel(direction) {
@@ -7348,8 +7369,7 @@ function renderHeroEditorTargetOptions() {
 function openHeroEditorTarget() {
   if (!canOpenCreator("Activate a Creator plan to open collections and export production files.")) return;
   const model = heroEditorModel();
-  if (model) selectModel(model.id);
-  navigateToView("configurator");
+  if (model) openCollectionForConfiguration(model);
 }
 
 function repairDeletedHeroEditorTarget(deletedModelId) {
@@ -7412,8 +7432,7 @@ function handleGalleryClick(event) {
       scrollHomeSection("#plansPublicPanel");
       return;
     }
-    selectModel(model.id);
-    navigateToView("configurator");
+    openCollectionForConfiguration(model);
     return;
   }
   if (button.dataset.action === "export") {
@@ -7456,6 +7475,16 @@ function handleGalleryClick(event) {
     renderGallery();
     log(`Deleted model: ${model.name}.`);
   }
+}
+
+function openCollectionForConfiguration(model) {
+  if (!model) return;
+  if (model.design) {
+    loadPublishedDesignIntoLab(model);
+    return;
+  }
+  selectModel(model.id);
+  navigateToView("configurator");
 }
 
 function handleDeveloperCollectionListClick(event) {
