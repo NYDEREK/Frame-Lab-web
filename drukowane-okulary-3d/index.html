@@ -16,7 +16,7 @@
         document.documentElement.dataset.appError = event.reason?.message || String(event.reason || "promise");
       });
     </script>
-    <link rel="stylesheet" href="./styles.css?v=creator-entry-20260530-15" />
+    <link rel="stylesheet" href="./styles.css?v=creator-entry-20260530-17" />
     <script type="importmap">
       {
         "imports": {
@@ -716,6 +716,7 @@
             <button id="newDeveloperCollection" type="button" class="compact ghost">New collection</button>
           </div>
           <div id="developerCollectionList" class="developer-collection-list"></div>
+          <input id="developerCollectionPhotoInput" class="hidden-utility" hidden type="file" accept="image/*" />
         </section>
         <section class="studio-card submission-manager-card">
           <div class="section-head">
@@ -820,13 +821,6 @@
               <img id="frameEditorPhoto" alt="" />
               <figcaption id="frameEditorPhotoCaption">Current frame photo</figcaption>
             </figure>
-            <div class="frame-editor-photo-actions">
-              <label class="file-button" for="collectionImageInput">
-                <input id="collectionImageInput" type="file" accept="image/*" />
-                <span>Custom thumbnail</span>
-              </label>
-              <small>Select an image, crop it, then save changes to publish it.</small>
-            </div>
             <div id="frameEditorComponentGallery" class="frame-component-gallery"></div>
           </div>
         </section>
@@ -840,6 +834,10 @@
               <option value="basic">Creator access</option>
             </select>
             <input id="collectionDescription" type="text" data-i18n-attr="placeholder:collectionDescriptionPlaceholder" placeholder="Short description" />
+            <label class="file-button" for="collectionImageInput">
+              <input id="collectionImageInput" type="file" accept="image/*" />
+              <span data-i18n="chooseImage">Photo</span>
+            </label>
             <label class="file-button hidden-utility" hidden for="galleryScadInput">
               <input id="galleryScadInput" type="file" accept=".scad,.txt" />
               <span data-i18n="addScad">Plik .scad</span>
@@ -967,6 +965,6 @@
       document.querySelector("#heroEditor")?.addEventListener("click", (event) => queueDesignLabDuringBoot(event, false));
       document.querySelector("#startDesignLab")?.addEventListener("click", (event) => queueDesignLabDuringBoot(event, true));
     </script>
-    <script type="module" src="./src/app.js?v=creator-entry-20260530-15"></script>
+    <script type="module" src="./src/app.js?v=creator-entry-20260530-17"></script>
   </body>
 </html>

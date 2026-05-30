@@ -523,6 +523,8 @@ const modelStorageKey = "framelab.openscadModels.v1";
 const componentDbName = "framelab-component-files";
 const componentStoreName = "components";
 const saveDesignCollectionDefaultLabel = "Save collection";
+const collectionEditorAddLabel = "Add to gallery";
+const collectionEditorSaveLabel = "Save changes";
 const seedComponentAssets = [
   {
     id: "frame001-front",
@@ -617,6 +619,7 @@ const state = {
   editingModelId: null,
   cropImage: null,
   croppedCollectionImage: "",
+  collectionPhotoTargetId: "",
   viewerRotation: { x: -0.48, y: 0.62, z: 0.03 },
   viewerPan: { x: 0, y: 0 },
   componentColors: {
@@ -742,6 +745,7 @@ const els = {
   cropNote: document.querySelector("#cropNote"),
   applyCrop: document.querySelector("#applyCrop"),
   cancelCrop: document.querySelector("#cancelCrop"),
+  developerCollectionPhotoInput: document.querySelector("#developerCollectionPhotoInput"),
   signInAccount: document.querySelector("#signInAccount"),
   signOutAccount: document.querySelector("#signOutAccount"),
   googleLogin: document.querySelector("#googleLogin"),
@@ -948,6 +952,7 @@ let triangleCount = 0;
 let persistTimer = null;
 let backendPersistTimer = null;
 let saveCollectionFeedbackTimer = null;
+let collectionEditorFeedbackTimer = null;
 let cameraZoomScale = 1;
 let viewerFitRadius = 100;
 const cameraTarget = new THREE.Vector3(0, 0, 0);
@@ -3122,6 +3127,7 @@ function bindUi() {
   els.frameEditorComponentGallery?.addEventListener("click", handleComponentFileListClick);
   els.addCollection.addEventListener("click", addCollectionFromStudio);
   els.collectionImageInput.addEventListener("change", handleCollectionImageSelect);
+  els.developerCollectionPhotoInput?.addEventListener("change", handleDeveloperCollectionPhotoSelect);
   els.componentFileInput.addEventListener("change", handleComponentFileSelect);
   els.componentKind.addEventListener("change", syncComponentSideInput);
   els.accountButton.addEventListener("click", () => {
@@ -4256,7 +4262,8 @@ async function saveDesignToCollections() {
     params: state.designDraft.params,
     design: designDefinitionFromDraft(),
     lensMode: "none",
-    thumbnail: captureDesignThumbnail() || existing?.thumbnail || "",
+    thumbnail: existing?.thumbnail || captureDesignThumbnail() || "",
+    thumbnailSource: existing?.thumbnailSource || (existing?.thumbnail ? "custom" : "creator"),
     components: null,
     assembly: null,
     order: existing?.order ?? nextOrder,
@@ -4319,6 +4326,44 @@ function setSaveCollectionButtonState(mode = "idle") {
     return;
   }
   button.textContent = saveDesignCollectionDefaultLabel;
+}
+
+function setCollectionEditorButtonState(mode = "idle", editing = Boolean(state.editingModelId)) {
+  const button = els.addCollection;
+  if (!button) return;
+  const defaultLabel = editing ? collectionEditorSaveLabel : collectionEditorAddLabel;
+  clearTimeout(collectionEditorFeedbackTimer);
+  button.classList.remove("is-saving", "is-saved", "is-error");
+  button.removeAttribute("aria-busy");
+  button.disabled = false;
+  if (mode === "saving") {
+    button.disabled = true;
+    button.classList.add("is-saving");
+    button.setAttribute("aria-busy", "true");
+    button.textContent = "Saving...";
+    return;
+  }
+  if (mode === "saved") {
+    button.classList.add("is-saved");
+    button.textContent = "Saved";
+    collectionEditorFeedbackTimer = setTimeout(() => {
+      button.classList.remove("is-saved");
+      button.textContent = collectionEditorSaveLabel;
+      state.recentSavedCollectionId = "";
+      renderGallery();
+    }, 2400);
+    return;
+  }
+  if (mode === "error") {
+    button.classList.add("is-error");
+    button.textContent = "Try again";
+    collectionEditorFeedbackTimer = setTimeout(() => {
+      button.classList.remove("is-error");
+      button.textContent = defaultLabel;
+    }, 2200);
+    return;
+  }
+  button.textContent = defaultLabel;
 }
 
 async function loadMyDesignSubmissions() {
@@ -6333,6 +6378,7 @@ function normalizeStoredModel(model) {
     design: model.design && typeof model.design === "object" ? normalizeParametricDesign(model.design) : null,
     lensMode: validLensMode(model.lensMode),
     thumbnail: typeof model.thumbnail === "string" ? model.thumbnail : "",
+    thumbnailSource: model.thumbnailSource === "custom" ? "custom" : (model.thumbnailSource === "creator" ? "creator" : ""),
     components: normalizeModelComponents(model.components),
     assembly: model.assembly && typeof model.assembly === "object" ? model.assembly : null,
     order: Number.isFinite(Number(model.order)) ? Number(model.order) : 0,
@@ -6457,7 +6503,10 @@ function syncActiveModel(options = {}) {
   model.lensMode = selectedLens() ? "component" : "none";
   model.assembly = serializeAssemblySelection();
   model.updatedAt = Date.now();
-  if (thumbnail !== null) model.thumbnail = thumbnail;
+  if (thumbnail !== null && model.thumbnailSource !== "custom") {
+    model.thumbnail = thumbnail;
+    model.thumbnailSource = "creator";
+  }
   if (persist) {
     persistModels();
     renderGallery();
@@ -7485,6 +7534,7 @@ function renderDeveloperCollectionList() {
   els.developerCollectionList.innerHTML = galleryModels().map((model) => {
     const components = normalizeModelComponents(model.components) || { front: [], temples: [], leftTemples: [], rightTemples: [], lenses: [] };
     const active = state.editingModelId === model.id;
+    const thumbnail = model.thumbnail || makeAutoCollectionThumbnail(model.name, model.params || defaultParams, model.category);
     const summary = model.design ? "Creator · parametric OpenSCAD" : [
       `${components.front.length} front`,
       `${components.leftTemples.length} left temple`,
@@ -7493,12 +7543,14 @@ function renderDeveloperCollectionList() {
     ].join(" · ");
     return `
       <article class="developer-collection-row${active ? " active" : ""}" data-model-id="${escapeHtml(model.id)}">
+        <img class="developer-collection-thumb" src="${escapeAttr(thumbnail)}" alt="${escapeAttr(model.name)} thumbnail" loading="lazy" />
         <div class="developer-collection-copy">
           <strong>${escapeHtml(model.name)}</strong>
           <small>${escapeHtml(model.category === "optical" ? t("opticalHeading") : t("sunHeading"))} · ${escapeHtml(summary)}</small>
         </div>
         <div class="developer-collection-actions">
           <button type="button" class="compact${active ? " accent" : ""}" data-dev-action="edit">Edit</button>
+          <button type="button" class="compact" data-dev-action="photo">Add photo</button>
           <button type="button" class="compact order-button" data-dev-action="move-left">${t("moveLeft")}</button>
           <button type="button" class="compact order-button" data-dev-action="move-right">${t("moveRight")}</button>
           ${model.id !== defaultModelId ? `<button type="button" class="compact delete-button" data-dev-action="delete">${t("delete")}</button>` : ""}
@@ -7518,7 +7570,7 @@ function galleryModels() {
   });
 }
 
-function handleGalleryClick(event) {
+async function handleGalleryClick(event) {
   const button = event.target.closest("button[data-action]");
   if (!button) return;
   const card = button.closest(".gallery-card");
@@ -7563,13 +7615,7 @@ function handleGalleryClick(event) {
       log("Deletion is available only in developer mode.");
       return;
     }
-    state.models = state.models.filter((item) => item.id !== model.id);
-    if (state.activeModelId === model.id) selectModel(state.models[0]?.id || defaultModelId, { logSelection: false });
-    normalizeGalleryOrder(model.category);
-    persistModels();
-    repairDeletedHeroEditorTarget(model.id);
-    renderGallery();
-    log(`Deleted model: ${model.name}.`);
+    await deleteCollectionModel(model);
   }
 }
 
@@ -7583,7 +7629,7 @@ function openCollectionForConfiguration(model) {
   navigateToView("configurator");
 }
 
-function handleDeveloperCollectionListClick(event) {
+async function handleDeveloperCollectionListClick(event) {
   const button = event.target.closest("button[data-dev-action]");
   if (!button || !isDeveloper()) return;
   const row = button.closest("[data-model-id]");
@@ -7593,20 +7639,45 @@ function handleDeveloperCollectionListClick(event) {
     startModelEdit(model);
     return;
   }
+  if (button.dataset.devAction === "photo") {
+    startDeveloperCollectionPhoto(model);
+    return;
+  }
   if (button.dataset.devAction === "move-left" || button.dataset.devAction === "move-right") {
     moveModelInGallery(model.id, button.dataset.devAction === "move-left" ? -1 : 1);
     return;
   }
   if (button.dataset.devAction === "delete") {
-    if (model.id === defaultModelId) return;
-    state.models = state.models.filter((item) => item.id !== model.id);
-    if (state.editingModelId === model.id) clearCollectionForm();
-    if (state.activeModelId === model.id) selectModel(state.models[0]?.id || defaultModelId, { logSelection: false });
-    normalizeGalleryOrder(model.category);
-    persistModels();
-    repairDeletedHeroEditorTarget(model.id);
+    await deleteCollectionModel(model);
+  }
+}
+
+async function deleteCollectionModel(model) {
+  if (!model || model.id === defaultModelId) return;
+  const previousModels = state.models.map((item) => structuredClone(item));
+  const previousActiveId = state.activeModelId;
+  const previousEditingModelId = state.editingModelId;
+  const nextActiveId = state.models.find((item) => item.id !== model.id)?.id || defaultModelId;
+  state.models = state.models.filter((item) => item.id !== model.id);
+  if (state.editingModelId === model.id) clearCollectionForm();
+  if (state.activeModelId === model.id) selectModel(nextActiveId, { logSelection: false });
+  normalizeGalleryOrder(model.category);
+  persistModels({ syncBackend: false });
+  repairDeletedHeroEditorTarget(model.id);
+  renderGallery();
+  renderDeveloperCollectionList();
+  try {
+    const synced = await syncCollectionsToBackend({ announce: true });
+    if (!synced) throw new Error("Developer session is required to delete collection from backend.");
+    log(`Deleted collection: ${model.name}.`);
+  } catch (error) {
+    state.models = previousModels;
+    state.editingModelId = previousEditingModelId;
+    persistModels({ syncBackend: false });
+    if (previousActiveId) selectModel(previousActiveId, { logSelection: false });
     renderGallery();
-    log(`Deleted model: ${model.name}.`);
+    renderDeveloperCollectionList();
+    log(error.message || `Could not delete ${model.name} from backend.`);
   }
 }
 
@@ -7683,107 +7754,120 @@ async function handleScadImport(event) {
 }
 
 async function addCollectionFromStudio() {
-  const scadFile = els.galleryScadInput.files?.[0];
-  const imageFile = els.collectionImageInput.files?.[0];
-  const frontFiles = [...(els.collectionFrontInput.files || [])];
-  const leftTempleFiles = [...(els.collectionLeftTempleInput.files || [])];
-  const rightTempleFiles = [...(els.collectionRightTempleInput.files || [])];
-  const lensFiles = [...(els.collectionLensInput.files || [])];
-  const existing = state.editingModelId ? state.models.find((model) => model.id === state.editingModelId) : null;
-  const modelId = existing?.id || crypto.randomUUID();
-  const title = (els.collectionTitle.value.trim() || scadFile?.name?.replace(/\.[^.]+$/, "") || existing?.name || "New collection");
-  const source = scadFile ? await scadFile.text() : sampleScad;
-  const parsed = scadFile ? parseScadParameters(source) : {};
-  const params = existing && !scadFile ? existing.params : { ...structuredClone(defaultParams), ...parsed };
-  const thumbnail = imageFile
-    ? state.croppedCollectionImage || await readFileAsDataUrl(imageFile)
-    : existing?.thumbnail || makeAutoCollectionThumbnail(title, params, els.collectionCategory.value);
-  const frontComponents = [];
-  for (const [index, file] of frontFiles.entries()) {
-    frontComponents.push(await createComponentRecordFromFile(file, "front", {
-      collectionId: modelId,
-      name: `${title} Front ${index + 1}`
-    }));
+  if (els.addCollection?.disabled) return;
+  const wasEditing = Boolean(state.editingModelId);
+  setCollectionEditorButtonState("saving", wasEditing);
+  try {
+    const scadFile = els.galleryScadInput.files?.[0];
+    const imageFile = els.collectionImageInput.files?.[0];
+    const frontFiles = [...(els.collectionFrontInput.files || [])];
+    const leftTempleFiles = [...(els.collectionLeftTempleInput.files || [])];
+    const rightTempleFiles = [...(els.collectionRightTempleInput.files || [])];
+    const lensFiles = [...(els.collectionLensInput.files || [])];
+    const existing = state.editingModelId ? state.models.find((model) => model.id === state.editingModelId) : null;
+    const modelId = existing?.id || crypto.randomUUID();
+    const title = (els.collectionTitle.value.trim() || scadFile?.name?.replace(/\.[^.]+$/, "") || existing?.name || "New collection");
+    const source = scadFile ? await scadFile.text() : sampleScad;
+    const parsed = scadFile ? parseScadParameters(source) : {};
+    const params = existing && !scadFile ? existing.params : { ...structuredClone(defaultParams), ...parsed };
+    const thumbnail = imageFile
+      ? state.croppedCollectionImage || await readFileAsDataUrl(imageFile)
+      : existing?.thumbnail || makeAutoCollectionThumbnail(title, params, els.collectionCategory.value);
+    const thumbnailSource = imageFile ? "custom" : existing?.thumbnailSource || (existing?.thumbnail ? "custom" : "");
+    const frontComponents = [];
+    for (const [index, file] of frontFiles.entries()) {
+      frontComponents.push(await createComponentRecordFromFile(file, "front", {
+        collectionId: modelId,
+        name: `${title} Front ${index + 1}`
+      }));
+    }
+    const leftTempleComponents = [];
+    for (const [index, file] of leftTempleFiles.entries()) {
+      leftTempleComponents.push(await createComponentRecordFromFile(file, "temple", {
+        collectionId: modelId,
+        name: `${title} Left Temple ${index + 1}`,
+        templeSide: "left"
+      }));
+    }
+    const rightTempleComponents = [];
+    for (const [index, file] of rightTempleFiles.entries()) {
+      rightTempleComponents.push(await createComponentRecordFromFile(file, "temple", {
+        collectionId: modelId,
+        name: `${title} Right Temple ${index + 1}`,
+        templeSide: "right"
+      }));
+    }
+    const lensComponents = [];
+    for (const [index, file] of lensFiles.entries()) {
+      lensComponents.push(await createComponentRecordFromFile(file, "lens", {
+        collectionId: modelId,
+        name: `${title} Lens ${index + 1}`
+      }));
+    }
+    if (frontComponents.length || leftTempleComponents.length || rightTempleComponents.length || lensComponents.length) {
+      state.uploadedComponents = [...await loadSeedComponentAssets(), ...await loadComponentRecords()]
+        .filter((component) => !state.hiddenComponentIds.has(component.id));
+      await hydrateUploadedComponentMeshes();
+    }
+    const existingComponents = normalizeModelComponents(existing?.components) || { front: [], temples: [], leftTemples: [], rightTemples: [], lenses: [] };
+    const assembly = existing?.assembly ? structuredClone(existing.assembly) : serializeAssemblySelection();
+    if (!existing && frontComponents[0]) assembly.front = { modelId: frontComponents[0].id, size: frontComponents[0].size };
+    if (!existing && leftTempleComponents[0]) assembly.leftTemple = { modelId: leftTempleComponents[0].id, size: leftTempleComponents[0].size };
+    if (!existing && rightTempleComponents[0]) assembly.rightTemple = { modelId: rightTempleComponents[0].id, size: rightTempleComponents[0].size };
+    if (!existing && lensComponents[0]) assembly.lens = { modelId: lensComponents[0].id, size: lensComponents[0].size };
+    const initialComponent = frontComponents[0] || leftTempleComponents[0] || rightTempleComponents[0] || lensComponents[0];
+    if (!existing && initialComponent) assembly.size = initialComponent.size;
+    const category = els.collectionCategory.value === "optical" ? "optical" : "sun";
+    const nextOrder = Math.max(-1, ...state.models.filter((item) => item.category === category).map((item) => Number(item.order || 0))) + 1;
+    const model = normalizeStoredModel({
+      id: modelId,
+      name: title,
+      category,
+      access: "basic",
+      description: els.collectionDescription.value.trim(),
+      scadSource: scadFile ? source : existing?.scadSource || source,
+      params,
+      design: existing?.design || null,
+      thumbnail,
+      thumbnailSource,
+      components: {
+        front: frontComponents.length ? mergeComponentSummaries(existingComponents.front, frontComponents) : existingComponents.front,
+        temples: existingComponents.temples,
+        leftTemples: leftTempleComponents.length ? mergeComponentSummaries(existingComponents.leftTemples, leftTempleComponents) : existingComponents.leftTemples,
+        rightTemples: rightTempleComponents.length ? mergeComponentSummaries(existingComponents.rightTemples, rightTempleComponents) : existingComponents.rightTemples,
+        lenses: lensComponents.length ? mergeComponentSummaries(existingComponents.lenses, lensComponents) : existingComponents.lenses
+      },
+      assembly,
+      order: existing && existing.category === category ? existing.order : nextOrder,
+      createdAt: existing?.createdAt || Date.now(),
+      updatedAt: Date.now()
+    });
+    if (existing) {
+      state.models = state.models.map((item) => item.id === existing.id ? model : item);
+    } else {
+      state.models.unshift(model);
+    }
+    if (existing && existing.category !== category) normalizeGalleryOrder(existing.category);
+    normalizeGalleryOrder(category);
+    persistModels({ syncBackend: false });
+    await syncCollectionsToBackend({ announce: true });
+    state.editingModelId = model.id;
+    selectModel(model.id, { logSelection: false, captureThumbnail: !thumbnail });
+    renderGallery();
+    clearCollectionUploadInputs();
+    state.cropImage = null;
+    state.croppedCollectionImage = "";
+    state.collectionPhotoTargetId = "";
+    syncStudioModeUi();
+    navigateToView("collection-editor");
+    log(`${existing ? "Updated" : "Added"} collection: ${model.name}.`);
+    state.recentSavedCollectionId = model.id;
+    renderGallery();
+    setCollectionEditorButtonState("saved", true);
+  } catch (error) {
+    log(error.message || "Could not save collection.");
+    setCollectionEditorButtonState("error", wasEditing);
   }
-  const leftTempleComponents = [];
-  for (const [index, file] of leftTempleFiles.entries()) {
-    leftTempleComponents.push(await createComponentRecordFromFile(file, "temple", {
-      collectionId: modelId,
-      name: `${title} Left Temple ${index + 1}`,
-      templeSide: "left"
-    }));
-  }
-  const rightTempleComponents = [];
-  for (const [index, file] of rightTempleFiles.entries()) {
-    rightTempleComponents.push(await createComponentRecordFromFile(file, "temple", {
-      collectionId: modelId,
-      name: `${title} Right Temple ${index + 1}`,
-      templeSide: "right"
-    }));
-  }
-  const lensComponents = [];
-  for (const [index, file] of lensFiles.entries()) {
-    lensComponents.push(await createComponentRecordFromFile(file, "lens", {
-      collectionId: modelId,
-      name: `${title} Lens ${index + 1}`
-    }));
-  }
-  if (frontComponents.length || leftTempleComponents.length || rightTempleComponents.length || lensComponents.length) {
-    state.uploadedComponents = [...await loadSeedComponentAssets(), ...await loadComponentRecords()]
-      .filter((component) => !state.hiddenComponentIds.has(component.id));
-    await hydrateUploadedComponentMeshes();
-  }
-  const existingComponents = normalizeModelComponents(existing?.components) || { front: [], temples: [], leftTemples: [], rightTemples: [], lenses: [] };
-  const assembly = existing?.assembly ? structuredClone(existing.assembly) : serializeAssemblySelection();
-  if (!existing && frontComponents[0]) assembly.front = { modelId: frontComponents[0].id, size: frontComponents[0].size };
-  if (!existing && leftTempleComponents[0]) assembly.leftTemple = { modelId: leftTempleComponents[0].id, size: leftTempleComponents[0].size };
-  if (!existing && rightTempleComponents[0]) assembly.rightTemple = { modelId: rightTempleComponents[0].id, size: rightTempleComponents[0].size };
-  if (!existing && lensComponents[0]) assembly.lens = { modelId: lensComponents[0].id, size: lensComponents[0].size };
-  const initialComponent = frontComponents[0] || leftTempleComponents[0] || rightTempleComponents[0] || lensComponents[0];
-  if (!existing && initialComponent) assembly.size = initialComponent.size;
-  const category = els.collectionCategory.value === "optical" ? "optical" : "sun";
-  const nextOrder = Math.max(-1, ...state.models.filter((item) => item.category === category).map((item) => Number(item.order || 0))) + 1;
-  const model = normalizeStoredModel({
-    id: modelId,
-    name: title,
-    category,
-    access: "basic",
-    description: els.collectionDescription.value.trim(),
-    scadSource: scadFile ? source : existing?.scadSource || source,
-    params,
-    design: existing?.design || null,
-    thumbnail,
-    components: {
-      front: frontComponents.length ? mergeComponentSummaries(existingComponents.front, frontComponents) : existingComponents.front,
-      temples: existingComponents.temples,
-      leftTemples: leftTempleComponents.length ? mergeComponentSummaries(existingComponents.leftTemples, leftTempleComponents) : existingComponents.leftTemples,
-      rightTemples: rightTempleComponents.length ? mergeComponentSummaries(existingComponents.rightTemples, rightTempleComponents) : existingComponents.rightTemples,
-      lenses: lensComponents.length ? mergeComponentSummaries(existingComponents.lenses, lensComponents) : existingComponents.lenses
-    },
-    assembly,
-    order: existing && existing.category === category ? existing.order : nextOrder,
-    createdAt: existing?.createdAt || Date.now(),
-    updatedAt: Date.now()
-  });
-  if (existing) {
-    state.models = state.models.map((item) => item.id === existing.id ? model : item);
-  } else {
-    state.models.unshift(model);
-  }
-  if (existing && existing.category !== category) normalizeGalleryOrder(existing.category);
-  normalizeGalleryOrder(category);
-  persistModels({ syncBackend: false });
-  await syncCollectionsToBackend({ announce: true }).catch((error) => log(error.message || "Could not save collection to backend."));
-  state.editingModelId = model.id;
-  selectModel(model.id, { logSelection: false, captureThumbnail: !thumbnail });
-  renderGallery();
-  clearCollectionUploadInputs();
-  state.cropImage = null;
-  state.croppedCollectionImage = "";
-  els.addCollection.textContent = "Save changes";
-  syncStudioModeUi();
-  navigateToView("collection-editor");
-  log(`${existing ? "Updated" : "Added"} collection: ${model.name}.`);
 }
 
 function mergeComponentSummaries(existing = [], added = []) {
@@ -7792,9 +7876,35 @@ function mergeComponentSummaries(existing = [], added = []) {
 
 async function handleCollectionImageSelect() {
   const file = els.collectionImageInput.files?.[0];
+  state.collectionPhotoTargetId = "";
+  await openCollectionImageCrop(file);
+}
+
+async function handleDeveloperCollectionPhotoSelect() {
+  const file = els.developerCollectionPhotoInput?.files?.[0];
+  if (!state.collectionPhotoTargetId) {
+    if (els.developerCollectionPhotoInput) els.developerCollectionPhotoInput.value = "";
+    return;
+  }
+  await openCollectionImageCrop(file);
+}
+
+function startDeveloperCollectionPhoto(model) {
+  if (!model || !els.developerCollectionPhotoInput) return;
+  state.collectionPhotoTargetId = model.id;
+  state.cropImage = null;
+  state.croppedCollectionImage = "";
+  els.developerCollectionPhotoInput.value = "";
+  els.developerCollectionPhotoInput.click();
+}
+
+async function openCollectionImageCrop(file) {
   state.croppedCollectionImage = "";
   if (!file) return;
   if (!file.type.startsWith("image/")) {
+    state.collectionPhotoTargetId = "";
+    if (els.collectionImageInput) els.collectionImageInput.value = "";
+    if (els.developerCollectionPhotoInput) els.developerCollectionPhotoInput.value = "";
     log("Choose an image file for the collection photo.");
     return;
   }
@@ -7838,20 +7948,48 @@ function drawImageCrop() {
   ctx.strokeRect(1, 1, width - 2, height - 2);
 }
 
-function applyImageCrop() {
+async function applyImageCrop() {
   if (!state.cropImage) return;
   drawImageCrop();
   state.croppedCollectionImage = els.cropCanvas.toDataURL("image/jpeg", 0.92);
   els.cropPanel.hidden = true;
   els.cropNote.textContent = "Cropped image ready.";
+  if (state.collectionPhotoTargetId) {
+    await saveDeveloperCollectionPhoto(state.collectionPhotoTargetId, state.croppedCollectionImage);
+    state.collectionPhotoTargetId = "";
+    state.cropImage = null;
+    state.croppedCollectionImage = "";
+    if (els.developerCollectionPhotoInput) els.developerCollectionPhotoInput.value = "";
+    if (els.collectionImageInput) els.collectionImageInput.value = "";
+    return;
+  }
   renderFrameEditorAssets();
   log("Cropped gallery image ready.");
+}
+
+async function saveDeveloperCollectionPhoto(modelId, thumbnail) {
+  const model = state.models.find((item) => item.id === modelId);
+  if (!model || !thumbnail) return;
+  const updated = normalizeStoredModel({ ...model, thumbnail, thumbnailSource: "custom", updatedAt: Date.now() });
+  state.models = state.models.map((item) => item.id === model.id ? updated : item);
+  persistModels({ syncBackend: false });
+  renderGallery();
+  renderDeveloperCollectionList();
+  if (state.editingModelId === model.id) renderFrameEditorAssets();
+  try {
+    await syncCollectionsToBackend({ announce: true });
+    log(`Updated photo for ${model.name}.`);
+  } catch (error) {
+    log(error.message || "Photo updated locally, but backend sync failed.");
+  }
 }
 
 function cancelImageCrop() {
   state.cropImage = null;
   state.croppedCollectionImage = "";
+  state.collectionPhotoTargetId = "";
   els.collectionImageInput.value = "";
+  if (els.developerCollectionPhotoInput) els.developerCollectionPhotoInput.value = "";
   els.cropPanel.hidden = true;
   renderFrameEditorAssets();
 }
@@ -7887,6 +8025,7 @@ function startModelEdit(model) {
   state.editingModelId = model.id;
   state.cropImage = null;
   state.croppedCollectionImage = "";
+  state.collectionPhotoTargetId = "";
   els.collectionTitle.value = model.name;
   els.collectionCategory.value = model.category === "optical" ? "optical" : "sun";
   els.collectionAccess.value = "basic";
@@ -7897,7 +8036,7 @@ function startModelEdit(model) {
   els.collectionLeftTempleInput.value = "";
   els.collectionRightTempleInput.value = "";
   els.collectionLensInput.value = "";
-  els.addCollection.textContent = "Save changes";
+  setCollectionEditorButtonState("idle", true);
   syncStudioModeUi();
   navigateToView("collection-editor");
   log(`Editing collection: ${model.name}.`);
@@ -7992,12 +8131,13 @@ function clearCollectionForm() {
   state.editingModelId = null;
   state.cropImage = null;
   state.croppedCollectionImage = "";
+  state.collectionPhotoTargetId = "";
   els.collectionTitle.value = "";
   els.collectionDescription.value = "";
   els.collectionCategory.value = "sun";
   els.collectionAccess.value = "basic";
   clearCollectionUploadInputs();
-  els.addCollection.textContent = t("addCollection");
+  setCollectionEditorButtonState("idle", false);
   syncStudioModeUi();
 }
 

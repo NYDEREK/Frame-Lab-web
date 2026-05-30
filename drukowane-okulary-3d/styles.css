@@ -864,25 +864,6 @@ small,
   accent-color: var(--accent);
 }
 
-.frame-editor-photo-actions {
-  display: grid;
-  grid-column: 1;
-  align-content: start;
-  gap: 0.55rem;
-}
-
-.frame-editor-photo-actions .file-button {
-  width: 100%;
-  justify-content: center;
-}
-
-.frame-editor-photo-actions small {
-  color: var(--muted);
-  font-size: 0.8rem;
-  font-weight: 680;
-  line-height: 1.35;
-}
-
 .nav-link {
   min-height: 2rem;
   border-color: transparent;
@@ -1604,12 +1585,14 @@ button.nav-link {
   flex: 1 1 0;
 }
 
-.design-submit-actions button.is-saving {
+.design-submit-actions button.is-saving,
+.studio-grid button.is-saving {
   position: relative;
   color: transparent;
 }
 
-.design-submit-actions button.is-saving::after {
+.design-submit-actions button.is-saving::after,
+.studio-grid button.is-saving::after {
   content: "";
   position: absolute;
   left: 50%;
@@ -1623,12 +1606,14 @@ button.nav-link {
   animation: spin 0.78s linear infinite;
 }
 
-.design-submit-actions button.is-saved {
+.design-submit-actions button.is-saved,
+.studio-grid button.is-saved {
   border-color: color-mix(in srgb, var(--accent) 72%, var(--line));
   background: linear-gradient(180deg, color-mix(in srgb, var(--accent-2) 86%, white), var(--accent));
 }
 
-.design-submit-actions button.is-error {
+.design-submit-actions button.is-error,
+.studio-grid button.is-error {
   border-color: color-mix(in srgb, #ff6b42 70%, var(--line));
 }
 
@@ -2648,20 +2633,34 @@ input[type="password"] {
   display: grid;
   place-items: center;
   overflow: hidden;
-  border-bottom: 1px solid var(--line);
-  background: var(--preview-bg);
+  border-bottom: 0;
+  background: #050606;
+  box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--line) 58%, black);
+}
+
+.gallery-thumb::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  box-shadow:
+    inset 0 1px 0 #050606,
+    inset 0 -1px 0 #050606;
 }
 
 .gallery-thumb img {
-  width: 100%;
-  height: 100%;
+  width: calc(100% + 2px);
+  height: calc(100% + 2px);
+  max-width: none;
+  margin: -1px;
   display: block;
   object-fit: cover;
+  transform: translateZ(0) scale(1.002);
   transition: transform 260ms ease;
 }
 
 .gallery-card:hover .gallery-thumb img {
-  transform: scale(1.035);
+  transform: translateZ(0) scale(1.035);
 }
 
 .gallery-placeholder {
@@ -3074,7 +3073,7 @@ input[type="password"] {
 
 .developer-collection-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: 4.75rem minmax(0, 1fr) auto;
   gap: 0.85rem;
   align-items: center;
   padding: 0.75rem;
@@ -3086,6 +3085,15 @@ input[type="password"] {
 .developer-collection-row.active {
   border-color: var(--accent);
   background: var(--accent-soft);
+}
+
+.developer-collection-thumb {
+  width: 4.75rem;
+  height: 3.25rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--preview-bg);
+  object-fit: cover;
 }
 
 .developer-collection-copy {
@@ -3355,8 +3363,6 @@ input[type="password"] {
 }
 
 .frame-component-gallery {
-  grid-column: 2;
-  grid-row: 1 / span 2;
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
   gap: 0.75rem;
@@ -3585,6 +3591,7 @@ input[type="password"] {
   .gallery-skeleton-line::after,
   .gallery-skeleton-action::after,
   .design-submit-actions button.is-saving::after,
+  .studio-grid button.is-saving::after,
   .gallery-card.just-saved {
     animation-duration: 2.4s;
   }
@@ -3838,7 +3845,6 @@ input[type="password"] {
     grid-column: auto;
   }
 
-  .frame-editor-photo-actions,
   .frame-component-gallery {
     grid-column: auto;
     grid-row: auto;
