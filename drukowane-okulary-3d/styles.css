@@ -366,9 +366,11 @@ small,
 }
 
 .plans-card {
-  width: min(82rem, calc(100vw - 2rem));
+  width: min(92rem, calc(100vw - 2rem));
   min-height: auto;
   grid-template-columns: 1fr;
+  max-height: calc(100vh - 2rem);
+  overflow: auto;
 }
 
 .pricing-grid {
@@ -381,7 +383,7 @@ small,
   display: grid;
   gap: 0.9rem;
   align-content: start;
-  min-height: 21rem;
+  min-height: 22rem;
   padding: clamp(1rem, 2vw, 1.45rem);
   border: 1px solid var(--line);
   border-radius: 14px;
@@ -393,11 +395,32 @@ small,
   background: color-mix(in srgb, var(--accent-soft) 70%, transparent);
 }
 
-.pricing-card span {
+.pricing-card.active {
+  border-color: var(--accent-2);
+}
+
+.pricing-card.supporter {
+  background: color-mix(in srgb, var(--surface) 72%, var(--subtle-bg));
+}
+
+.pricing-card header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.pricing-card span,
+.plan-active-label {
   color: var(--muted);
   font-size: 0.82rem;
   font-weight: 850;
   text-transform: uppercase;
+}
+
+.plan-active-label {
+  color: var(--accent-2);
+  white-space: nowrap;
 }
 
 .pricing-card strong {
@@ -417,9 +440,66 @@ small,
   padding-bottom: 0.25rem;
 }
 
-.pricing-card small {
-  min-height: 2.6rem;
+.pricing-card p {
+  margin: 0;
+  color: var(--ink);
+  line-height: 1.4;
+}
+
+.pricing-benefits {
+  display: grid;
+  gap: 0.62rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pricing-benefits li {
+  display: grid;
+  grid-template-columns: 0.65rem 1fr;
+  gap: 0.55rem;
+  color: var(--muted);
+  font-size: 0.9rem;
   line-height: 1.35;
+}
+
+.pricing-benefits li::before {
+  content: "";
+  width: 0.38rem;
+  height: 0.38rem;
+  margin-top: 0.42rem;
+  border-radius: 999px;
+  background: var(--accent);
+}
+
+.plans-purchase-note,
+.plan-code-activation {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface) 84%, transparent);
+}
+
+.plans-purchase-note {
+  padding: 0.95rem 1rem;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.plans-purchase-note a {
+  color: var(--accent-2);
+  font-weight: 850;
+}
+
+.plan-code-activation {
+  display: grid;
+  grid-template-columns: minmax(12rem, 0.9fr) minmax(18rem, 1.1fr);
+  gap: 1rem;
+  align-items: end;
+  padding: 1rem;
+}
+
+.plan-code-activation h3 {
+  margin: 0.1rem 0 0;
 }
 
 .plan-grid,
@@ -715,6 +795,12 @@ small,
   font-size: 0.9rem;
   font-weight: 760;
   transition: color 160ms ease, background-color 160ms ease;
+}
+
+button.nav-link {
+  border: 0;
+  font: inherit;
+  cursor: pointer;
 }
 
 .nav-link:hover,
@@ -3417,6 +3503,10 @@ input[type="password"] {
   }
 
   .pricing-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .plan-code-activation {
     grid-template-columns: 1fr;
   }
 

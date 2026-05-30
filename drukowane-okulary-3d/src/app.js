@@ -35,10 +35,10 @@ const translations = {
     signInAccount: "Login",
     signOutAccount: "Sign out",
     closeAccount: "Close",
-    accountFreeNote: "No active plan: configure models freely, then choose a plan to export 3MF.",
-    accountBasicNote: "Basic: 15 3MF downloads per month.",
-    accountProNote: "Pro: 50 3MF downloads per month.",
-    accountPlusNote: "Plus: unlimited 3MF downloads.",
+    accountFreeNote: "No active plan: choose a Creator plan and activate it with a MakerWorld code.",
+    accountBasicNote: "Personal: Creator access for personal use.",
+    accountProNote: "Commercial: Creator access for commercial use.",
+    accountPlusNote: "Ultra Support: lifetime commercial Creator access.",
     accountDeveloperNote: "Developer: full access, collection management and deletion.",
     lockedModel: "Plan required to download",
     upgrade: "Plan",
@@ -254,31 +254,70 @@ const defaultAccentColor = "#c96b34";
 const defaultHeroImage = "./assets/frame-lab-hero.png";
 const defaultPrintGuideImage = "./assets/print-guide-honeycomb.svg";
 const defaultColorSlots = ["#ff741f", "#2d2b27", "#f1eee9", "#0f1010", "#8f8b82"];
+const planProductIds = ["personal_lifetime", "commercial_lifetime", "personal_year", "commercial_year", "supporter", "ultra_support"];
+const accessPlanIds = ["free", "basic", "pro", "studio"];
 const defaultContentSettings = {
+  makerWorldUrl: "",
   plans: [
     {
-      plan: "basic",
-      name: "Basic",
-      price: "$20",
-      period: "/ month",
-      exports: "15 3MF downloads per month",
-      description: "Full configurator access for personal prints and fit tests."
+      plan: "personal_lifetime",
+      access: "basic",
+      name: "Lifetime Personal",
+      price: "$99",
+      period: "one-time",
+      exports: "Lifetime Creator access",
+      description: "Personal use license for your own frames and fit experiments.",
+      benefits: ["Lifetime access to the Creator", "Personal use for your own printed frames", "Activated with a MakerWorld code"]
     },
     {
-      plan: "pro",
-      name: "Pro",
-      price: "$45",
-      period: "/ month",
-      exports: "50 3MF downloads per month",
-      description: "More exports for active makers preparing several variants."
+      plan: "commercial_lifetime",
+      access: "pro",
+      name: "Lifetime Commercial",
+      price: "$199",
+      period: "one-time",
+      exports: "Lifetime commercial Creator access",
+      description: "Commercial use license for paid work, products and client projects.",
+      benefits: ["Lifetime access to the Creator", "Commercial use for exported frame designs", "Activated with a MakerWorld code"]
     },
     {
-      plan: "studio",
-      name: "Plus",
-      price: "$60",
-      period: "/ month",
-      exports: "Unlimited 3MF downloads",
-      description: "Unlimited production exports for heavy use and early studio access."
+      plan: "personal_year",
+      access: "basic",
+      name: "Personal Year",
+      price: "$25",
+      period: "/ year",
+      exports: "One-year Creator access",
+      description: "Personal Creator access for one year.",
+      benefits: ["Creator access for personal projects", "Export production files for your own prints", "One-year access activated by code"]
+    },
+    {
+      plan: "commercial_year",
+      access: "pro",
+      name: "Commercial Year",
+      price: "$49",
+      period: "/ year",
+      exports: "One-year commercial Creator access",
+      description: "Commercial Creator access for one year.",
+      benefits: ["Creator access for client and product work", "Commercial use for exported frame designs", "One-year access activated by code"]
+    },
+    {
+      plan: "supporter",
+      access: "free",
+      name: "Supporter",
+      price: "$10",
+      period: "one-time support",
+      exports: "No Creator access included",
+      description: "Support Frame Lab development without plan benefits.",
+      benefits: ["Supports Frame Lab development", "No Creator access or commercial license included", "No activation code required"]
+    },
+    {
+      plan: "ultra_support",
+      access: "studio",
+      name: "Ultra Support",
+      price: "$999",
+      period: "lifetime",
+      exports: "Lifetime commercial Creator access",
+      description: "Top supporter tier with lifetime commercial use.",
+      benefits: ["Lifetime commercial Creator access", "Unlimited creator exports", "Top supporter tier for Frame Lab"]
     }
   ],
   sizes: {
@@ -338,15 +377,20 @@ const brandSettingsStorageKey = "framelab.brandSettings.v1";
 const colorSlotsStorageKey = "framelab.colorSlots.v1";
 const planRank = { free: 0, basic: 1, pro: 2, studio: 3 };
 const licenseCodeTypes = {
-  basic_month: { label: "Basic / 1 month", plan: "basic", duration: "month" },
-  pro_month: { label: "Pro / 1 month", plan: "pro", duration: "month" },
-  plus_month: { label: "Plus / 1 month", plan: "studio", duration: "month" },
-  basic_year: { label: "Basic / 1 year", plan: "basic", duration: "year" },
-  pro_year: { label: "Pro / 1 year", plan: "pro", duration: "year" },
-  plus_year: { label: "Plus / 1 year", plan: "studio", duration: "year" },
-  basic_lifetime: { label: "Basic / lifetime", plan: "basic", duration: "lifetime" },
-  pro_lifetime: { label: "Pro / lifetime", plan: "pro", duration: "lifetime" },
-  plus_lifetime: { label: "Plus / lifetime", plan: "studio", duration: "lifetime" }
+  personal_year: { label: "Personal Year", plan: "basic", duration: "year" },
+  commercial_year: { label: "Commercial Year", plan: "pro", duration: "year" },
+  personal_lifetime: { label: "Lifetime Personal", plan: "basic", duration: "lifetime" },
+  commercial_lifetime: { label: "Lifetime Commercial", plan: "pro", duration: "lifetime" },
+  ultra_support: { label: "Ultra Support / lifetime commercial", plan: "studio", duration: "lifetime" },
+  basic_month: { label: "Legacy Basic / 1 month", plan: "basic", duration: "month" },
+  pro_month: { label: "Legacy Pro / 1 month", plan: "pro", duration: "month" },
+  plus_month: { label: "Legacy Plus / 1 month", plan: "studio", duration: "month" },
+  basic_year: { label: "Legacy Basic / 1 year", plan: "basic", duration: "year" },
+  pro_year: { label: "Legacy Pro / 1 year", plan: "pro", duration: "year" },
+  plus_year: { label: "Legacy Plus / 1 year", plan: "studio", duration: "year" },
+  basic_lifetime: { label: "Legacy Basic / lifetime", plan: "basic", duration: "lifetime" },
+  pro_lifetime: { label: "Legacy Pro / lifetime", plan: "pro", duration: "lifetime" },
+  plus_lifetime: { label: "Legacy Plus / lifetime", plan: "studio", duration: "lifetime" }
 };
 const seedCollections = [
   {
@@ -563,7 +607,6 @@ const state = {
 	    planEndsAt: null,
 	    measurements: { headWidth: null, bridgeWidth: null, templeLength: null }
 	  },
-  pendingPlan: "basic",
   authMode: "login",
   lensMode: "none",
   downloads: [],
@@ -668,10 +711,14 @@ const els = {
 	  accountTempleLength: document.querySelector("#accountTempleLength"),
 	  saveFitProfile: document.querySelector("#saveFitProfile"),
 	  fitRecommendation: document.querySelector("#fitRecommendation"),
-	  downloadFolder: document.querySelector("#downloadFolder"),
+  downloadFolder: document.querySelector("#downloadFolder"),
   licenseCodeInput: document.querySelector("#licenseCodeInput"),
   redeemLicenseCode: document.querySelector("#redeemLicenseCode"),
   licenseCodeNote: document.querySelector("#licenseCodeNote"),
+  planLicenseCodeInput: document.querySelector("#planLicenseCodeInput"),
+  redeemPlanLicenseCode: document.querySelector("#redeemPlanLicenseCode"),
+  planLicenseCodeNote: document.querySelector("#planLicenseCodeNote"),
+  makerWorldPlanTarget: document.querySelector("#makerWorldPlanTarget"),
   profileOpenPlans: document.querySelector("#profileOpenPlans"),
   profileSignOut: document.querySelector("#profileSignOut"),
   cancelSubscription: document.querySelector("#cancelSubscription"),
@@ -691,7 +738,6 @@ const els = {
   closeAccountPanel: document.querySelector("#closeAccountPanel"),
   closePlansPanel: document.querySelector("#closePlansPanel"),
   planButtons: document.querySelectorAll("button[data-plan]"),
-  planPickButtons: document.querySelectorAll("button[data-plan-pick]"),
   galleryGrid: document.querySelector("#galleryGrid"),
   sunGalleryGrid: document.querySelector("#sunGalleryGrid"),
   opticalGalleryGrid: document.querySelector("#opticalGalleryGrid"),
@@ -3082,6 +3128,7 @@ function bindUi() {
   });
   els.closePlansPanel.addEventListener("click", () => {
     els.plansPanel.hidden = true;
+    els.plansButton?.classList.remove("active");
   });
   els.authModeButtons.forEach((button) => {
     button.addEventListener("click", () => setAuthMode(button.dataset.authMode === "register" ? "register" : "login"));
@@ -3105,6 +3152,15 @@ function bindUi() {
     els.licenseCodeInput.value = formatLicenseCode(els.licenseCodeInput.value);
   });
   els.redeemLicenseCode.addEventListener("click", () => redeemLicenseCode());
+  els.planLicenseCodeInput?.addEventListener("input", () => {
+    els.planLicenseCodeInput.value = formatLicenseCode(els.planLicenseCodeInput.value);
+  });
+  els.planLicenseCodeInput?.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    redeemLicenseCode("plans");
+  });
+  els.redeemPlanLicenseCode?.addEventListener("click", () => redeemLicenseCode("plans"));
   els.signOutAccount.addEventListener("click", () => signOutAccount());
   els.profileSignOut.addEventListener("click", () => signOutAccount());
   els.cancelSubscription.addEventListener("click", () => cancelSubscription());
@@ -3119,15 +3175,6 @@ function bindUi() {
       state.account.plan = button.dataset.plan;
       updateAccountUi();
     });
-  });
-  els.planPickButtons.forEach((button) => {
-    button.addEventListener("click", () => {
-      openLicenseActivation(button.dataset.planPick);
-    });
-  });
-  els.pricingGrid?.addEventListener("click", (event) => {
-    const button = event.target.closest("button[data-plan-pick]");
-    if (button) openLicenseActivation(button.dataset.planPick);
   });
   [els.cropZoom, els.cropX, els.cropY].forEach((input) => input.addEventListener("input", drawImageCrop));
   els.applyCrop.addEventListener("click", applyImageCrop);
@@ -4311,6 +4358,29 @@ function cleanText(value, fallback = "", limit = 500) {
   return (text || fallback).slice(0, limit);
 }
 
+function sanitizeExternalUrl(value, fallback = "") {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  try {
+    const url = new URL(raw);
+    return ["http:", "https:"].includes(url.protocol) ? url.href.slice(0, 600) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function normalizePlanBenefits(value, fallback = []) {
+  const source = Array.isArray(value)
+    ? value
+    : String(value || "").split("\n");
+  const fallbackList = Array.isArray(fallback) ? fallback : [];
+  const benefits = source
+    .map((item) => cleanText(item, "", 120))
+    .filter(Boolean)
+    .slice(0, 6);
+  return benefits.length ? benefits : fallbackList.slice(0, 6);
+}
+
 function sanitizeContentImage(value, fallback = "") {
   if (value === undefined || value === null) return fallback;
   const image = String(value || "").trim();
@@ -4337,14 +4407,17 @@ function normalizeFaqItem(item = {}, fallback = {}) {
 }
 
 function normalizePlanContent(item = {}, fallback = {}) {
-  const plan = ["basic", "pro", "studio"].includes(item.plan) ? item.plan : fallback.plan;
+  const plan = planProductIds.includes(item.plan) ? item.plan : fallback.plan;
+  const access = accessPlanIds.includes(item.access) ? item.access : fallback.access;
   return {
     plan,
+    access,
     name: cleanText(item.name, fallback.name, 40),
     price: cleanText(item.price, fallback.price, 24),
     period: cleanText(item.period, fallback.period, 32),
     exports: cleanText(item.exports, fallback.exports, 90),
-    description: cleanText(item.description, fallback.description, 180)
+    description: cleanText(item.description, fallback.description, 180),
+    benefits: normalizePlanBenefits(item.benefits, fallback.benefits)
   };
 }
 
@@ -4374,6 +4447,7 @@ function normalizeContentSettings(content = {}) {
   const planById = new Map((Array.isArray(content.plans) ? content.plans : []).map((item) => [item.plan, item]));
   const sizeById = new Map((Array.isArray(content.sizes?.rows) ? content.sizes.rows : []).map((item) => [item.size, item]));
   return {
+    makerWorldUrl: sanitizeExternalUrl(content.makerWorldUrl, defaults.makerWorldUrl),
     plans: defaults.plans.map((fallback) => normalizePlanContent(planById.get(fallback.plan), fallback)),
     sizes: {
       heading: cleanText(content.sizes?.heading, defaults.sizes.heading, 80),
@@ -4532,16 +4606,29 @@ function syncBrandSettingsUi() {
 
 function renderPlanCards() {
   if (!els.pricingGrid) return;
-  const plans = normalizeContentSettings(state.brandSettings.content).plans;
+  const content = normalizeContentSettings(state.brandSettings.content);
+  const plans = content.plans;
+  const makerWorldUrl = sanitizeExternalUrl(content.makerWorldUrl, "");
+  if (els.makerWorldPlanTarget) {
+    els.makerWorldPlanTarget.innerHTML = makerWorldUrl
+      ? `<a href="${escapeAttr(makerWorldUrl)}" target="_blank" rel="noopener">MakerWorld</a>`
+      : "MakerWorld";
+  }
   els.pricingGrid.innerHTML = plans.map((plan) => {
-    const featured = plan.plan === "pro";
-    const active = state.account.plan === plan.plan;
+    const featured = plan.plan === "commercial_lifetime";
+    const active = plan.access !== "free" && state.account.plan === plan.access;
+    const benefits = normalizePlanBenefits(plan.benefits, [plan.exports, plan.description]);
     return `
-      <article class="pricing-card${featured ? " featured" : ""}">
-        <span>${escapeHtml(plan.name)}</span>
+      <article class="pricing-card${featured ? " featured" : ""}${active ? " active" : ""}${plan.access === "free" ? " supporter" : ""}">
+        <header>
+          <span>${escapeHtml(plan.name)}</span>
+          ${active ? `<small class="plan-active-label">Active access</small>` : ""}
+        </header>
         <div class="price-line"><strong>${escapeHtml(plan.price)}</strong><small>${escapeHtml(plan.period)}</small></div>
-        <small>${escapeHtml(plan.exports)}. ${escapeHtml(plan.description)}</small>
-        <button type="button" class="${featured && !active ? "accent" : ""}" data-plan-pick="${escapeHtml(plan.plan)}">${active ? "Current plan" : "Enter code"}</button>
+        <p>${escapeHtml(plan.description)}</p>
+        <ul class="pricing-benefits">
+          ${benefits.map((benefit) => `<li>${escapeHtml(benefit)}</li>`).join("")}
+        </ul>
       </article>
     `;
   }).join("");
@@ -4586,16 +4673,24 @@ function renderContentEditors() {
   if (!isDeveloper()) return;
   const content = normalizeContentSettings(state.brandSettings.content);
   if (els.planContentEditor) {
-    els.planContentEditor.innerHTML = content.plans.map((plan) => `
+    els.planContentEditor.innerHTML = `
+      <fieldset class="content-editor-card wide">
+        <legend>MakerWorld purchase link</legend>
+        <input data-content-field="makerWorldUrl" type="url" value="${escapeAttr(content.makerWorldUrl)}" placeholder="https://makerworld.com/..." />
+        <small>Plans show purchase as MakerWorld-only. This link is displayed as text, not a buy button.</small>
+      </fieldset>
+      ${content.plans.map((plan) => `
       <fieldset class="content-editor-card" data-plan-editor="${escapeHtml(plan.plan)}">
         <legend>${escapeHtml(plan.name)} plan</legend>
         <input data-plan-field="name" type="text" value="${escapeAttr(plan.name)}" placeholder="Plan name" />
         <input data-plan-field="price" type="text" value="${escapeAttr(plan.price)}" placeholder="$20" />
-        <input data-plan-field="period" type="text" value="${escapeAttr(plan.period)}" placeholder="/ month" />
-        <input data-plan-field="exports" type="text" value="${escapeAttr(plan.exports)}" placeholder="15 3MF downloads per month" />
+        <input data-plan-field="period" type="text" value="${escapeAttr(plan.period)}" placeholder="/ year" />
+        <input data-plan-field="exports" type="text" value="${escapeAttr(plan.exports)}" placeholder="Creator access summary" />
         <textarea data-plan-field="description" rows="3" placeholder="Plan description">${escapeHtml(plan.description)}</textarea>
+        <textarea data-plan-field="benefits" rows="5" placeholder="One benefit per line">${escapeHtml(plan.benefits.join("\n"))}</textarea>
       </fieldset>
-    `).join("");
+    `).join("")}
+    `;
   }
   if (els.pageContentEditor) {
     els.pageContentEditor.innerHTML = `
@@ -4654,8 +4749,10 @@ function readContentSettingsFromEditor() {
     ...base,
     plans: [...planById.values()]
   };
-  els.pageContentEditor?.querySelectorAll("[data-content-field]").forEach((field) => {
-    setContentPath(content, field.dataset.contentField, field.value);
+  [els.planContentEditor, els.pageContentEditor].forEach((editor) => {
+    editor?.querySelectorAll("[data-content-field]").forEach((field) => {
+      setContentPath(content, field.dataset.contentField, field.value);
+    });
   });
   const roadmapField = els.pageContentEditor?.querySelector('[data-list-field="roadmap.items"]');
   if (roadmapField) content.roadmap.items = parseRoadmapItems(roadmapField.value);
@@ -4666,6 +4763,10 @@ function readContentSettingsFromEditor() {
 
 function setContentPath(target, path, value) {
   const [section, field] = String(path || "").split(".");
+  if (section && !field && Object.prototype.hasOwnProperty.call(target, section)) {
+    target[section] = value;
+    return;
+  }
   if (!section || !field || !target[section]) return;
   target[section][field] = value;
 }
@@ -6464,9 +6565,9 @@ function accessLabel(access) {
 }
 
 function planLabel(plan) {
-  if (plan === "studio") return "Plus";
-  if (plan === "pro") return "Pro";
-  if (plan === "basic") return "Basic";
+  if (plan === "studio") return "Ultra Support";
+  if (plan === "pro") return "Commercial";
+  if (plan === "basic") return "Personal";
   return "No plan";
 }
 
@@ -6493,7 +6594,9 @@ function openPlansPanel(message = "") {
     els.plansContext.textContent = message;
     els.plansContext.hidden = !message;
   }
+  renderPlanCards();
   els.plansPanel.hidden = false;
+  els.plansButton?.classList.add("active");
 }
 
 function setAuthMode(mode) {
@@ -6558,11 +6661,6 @@ function updateAccountUi() {
           ? t("accountBasicNote")
           : t("accountFreeNote");
   renderPlanCards();
-  document.querySelectorAll("button[data-plan-pick]").forEach((button) => {
-    const picked = button.dataset.planPick === state.account.plan;
-    button.textContent = picked ? "Current plan" : "Enter code";
-    button.classList.toggle("accent", !picked && button.dataset.planPick === "pro");
-  });
   renderStorageStatus();
   renderDownloadFolder();
   renderStaticLicenseCodeList();
@@ -6747,31 +6845,47 @@ function formatLicenseCode(value) {
   return [digits.slice(0, 4), digits.slice(4, 8), digits.slice(8, 12)].filter(Boolean).join("-");
 }
 
-async function redeemLicenseCode() {
-  const code = normalizeLicenseCode(els.licenseCodeInput.value);
+async function redeemLicenseCode(source = "account") {
+  const input = source === "plans" ? els.planLicenseCodeInput : els.licenseCodeInput;
+  const note = source === "plans" ? els.planLicenseCodeNote : els.licenseCodeNote;
+  const button = source === "plans" ? els.redeemPlanLicenseCode : els.redeemLicenseCode;
+  if (!input || !note || !button) return;
+  if (state.account.role === "visitor") {
+    note.textContent = "Create an account or log in before activating a code.";
+    els.accountPanel.hidden = false;
+    setAuthMode("login");
+    els.accountEmail?.focus();
+    return;
+  }
+  const code = normalizeLicenseCode(input.value);
   if (code.length !== 12) {
-    els.licenseCodeNote.textContent = "Enter a 12 digit activation code.";
+    note.textContent = "Enter a 12 digit activation code.";
     return;
   }
   try {
-    els.redeemLicenseCode.disabled = true;
-    els.licenseCodeNote.textContent = "Activating code...";
+    button.disabled = true;
+    note.textContent = "Activating code...";
     const payload = await apiRequest("/api/license-codes/redeem", {
       method: "POST",
       body: JSON.stringify({ code })
     });
     state.account = accountFromUser(payload.user);
     persistActiveAccount();
-    els.licenseCodeInput.value = "";
-    els.licenseCodeNote.textContent = payload.message || "Code activated.";
+    input.value = "";
+    if (els.licenseCodeInput && els.licenseCodeInput !== input) els.licenseCodeInput.value = "";
+    if (els.planLicenseCodeInput && els.planLicenseCodeInput !== input) els.planLicenseCodeInput.value = "";
+    const message = payload.message || "Code activated.";
+    note.textContent = message;
+    if (els.licenseCodeNote && els.licenseCodeNote !== note) els.licenseCodeNote.textContent = message;
+    if (els.planLicenseCodeNote && els.planLicenseCodeNote !== note) els.planLicenseCodeNote.textContent = message;
     await loadDownloadQuota({ silent: true });
     if (isDeveloper()) await Promise.all([loadStaticLicenseCodes({ silent: true }), loadLicenseCodes({ silent: true })]);
     updateAccountUi();
-    log(payload.message || "Activation code applied.");
+    log(message);
   } catch (error) {
-    els.licenseCodeNote.textContent = error.message || "Could not activate code.";
+    note.textContent = error.message || "Could not activate code.";
   } finally {
-    els.redeemLicenseCode.disabled = false;
+    button.disabled = false;
   }
 }
 
@@ -6815,7 +6929,7 @@ async function loadStaticLicenseCodes(options = {}) {
 
 async function generateLicenseCodes() {
   if (!isDeveloper()) return;
-  const type = licenseCodeTypes[els.licenseCodeType.value] ? els.licenseCodeType.value : "pro_month";
+  const type = licenseCodeTypes[els.licenseCodeType.value] ? els.licenseCodeType.value : "commercial_year";
   const quantity = Math.min(50, Math.max(1, Number(els.licenseCodeQuantity.value) || 1));
   try {
     els.generateLicenseCodes.disabled = true;
@@ -6851,7 +6965,7 @@ function renderStaticLicenseCodeList() {
     return;
   }
   els.staticLicenseCodeList.innerHTML = state.staticLicenseCodes.map((item) => {
-    const type = licenseCodeTypes[item.type] || licenseCodeTypes.plus_lifetime;
+    const type = licenseCodeTypes[item.type] || licenseCodeTypes.ultra_support;
     return `
       <article class="license-code-item reusable">
         <div>
@@ -6883,13 +6997,13 @@ function renderLicenseCodeList() {
     els.licenseCodeList.innerHTML = `
       <div class="download-empty">
         <strong>No activation codes yet.</strong>
-        <small>Generate a monthly or lifetime code to share with a customer.</small>
+        <small>Generate a yearly or lifetime code to share with a customer.</small>
       </div>
     `;
     return;
   }
   els.licenseCodeList.innerHTML = state.licenseCodes.slice(0, 160).map((item) => {
-    const type = licenseCodeTypes[item.type] || licenseCodeTypes.pro_month;
+    const type = licenseCodeTypes[item.type] || licenseCodeTypes.commercial_year;
     const redeemed = item.status === "redeemed";
     return `
       <article class="license-code-item ${redeemed ? "redeemed" : "active"}">
@@ -6918,8 +7032,9 @@ function subscriptionStatusLabel() {
   if (state.account.subscriptionStatus === "lifetime") return "Lifetime access";
   if (state.account.subscriptionStatus === "active") return ends ? `Subscription active until ${ends}` : "Subscription active";
   if (state.account.subscriptionStatus === "cancel_at_period_end") return ends ? `Cancels on ${ends}` : "Cancelling";
+  if (state.account.subscriptionMode === "license_year") return ends ? `Year access until ${ends}` : "Year access";
   if (state.account.subscriptionMode === "license_month") return ends ? `Code access until ${ends}` : "Code access";
-  if (state.account.subscriptionStatus === "paid_once") return ends ? `One-month access until ${ends}` : "One-month access";
+  if (state.account.subscriptionStatus === "paid_once") return ends ? `Code access until ${ends}` : "Code access";
   return state.account.plan === "free" ? "No active plan" : "Active";
 }
 
@@ -6992,20 +7107,6 @@ async function signOutAccount() {
   goHome();
   updateAccountUi();
   log("Signed out.");
-}
-
-function openLicenseActivation(plan) {
-  state.pendingPlan = ["basic", "pro", "studio"].includes(plan) ? plan : "basic";
-  els.plansPanel.hidden = true;
-  els.accountPanel.hidden = false;
-  updateAccountUi();
-  if (state.account.role === "visitor" || !state.account.email) {
-    els.accountNote.textContent = `Create an account, then activate ${planLabel(state.pendingPlan)} with a 12-digit code.`;
-    els.accountEmail.focus();
-    return;
-  }
-  els.licenseCodeNote.textContent = `Enter a ${planLabel(state.pendingPlan)} activation code.`;
-  els.licenseCodeInput.focus();
 }
 
 async function cancelSubscription() {
@@ -8378,8 +8479,8 @@ async function ensureDownloadAllowed(model) {
     return false;
   }
   if (state.account.role === "visitor" || !sessionToken()) {
-    openPlansPanel("Create an account and choose Basic, Pro or Plus to download 3MF files.");
-    log("Create an account and choose a plan before downloading 3MF.");
+    openPlansPanel("Create an account, buy a Creator plan on MakerWorld, then activate it with your code.");
+    log("Create an account and activate a Creator plan before downloading 3MF.");
     return false;
   }
   await loadDownloadQuota({ silent: true });

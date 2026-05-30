@@ -62,31 +62,71 @@ function cloneJson(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
+const planProductIds = ["personal_lifetime", "commercial_lifetime", "personal_year", "commercial_year", "supporter", "ultra_support"];
+const accessPlanIds = ["free", "basic", "pro", "studio"];
+
 const defaultContentSettings = {
+  makerWorldUrl: "",
   plans: [
     {
-      plan: "basic",
-      name: "Basic",
-      price: "$20",
-      period: "/ month",
-      exports: "15 3MF downloads per month",
-      description: "Full configurator access for personal prints and fit tests."
+      plan: "personal_lifetime",
+      access: "basic",
+      name: "Lifetime Personal",
+      price: "$99",
+      period: "one-time",
+      exports: "Lifetime Creator access",
+      description: "Personal use license for your own frames and fit experiments.",
+      benefits: ["Lifetime access to the Creator", "Personal use for your own printed frames", "Activated with a MakerWorld code"]
     },
     {
-      plan: "pro",
-      name: "Pro",
-      price: "$45",
-      period: "/ month",
-      exports: "50 3MF downloads per month",
-      description: "More exports for active makers preparing several variants."
+      plan: "commercial_lifetime",
+      access: "pro",
+      name: "Lifetime Commercial",
+      price: "$199",
+      period: "one-time",
+      exports: "Lifetime commercial Creator access",
+      description: "Commercial use license for paid work, products and client projects.",
+      benefits: ["Lifetime access to the Creator", "Commercial use for exported frame designs", "Activated with a MakerWorld code"]
     },
     {
-      plan: "studio",
-      name: "Plus",
-      price: "$60",
-      period: "/ month",
-      exports: "Unlimited 3MF downloads",
-      description: "Unlimited production exports for heavy use and early studio access."
+      plan: "personal_year",
+      access: "basic",
+      name: "Personal Year",
+      price: "$25",
+      period: "/ year",
+      exports: "One-year Creator access",
+      description: "Personal Creator access for one year.",
+      benefits: ["Creator access for personal projects", "Export production files for your own prints", "One-year access activated by code"]
+    },
+    {
+      plan: "commercial_year",
+      access: "pro",
+      name: "Commercial Year",
+      price: "$49",
+      period: "/ year",
+      exports: "One-year commercial Creator access",
+      description: "Commercial Creator access for one year.",
+      benefits: ["Creator access for client and product work", "Commercial use for exported frame designs", "One-year access activated by code"]
+    },
+    {
+      plan: "supporter",
+      access: "free",
+      name: "Supporter",
+      price: "$10",
+      period: "one-time support",
+      exports: "No Creator access included",
+      description: "Support Frame Lab development without plan benefits.",
+      benefits: ["Supports Frame Lab development", "No Creator access or commercial license included", "No activation code required"]
+    },
+    {
+      plan: "ultra_support",
+      access: "studio",
+      name: "Ultra Support",
+      price: "$999",
+      period: "lifetime",
+      exports: "Lifetime commercial Creator access",
+      description: "Top supporter tier with lifetime commercial use.",
+      benefits: ["Lifetime commercial Creator access", "Unlimited creator exports", "Top supporter tier for Frame Lab"]
     }
   ],
   sizes: {
@@ -144,26 +184,27 @@ const maxComponentFileDataSize = 60_000_000;
 const planRank = { free: 0, basic: 1, pro: 2, studio: 3 };
 const monthlyDownloadLimits = { free: 0, basic: 15, pro: 50, studio: null };
 const licenseCodeTypes = {
-  basic_month: { label: "Basic / 1 month", plan: "basic", duration: "month" },
-  pro_month: { label: "Pro / 1 month", plan: "pro", duration: "month" },
-  plus_month: { label: "Plus / 1 month", plan: "studio", duration: "month" },
-  basic_year: { label: "Basic / 1 year", plan: "basic", duration: "year" },
-  pro_year: { label: "Pro / 1 year", plan: "pro", duration: "year" },
-  plus_year: { label: "Plus / 1 year", plan: "studio", duration: "year" },
-  basic_lifetime: { label: "Basic / lifetime", plan: "basic", duration: "lifetime" },
-  pro_lifetime: { label: "Pro / lifetime", plan: "pro", duration: "lifetime" },
-  plus_lifetime: { label: "Plus / lifetime", plan: "studio", duration: "lifetime" }
+  personal_year: { label: "Personal Year", plan: "basic", duration: "year" },
+  commercial_year: { label: "Commercial Year", plan: "pro", duration: "year" },
+  personal_lifetime: { label: "Lifetime Personal", plan: "basic", duration: "lifetime" },
+  commercial_lifetime: { label: "Lifetime Commercial", plan: "pro", duration: "lifetime" },
+  ultra_support: { label: "Ultra Support / lifetime commercial", plan: "studio", duration: "lifetime" },
+  basic_month: { label: "Legacy Basic / 1 month", plan: "basic", duration: "month" },
+  pro_month: { label: "Legacy Pro / 1 month", plan: "pro", duration: "month" },
+  plus_month: { label: "Legacy Plus / 1 month", plan: "studio", duration: "month" },
+  basic_year: { label: "Legacy Basic / 1 year", plan: "basic", duration: "year" },
+  pro_year: { label: "Legacy Pro / 1 year", plan: "pro", duration: "year" },
+  plus_year: { label: "Legacy Plus / 1 year", plan: "studio", duration: "year" },
+  basic_lifetime: { label: "Legacy Basic / lifetime", plan: "basic", duration: "lifetime" },
+  pro_lifetime: { label: "Legacy Pro / lifetime", plan: "pro", duration: "lifetime" },
+  plus_lifetime: { label: "Legacy Plus / lifetime", plan: "studio", duration: "lifetime" }
 };
 const staticLicenseCodes = [
-  { id: "static-basic-month", code: "2184-0015-3029", type: "basic_month", label: "Basic monthly reusable code" },
-  { id: "static-pro-month", code: "4752-0050-6811", type: "pro_month", label: "Pro monthly reusable code" },
-  { id: "static-plus-month", code: "6901-9999-4473", type: "plus_month", label: "Plus monthly reusable code" },
-  { id: "static-basic-year", code: "3184-1815-3029", type: "basic_year", label: "Basic yearly reusable code" },
-  { id: "static-pro-year", code: "6752-1850-6811", type: "pro_year", label: "Pro yearly reusable code" },
-  { id: "static-plus-year", code: "8901-1899-4473", type: "plus_year", label: "Plus yearly reusable code" },
-  { id: "static-basic-lifetime", code: "1847-2294-6103", type: "basic_lifetime", label: "Basic lifetime reusable code" },
-  { id: "static-pro-lifetime", code: "5729-6041-8832", type: "pro_lifetime", label: "Pro lifetime reusable code" },
-  { id: "static-plus-lifetime", code: "9364-1558-2706", type: "plus_lifetime", label: "Plus lifetime reusable code" }
+  { id: "static-personal-year", code: "3184-1815-3029", type: "personal_year", label: "Personal Year reusable code" },
+  { id: "static-commercial-year", code: "6752-1850-6811", type: "commercial_year", label: "Commercial Year reusable code" },
+  { id: "static-personal-lifetime", code: "1847-2294-6103", type: "personal_lifetime", label: "Lifetime Personal reusable code" },
+  { id: "static-commercial-lifetime", code: "5729-6041-8832", type: "commercial_lifetime", label: "Lifetime Commercial reusable code" },
+  { id: "static-ultra-support", code: "9364-1558-2706", type: "ultra_support", label: "Ultra Support reusable code" }
 ];
 
 function defaultDb() {
@@ -184,6 +225,29 @@ function cleanText(value, fallback = "", limit = 500) {
   return (text || fallback).slice(0, limit);
 }
 
+function sanitizeExternalUrl(value, fallback = "") {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  try {
+    const url = new URL(raw);
+    return ["http:", "https:"].includes(url.protocol) ? url.href.slice(0, 600) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function sanitizePlanBenefits(value, fallback = []) {
+  const source = Array.isArray(value)
+    ? value
+    : String(value || "").split("\n");
+  const fallbackList = Array.isArray(fallback) ? fallback : [];
+  const benefits = source
+    .map((item) => cleanText(item, "", 120))
+    .filter(Boolean)
+    .slice(0, 6);
+  return benefits.length ? benefits : fallbackList.slice(0, 6);
+}
+
 function sanitizeContentImage(value, fallback = "") {
   if (value === undefined || value === null) return fallback;
   const image = String(value || "").trim();
@@ -198,14 +262,17 @@ function cleanPrintGuideIntro(value, fallback) {
 }
 
 function sanitizePlanContent(item = {}, fallback = {}) {
-  const plan = ["basic", "pro", "studio"].includes(item.plan) ? item.plan : fallback.plan;
+  const plan = planProductIds.includes(item.plan) ? item.plan : fallback.plan;
+  const access = accessPlanIds.includes(item.access) ? item.access : fallback.access;
   return {
     plan,
+    access,
     name: cleanText(item.name, fallback.name, 40),
     price: cleanText(item.price, fallback.price, 24),
     period: cleanText(item.period, fallback.period, 32),
     exports: cleanText(item.exports, fallback.exports, 90),
-    description: cleanText(item.description, fallback.description, 180)
+    description: cleanText(item.description, fallback.description, 180),
+    benefits: sanitizePlanBenefits(item.benefits, fallback.benefits)
   };
 }
 
@@ -247,6 +314,7 @@ function sanitizeContentSettings(content = {}) {
   const planById = new Map((Array.isArray(content.plans) ? content.plans : []).map((item) => [item.plan, item]));
   const sizeById = new Map((Array.isArray(content.sizes?.rows) ? content.sizes.rows : []).map((item) => [item.size, item]));
   return {
+    makerWorldUrl: sanitizeExternalUrl(content.makerWorldUrl, defaults.makerWorldUrl),
     plans: defaults.plans.map((fallback) => sanitizePlanContent(planById.get(fallback.plan), fallback)),
     sizes: {
       heading: cleanText(content.sizes?.heading, defaults.sizes.heading, 80),
@@ -663,9 +731,9 @@ function normalizeAccess(access) {
 }
 
 function planLabel(plan) {
-  if (plan === "studio") return "Plus";
-  if (plan === "pro") return "Pro";
-  if (plan === "basic") return "Basic";
+  if (plan === "studio") return "Ultra Support";
+  if (plan === "pro") return "Commercial";
+  if (plan === "basic") return "Personal";
   return "No plan";
 }
 
@@ -734,7 +802,7 @@ function generateLicenseCode(db, reserved = new Set()) {
 }
 
 function publicLicenseCode(item) {
-  const type = licenseCodeTypes[item.type] ? item.type : "pro_month";
+  const type = licenseCodeTypes[item.type] ? item.type : "commercial_year";
   return {
     id: item.id,
     code: formatLicenseCode(item.code),
@@ -750,7 +818,7 @@ function publicLicenseCode(item) {
 }
 
 function publicStaticLicenseCode(item) {
-  const type = licenseCodeTypes[item.type] ? item.type : "plus_lifetime";
+  const type = licenseCodeTypes[item.type] ? item.type : "ultra_support";
   return {
     id: item.id,
     code: formatLicenseCode(item.code),
@@ -1296,7 +1364,7 @@ async function handleApi(req, res, url) {
     const user = currentUser(req, db);
     if (!user || user.role !== "developer") return sendJson(res, 403, { error: "Developer access is required." });
     const body = await readBody(req);
-    const type = licenseCodeTypes[body.type] ? body.type : "pro_month";
+    const type = licenseCodeTypes[body.type] ? body.type : "commercial_year";
     const quantity = Math.min(50, Math.max(1, Number(body.quantity) || 1));
     const reserved = new Set();
     const created = Array.from({ length: quantity }, () => ({
