@@ -6237,7 +6237,7 @@ async function loadStoredModels() {
   const remote = await fetchBackendCollections();
   if (remote.length) {
     const canonical = mergeSeedCollections(remote);
-    localStorage.setItem(modelStorageKey, JSON.stringify(canonical));
+    writeModelsToLocalCache(canonical);
     return canonical;
   }
   try {
@@ -6246,7 +6246,7 @@ async function loadStoredModels() {
       ? parsed.map(normalizeStoredModel).filter((model) => model && !legacyModelIds.has(model.id))
       : [];
     const merged = mergeSeedCollections(stored);
-    localStorage.setItem(modelStorageKey, JSON.stringify(merged));
+    writeModelsToLocalCache(merged);
     return merged;
   } catch {
     return mergeSeedCollections([]);
@@ -6335,8 +6335,45 @@ function normalizeStoredModel(model) {
 }
 
 function persistModels(options = {}) {
-  localStorage.setItem(modelStorageKey, JSON.stringify(state.models));
+  writeModelsToLocalCache(state.models);
   if (options.syncBackend !== false) scheduleCollectionsBackendSync();
+}
+
+function writeModelsToLocalCache(models) {
+  const variants = [
+    models,
+    compactModelsForLocalCache(models, 1),
+    compactModelsForLocalCache(models, 2)
+  ];
+  for (const variant of variants) {
+    try {
+      localStorage.setItem(modelStorageKey, JSON.stringify(variant));
+      return true;
+    } catch (error) {
+      if (!isStorageQuotaError(error)) return false;
+    }
+  }
+  try {
+    localStorage.removeItem(modelStorageKey);
+  } catch {}
+  return false;
+}
+
+function compactModelsForLocalCache(models, level = 1) {
+  return models.map((model) => {
+    const compact = {
+      ...model,
+      thumbnail: ""
+    };
+    if (level >= 2 && compact.design) {
+      compact.scadSource = "";
+    }
+    return compact;
+  });
+}
+
+function isStorageQuotaError(error) {
+  return error?.name === "QuotaExceededError" || error?.name === "NS_ERROR_DOM_QUOTA_REACHED" || error?.code === 22 || error?.code === 1014;
 }
 
 function scheduleCollectionsBackendSync() {
