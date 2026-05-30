@@ -747,7 +747,6 @@ const els = {
   designFrameColor: document.querySelector("#designFrameColor"),
   designTempleColor: document.querySelector("#designTempleColor"),
   designLensColor: document.querySelector("#designLensColor"),
-  designDetailColor: document.querySelector("#designDetailColor"),
   designPublicParameters: document.querySelector("#designPublicParameters"),
   designProductionChecks: document.querySelector("#designProductionChecks"),
   addSketchPoint: document.querySelector("#addSketchPoint"),
@@ -766,9 +765,7 @@ const els = {
   designView3d: document.querySelector("#designView3d"),
   designViewHint: document.querySelector("#designViewHint"),
   designExtrudeDepth: document.querySelector("#designExtrudeDepth"),
-  designFilletEnabled: document.querySelector("#designFilletEnabled"),
   designFilletRadius: document.querySelector("#designFilletRadius"),
-  designChamferEnabled: document.querySelector("#designChamferEnabled"),
   designChamferAmount: document.querySelector("#designChamferAmount"),
   designLensRecessEnabled: document.querySelector("#designLensRecessEnabled"),
   designLensRecessDepth: document.querySelector("#designLensRecessDepth"),
@@ -1070,7 +1067,7 @@ function createDefaultDesignFeatures(params = defaultParams) {
   return {
     extrude: { enabled: true, depth: parseDesignNumber(params.frame_depth, defaultParams.frame_depth) },
     fillet: { enabled: true, radius: edgeRadius },
-    chamfer: { enabled: false, amount: 0.4 },
+    chamfer: { enabled: false, amount: 0 },
     lensRecess: { enabled: true, depth: defaultDesignConstruction.lensSeatDepth }
   };
 }
@@ -1159,18 +1156,21 @@ function normalizeDesignFeatures(features = {}, params = defaultParams) {
     return THREE.MathUtils.clamp(Number.isFinite(number) ? number : fallback, min, max);
   };
   const filletRadius = clamp(features.fillet?.radius, 0, 2.4, defaults.fillet.radius);
+  const chamferAmount = clamp(features.chamfer?.amount, 0, 2.4, defaults.chamfer.amount);
+  const hasExplicitFilletEnabled = Object.prototype.hasOwnProperty.call(features.fillet || {}, "enabled");
+  const hasExplicitChamferEnabled = Object.prototype.hasOwnProperty.call(features.chamfer || {}, "enabled");
   return {
     extrude: {
       enabled: true,
       depth: clamp(features.extrude?.depth, 3, 12, defaults.extrude.depth)
     },
     fillet: {
-      enabled: features.fillet?.enabled !== false || filletRadius > 0.001,
+      enabled: hasExplicitFilletEnabled ? Boolean(features.fillet.enabled) : filletRadius > 0.001,
       radius: filletRadius
     },
     chamfer: {
-      enabled: Boolean(features.chamfer?.enabled),
-      amount: clamp(features.chamfer?.amount, 0, 2.4, defaults.chamfer.amount)
+      enabled: hasExplicitChamferEnabled ? Boolean(features.chamfer.enabled) : chamferAmount > 0.001,
+      amount: chamferAmount
     },
     lensRecess: {
       enabled: features.lensRecess?.enabled !== false,
@@ -3462,9 +3462,9 @@ function setDesignFieldValue(field, value) {
 
 function setDesignSliderFieldValue(field, value, unit = "") {
   setDesignFieldValue(field, value);
-  const label = field?.nextElementSibling;
-  if (label?.tagName === "SMALL") {
-    label.textContent = `${formatNumber(value)}${unit ? ` ${unit}` : ""}`;
+  const readout = field?.nextElementSibling;
+  if (readout && ["OUTPUT", "SMALL"].includes(readout.tagName)) {
+    readout.textContent = `${formatNumber(value)}${unit ? ` ${unit}` : ""}`;
   }
 }
 
@@ -3492,13 +3492,10 @@ function syncDesignFields() {
   if (els.designFrameColor) els.designFrameColor.value = style.frameColor;
   if (els.designTempleColor) els.designTempleColor.value = style.templeColor;
   if (els.designLensColor) els.designLensColor.value = style.lensColor;
-  if (els.designDetailColor) els.designDetailColor.value = style.detailColor;
   const features = normalizeDesignFeatures(draft.features, draft.params);
   setDesignSliderFieldValue(els.designExtrudeDepth, features.extrude.depth, "mm");
-  if (els.designFilletEnabled) els.designFilletEnabled.checked = features.fillet.enabled;
-  setDesignSliderFieldValue(els.designFilletRadius, features.fillet.radius, "mm");
-  if (els.designChamferEnabled) els.designChamferEnabled.checked = features.chamfer.enabled;
-  setDesignSliderFieldValue(els.designChamferAmount, features.chamfer.amount, "mm");
+  setDesignSliderFieldValue(els.designChamferAmount, features.chamfer.enabled ? features.chamfer.amount : 0, "mm");
+  setDesignSliderFieldValue(els.designFilletRadius, features.fillet.enabled ? features.fillet.radius : 0, "mm");
   if (els.designLensRecessEnabled) els.designLensRecessEnabled.checked = features.lensRecess.enabled;
   setDesignFieldValue(els.designLensRecessDepth, features.lensRecess.depth);
   const rawConstruction = normalizeDesignConstruction(draft.construction);
@@ -3765,10 +3762,12 @@ function handleDesignOperationChange(event) {
       designTempleSketchSelectedIndex = 0;
     }
   }
+  const nextChamferAmount = parseDesignNumber(els.designChamferAmount?.value, 0);
+  const nextFilletRadius = parseDesignNumber(els.designFilletRadius?.value, 0);
   const features = normalizeDesignFeatures({
     extrude: { depth: els.designExtrudeDepth?.value },
-    fillet: { enabled: els.designFilletEnabled?.checked, radius: els.designFilletRadius?.value },
-    chamfer: { enabled: els.designChamferEnabled?.checked, amount: els.designChamferAmount?.value },
+    fillet: { enabled: nextFilletRadius > 0.001, radius: nextFilletRadius },
+    chamfer: { enabled: nextChamferAmount > 0.001, amount: nextChamferAmount },
     lensRecess: { enabled: els.designLensRecessEnabled?.checked, depth: els.designLensRecessDepth?.value }
   }, state.designDraft.params);
   state.designDraft.features = features;
@@ -3797,8 +3796,7 @@ function handleDesignOperationChange(event) {
     browBar: false,
     frameColor: els.designFrameColor?.value,
     templeColor: els.designTempleColor?.value,
-    lensColor: els.designLensColor?.value,
-    detailColor: els.designDetailColor?.value
+    lensColor: els.designLensColor?.value
   });
   state.designDraft.construction = normalizeDesignTempleTextPlacement(
     state.designDraft.construction,
