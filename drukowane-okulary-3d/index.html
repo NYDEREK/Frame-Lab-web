@@ -511,6 +511,11 @@
               <label><span>Temples</span><input id="designTempleColor" type="color" value="#ff741f" /></label>
               <label><span>Lens</span><input id="designLensColor" type="color" value="#202529" /></label>
             </div>
+            <div class="design-opacity-controls">
+              <label><span>Front opacity</span><input id="designFrameOpacity" type="range" min="15" max="100" step="1" value="100" /><small>100%</small></label>
+              <label><span>Temple opacity</span><input id="designTempleOpacity" type="range" min="15" max="100" step="1" value="100" /><small>100%</small></label>
+              <label><span>Lens opacity</span><input id="designLensOpacity" type="range" min="15" max="100" step="1" value="62" /><small>62%</small></label>
+            </div>
           </section>
           <section id="designOperationsPanel" class="design-operations" role="tabpanel">
             <section class="design-control-section design-front-point-section">
@@ -689,12 +694,30 @@
           <footer class="design-submit">
             <p id="designStatus" class="design-note"></p>
             <div id="designSubmissionStatus" class="design-submission-status"></div>
-            <div class="design-submit-actions">
-              <button id="resetDesign" type="button">Reset</button>
-              <button id="exportDesign3mf" type="button" class="accent">3MF full export</button>
-              <button id="downloadDesignScad" type="button">Project .zip</button>
-              <button id="saveDesignCollection" type="button" class="accent" hidden>Save collection</button>
-              <button id="submitDesign" type="button" class="accent">Submit for review</button>
+            <div class="design-submit-groups">
+              <section class="design-action-section design-export-section" aria-label="3MF export">
+                <header>
+                  <span>Export</span>
+                  <strong>3MF production files</strong>
+                </header>
+                <div class="design-submit-actions">
+                  <button id="resetDesign" type="button">Reset</button>
+                  <button id="exportDesign3mf" type="button" class="accent">3MF full export</button>
+                  <button id="downloadDesignScad" type="button">Project .zip</button>
+                </div>
+              </section>
+              <section id="designPublishingPanel" class="design-action-section design-publishing-section" aria-label="Publishing">
+                <header>
+                  <span>Publishing</span>
+                  <strong>Collection review</strong>
+                  <em id="designPublishingComingSoon" hidden>Coming soon</em>
+                </header>
+                <p>Share creator-made frames with the public Collections gallery after review.</p>
+                <div class="design-submit-actions">
+                  <button id="saveDesignCollection" type="button" class="accent" hidden>Save collection</button>
+                  <button id="submitDesign" type="button" class="accent">Submit for review</button>
+                </div>
+              </section>
             </div>
           </footer>
         </aside>
@@ -793,6 +816,13 @@
             </div>
           </div>
           <div id="planContentEditor" class="plan-content-editor"></div>
+          <label class="settings-toggle publishing-toggle">
+            <input id="publishingEnabledToggle" type="checkbox" />
+            <span>
+              <strong>Enable public publishing</strong>
+              <small>Unlock Submit for review for non-developer accounts after the supporter goal.</small>
+            </span>
+          </label>
           <div id="pageContentEditor" class="page-content-editor"></div>
         </section>
       </section>

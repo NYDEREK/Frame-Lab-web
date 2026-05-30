@@ -179,6 +179,9 @@ const defaultDesignStyle = {
   frameColor: "#ff741f",
   templeColor: "#ff741f",
   lensColor: "#202529",
+  frameOpacity: 1,
+  templeOpacity: 1,
+  lensOpacity: 0.62,
   detailColor: "#e59a62"
 };
 const defaultDesignSketchPoints = [
@@ -367,6 +370,7 @@ const defaultBrandSettings = {
   heroText: "Choose a collection, combine a front with temples, and prepare a clean production kit for additive manufacturing.",
   heroImage: "",
   heroModelId: "",
+  publishingEnabled: false,
   content: structuredClone(defaultContentSettings)
 };
 const accountStorageKey = "framelab.account.v1";
@@ -803,11 +807,14 @@ const els = {
   designRightTempleTextControls: document.querySelector("#designRightTempleTextControls"),
   designTempleText: document.querySelector("#designTempleText"),
   designRightTempleText: document.querySelector("#designRightTempleText"),
-  designBrowBar: document.querySelector("#designBrowBar"),
-  designFrameColor: document.querySelector("#designFrameColor"),
-  designTempleColor: document.querySelector("#designTempleColor"),
-  designLensColor: document.querySelector("#designLensColor"),
-  designPublicParameters: document.querySelector("#designPublicParameters"),
+	  designBrowBar: document.querySelector("#designBrowBar"),
+	  designFrameColor: document.querySelector("#designFrameColor"),
+	  designTempleColor: document.querySelector("#designTempleColor"),
+	  designLensColor: document.querySelector("#designLensColor"),
+	  designFrameOpacity: document.querySelector("#designFrameOpacity"),
+	  designTempleOpacity: document.querySelector("#designTempleOpacity"),
+	  designLensOpacity: document.querySelector("#designLensOpacity"),
+	  designPublicParameters: document.querySelector("#designPublicParameters"),
   designProductionChecks: document.querySelector("#designProductionChecks"),
   addSketchPoint: document.querySelector("#addSketchPoint"),
   removeSketchPoint: document.querySelector("#removeSketchPoint"),
@@ -853,6 +860,8 @@ const els = {
   designDimensions: document.querySelector("#designDimensions"),
   designStatus: document.querySelector("#designStatus"),
   designSubmissionStatus: document.querySelector("#designSubmissionStatus"),
+  designPublishingPanel: document.querySelector("#designPublishingPanel"),
+  designPublishingComingSoon: document.querySelector("#designPublishingComingSoon"),
   resetDesign: document.querySelector("#resetDesign"),
   exportDesign3mf: document.querySelector("#exportDesign3mf"),
   downloadDesignScad: document.querySelector("#downloadDesignScad"),
@@ -881,20 +890,21 @@ const els = {
   heroImageInput: document.querySelector("#heroImageInput"),
   resetHeroImage: document.querySelector("#resetHeroImage"),
   brandSettingsNote: document.querySelector("#brandSettingsNote"),
-	  storageStatusNote: document.querySelector("#storageStatusNote"),
-	  refreshStorageDebug: document.querySelector("#refreshStorageDebug"),
-	  storageDebugPanel: document.querySelector("#storageDebugPanel"),
-	  planContentEditor: document.querySelector("#planContentEditor"),
-	  pageContentEditor: document.querySelector("#pageContentEditor"),
-	  printGuideHeading: document.querySelector("#printGuideHeading"),
-	  printGuideIntro: document.querySelector("#printGuideIntro"),
-	  printGuideFigure: document.querySelector("#printGuideFigure"),
-	  printGuideImage: document.querySelector("#printGuideImage"),
-	  openPrintGuideImage: document.querySelector("#openPrintGuideImage"),
-	  imageLightbox: document.querySelector("#imageLightbox"),
-	  lightboxImage: document.querySelector("#lightboxImage"),
-	  closeImageLightbox: document.querySelector("#closeImageLightbox"),
-	  roadmapHeading: document.querySelector("#roadmapHeading"),
+  storageStatusNote: document.querySelector("#storageStatusNote"),
+  refreshStorageDebug: document.querySelector("#refreshStorageDebug"),
+  storageDebugPanel: document.querySelector("#storageDebugPanel"),
+  publishingEnabledToggle: document.querySelector("#publishingEnabledToggle"),
+  planContentEditor: document.querySelector("#planContentEditor"),
+  pageContentEditor: document.querySelector("#pageContentEditor"),
+  printGuideHeading: document.querySelector("#printGuideHeading"),
+  printGuideIntro: document.querySelector("#printGuideIntro"),
+  printGuideFigure: document.querySelector("#printGuideFigure"),
+  printGuideImage: document.querySelector("#printGuideImage"),
+  openPrintGuideImage: document.querySelector("#openPrintGuideImage"),
+  imageLightbox: document.querySelector("#imageLightbox"),
+  lightboxImage: document.querySelector("#lightboxImage"),
+  closeImageLightbox: document.querySelector("#closeImageLightbox"),
+  roadmapHeading: document.querySelector("#roadmapHeading"),
 	  roadmapItems: document.querySelector("#roadmapItems"),
 	  licenseInfoHeading: document.querySelector("#licenseInfoHeading"),
 	  licenseInfoBody: document.querySelector("#licenseInfoBody"),
@@ -1120,8 +1130,21 @@ function normalizeDesignStyle(style = {}) {
     frameColor,
     templeColor: sanitizeHexColor(style.templeColor, frameColor),
     lensColor: sanitizeHexColor(style.lensColor, defaultDesignStyle.lensColor),
+    frameOpacity: normalizeDesignOpacity(style.frameOpacity ?? style.frontOpacity, defaultDesignStyle.frameOpacity),
+    templeOpacity: normalizeDesignOpacity(style.templeOpacity, defaultDesignStyle.templeOpacity),
+    lensOpacity: normalizeDesignOpacity(style.lensOpacity, defaultDesignStyle.lensOpacity),
     detailColor: sanitizeHexColor(style.detailColor, defaultDesignStyle.detailColor)
   };
+}
+
+function normalizeDesignOpacity(value, fallback = 1) {
+  const parsed = parseDesignNumber(value, fallback);
+  const unitValue = parsed > 1 ? parsed / 100 : parsed;
+  return THREE.MathUtils.clamp(unitValue, 0.15, 1);
+}
+
+function designOpacityPercent(value, fallback = 1) {
+  return Math.round(normalizeDesignOpacity(value, fallback) * 100);
 }
 
 function createDefaultDesignFeatures(params = defaultParams) {
@@ -2192,6 +2215,17 @@ function centerDesignModelForAssemblyPivot() {
   designModelGroup.updateMatrixWorld(true);
 }
 
+function designPreviewMaterial(MaterialType, options = {}, opacity = 1) {
+  const normalizedOpacity = normalizeDesignOpacity(opacity, 1);
+  const transparent = normalizedOpacity < 0.995;
+  return new MaterialType({
+    ...options,
+    transparent,
+    opacity: normalizedOpacity,
+    depthWrite: !transparent
+  });
+}
+
 function renderDesignPreview(options = {}) {
   if (!designModelGroup) return;
   const { fitView = false } = options;
@@ -2200,17 +2234,15 @@ function renderDesignPreview(options = {}) {
   const style = normalizeDesignStyle(definition);
   designModelGroup.clear();
   designModelGroup.rotation.set(designViewerRotation.x, designViewerRotation.y, designViewerRotation.z);
-  const frontMaterial = new THREE.MeshStandardMaterial({ color: style.frameColor, roughness: 0.37, metalness: 0.035 });
-  const templeMaterial = new THREE.MeshStandardMaterial({ color: style.templeColor, roughness: 0.37, metalness: 0.035 });
+  const frontMaterial = designPreviewMaterial(THREE.MeshStandardMaterial, { color: style.frameColor, roughness: 0.37, metalness: 0.035 }, style.frameOpacity);
+  const templeMaterial = designPreviewMaterial(THREE.MeshStandardMaterial, { color: style.templeColor, roughness: 0.37, metalness: 0.035 }, style.templeOpacity);
   const detailMaterial = new THREE.MeshStandardMaterial({ color: style.detailColor, roughness: 0.42, metalness: 0.02 });
-  const lensMaterial = new THREE.MeshPhysicalMaterial({
+  const lensMaterial = designPreviewMaterial(THREE.MeshPhysicalMaterial, {
     color: style.lensColor,
-    transparent: true,
-    opacity: 0.62,
     roughness: 0.16,
     metalness: 0.04,
-    transmission: 0.24
-  });
+    transmission: style.lensOpacity < 0.995 ? 0.24 : 0
+  }, style.lensOpacity);
   const outerLensWidth = p.lens_width + p.rim_thickness * 2;
   const center = p.bridge_width / 2 + outerLensWidth / 2;
   addDesignFrontBody(p, frontMaterial, definition);
@@ -3310,6 +3342,15 @@ function bindUi() {
     applyBrandSettings();
     if (els.brandSettingsNote) els.brandSettingsNote.textContent = "Print guide image cleared. Save to publish it.";
   });
+  els.publishingEnabledToggle?.addEventListener("change", () => {
+    state.brandSettings.publishingEnabled = els.publishingEnabledToggle.checked === true;
+    updateDesignPublishingAccess();
+    if (els.brandSettingsNote) {
+      els.brandSettingsNote.textContent = state.brandSettings.publishingEnabled
+        ? "Public publishing will be enabled after saving."
+        : "Public publishing will be locked after saving.";
+    }
+  });
   els.saveBrandSettings?.addEventListener("click", () => saveBrandSettings());
   els.resetBrandSettings?.addEventListener("click", () => resetBrandSettings());
   els.refreshStorageDebug?.addEventListener("click", () => loadStorageDebug());
@@ -3547,7 +3588,8 @@ function setDesignSliderFieldValue(field, value, unit = "") {
   setDesignFieldValue(field, value);
   const readout = field?.nextElementSibling;
   if (readout && ["OUTPUT", "SMALL"].includes(readout.tagName)) {
-    readout.textContent = `${formatNumber(value)}${unit ? ` ${unit}` : ""}`;
+    const separator = unit === "%" ? "" : " ";
+    readout.textContent = `${formatNumber(value)}${unit ? `${separator}${unit}` : ""}`;
   }
 }
 
@@ -3575,6 +3617,9 @@ function syncDesignFields() {
   if (els.designFrameColor) els.designFrameColor.value = style.frameColor;
   if (els.designTempleColor) els.designTempleColor.value = style.templeColor;
   if (els.designLensColor) els.designLensColor.value = style.lensColor;
+  setDesignSliderFieldValue(els.designFrameOpacity, designOpacityPercent(style.frameOpacity, 1), "%");
+  setDesignSliderFieldValue(els.designTempleOpacity, designOpacityPercent(style.templeOpacity, 1), "%");
+  setDesignSliderFieldValue(els.designLensOpacity, designOpacityPercent(style.lensOpacity, defaultDesignStyle.lensOpacity), "%");
   const features = normalizeDesignFeatures(draft.features, draft.params);
   setDesignSliderFieldValue(els.designExtrudeDepth, features.extrude.depth, "mm");
   setDesignSliderFieldValue(els.designChamferAmount, features.chamfer.enabled ? features.chamfer.amount : 0, "mm");
@@ -3879,7 +3924,10 @@ function handleDesignOperationChange(event) {
     browBar: false,
     frameColor: els.designFrameColor?.value,
     templeColor: els.designTempleColor?.value,
-    lensColor: els.designLensColor?.value
+    lensColor: els.designLensColor?.value,
+    frameOpacity: Number(els.designFrameOpacity?.value) / 100,
+    templeOpacity: Number(els.designTempleOpacity?.value) / 100,
+    lensOpacity: Number(els.designLensOpacity?.value) / 100
   });
   state.designDraft.construction = normalizeDesignTempleTextPlacement(
     state.designDraft.construction,
@@ -4159,6 +4207,7 @@ async function exportDesign3mf() {
     exportGroup.position.set(0, 0, 0);
     exportGroup.rotation.set(0, 0, 0);
     exportGroup.scale.setScalar(1);
+    makeExportMaterialsOpaque(exportGroup);
     const mesh = collectMeshFromObject(exportGroup);
     if (!mesh.triangles.length) throw new Error("No geometry to export.");
     const fileName = `${slugify(state.designDraft.name) || "frame-lab-creator"}.3mf`;
@@ -4184,6 +4233,29 @@ function setDesignNote(message, tone = "") {
   else delete els.designStatus.dataset.tone;
 }
 
+function publicPublishingEnabled() {
+  return state.brandSettings?.publishingEnabled === true;
+}
+
+function canUsePublishing() {
+  return isDeveloper() || publicPublishingEnabled();
+}
+
+function updateDesignPublishingAccess() {
+  const locked = !canUsePublishing();
+  if (els.designPublishingPanel) {
+    els.designPublishingPanel.classList.toggle("is-disabled", locked);
+    els.designPublishingPanel.setAttribute("aria-disabled", locked ? "true" : "false");
+  }
+  if (els.designPublishingComingSoon) {
+    els.designPublishingComingSoon.hidden = !locked;
+  }
+  if (els.submitDesign) {
+    els.submitDesign.disabled = locked;
+    els.submitDesign.title = locked ? "Publishing is coming soon." : "";
+  }
+}
+
 function captureDesignThumbnail() {
   if (!designRenderer || !designScene || !designCamera) return "";
   try {
@@ -4202,6 +4274,10 @@ function captureDesignThumbnail() {
 
 async function submitDesignForReview() {
   handleDesignProjectCopyChange();
+  if (!canUsePublishing()) {
+    setDesignNote("Publishing is coming soon. Export stays available now, and review submissions will open after the supporter goal.", "error");
+    return;
+  }
   if (state.account.role === "visitor" || !sessionToken()) {
     els.accountPanel.hidden = false;
     setDesignNote("Sign in to submit your custom frame for gallery review.");
@@ -4654,6 +4730,7 @@ function normalizeBrandSettings(settings = {}) {
     heroText: String(settings.heroText || defaultBrandSettings.heroText).trim().slice(0, 320) || defaultBrandSettings.heroText,
     heroImage,
     heroModelId: String(settings.heroModelId || "").trim().slice(0, 120),
+    publishingEnabled: settings.publishingEnabled === true,
     content: normalizeContentSettings(settings.content)
   };
 }
@@ -4726,18 +4803,19 @@ function applyBrandSettings() {
   document.documentElement.style.setProperty("--loader-track", rgbaFromHex(text, 0.08));
   document.documentElement.style.colorScheme = colorLuminance(background) > 0.55 ? "light" : "dark";
   if (scene) scene.background = new THREE.Color(sceneBackgroundColor());
-	  if (renderer && scene && camera) render();
-	  if (designScene) {
-	    designScene.background = new THREE.Color(sceneBackgroundColor());
-	    renderDesignPreview({ fitView: false });
-	  }
-	  localStorage.setItem(brandSettingsStorageKey, JSON.stringify(state.brandSettings));
-	  syncBrandSettingsUi();
-	  applyHeroSettings();
-	  renderPlanCards();
-	  renderMarketingContent();
-	  renderFitRecommendation();
-	}
+  if (renderer && scene && camera) render();
+  if (designScene) {
+    designScene.background = new THREE.Color(sceneBackgroundColor());
+    renderDesignPreview({ fitView: false });
+  }
+  localStorage.setItem(brandSettingsStorageKey, JSON.stringify(state.brandSettings));
+  syncBrandSettingsUi();
+  applyHeroSettings();
+  renderPlanCards();
+  renderMarketingContent();
+  renderFitRecommendation();
+  updateDesignPublishingAccess();
+}
 
 function syncBrandSettingsUi() {
   if (els.brandAccentColor) els.brandAccentColor.value = state.brandSettings.accentColor;
@@ -4747,18 +4825,19 @@ function syncBrandSettingsUi() {
   if (els.brandTextColor) els.brandTextColor.value = state.brandSettings.textColor;
   if (els.brandMutedColor) els.brandMutedColor.value = state.brandSettings.mutedColor;
   if (els.brandBorderColor) els.brandBorderColor.value = state.brandSettings.borderColor;
-	  if (els.brandSceneColor) els.brandSceneColor.value = state.brandSettings.sceneColor;
-	  if (els.heroTitleInput) els.heroTitleInput.value = state.brandSettings.heroTitle;
-	  if (els.heroTextInput) els.heroTextInput.value = state.brandSettings.heroText;
-	  renderHeroEditorTargetOptions();
-	  renderContentEditors();
-	}
+  if (els.brandSceneColor) els.brandSceneColor.value = state.brandSettings.sceneColor;
+  if (els.heroTitleInput) els.heroTitleInput.value = state.brandSettings.heroTitle;
+  if (els.heroTextInput) els.heroTextInput.value = state.brandSettings.heroText;
+  if (els.publishingEnabledToggle) els.publishingEnabledToggle.checked = state.brandSettings.publishingEnabled === true;
+  renderHeroEditorTargetOptions();
+  renderContentEditors();
+}
 
-	function applyHeroSettings() {
+function applyHeroSettings() {
   if (els.heroTitle) els.heroTitle.textContent = state.brandSettings.heroTitle;
   if (els.heroText) els.heroText.textContent = state.brandSettings.heroText;
-	  if (els.heroImage) els.heroImage.src = state.brandSettings.heroImage || defaultHeroImage;
-	}
+  if (els.heroImage) els.heroImage.src = state.brandSettings.heroImage || defaultHeroImage;
+}
 
 function renderPlanCards() {
   if (!els.pricingGrid && !els.publicPricingGrid) return;
@@ -4986,23 +5065,24 @@ function parseFaqItems(value) {
     });
 }
 
-	function syncBrandSettingsFromInputs() {
-	  state.brandSettings = normalizeBrandSettings({
-	    ...state.brandSettings,
+function syncBrandSettingsFromInputs() {
+  state.brandSettings = normalizeBrandSettings({
+    ...state.brandSettings,
     accentColor: els.brandAccentText?.value || els.brandAccentColor?.value || state.brandSettings.accentColor,
     backgroundColor: els.brandBackgroundColor?.value || state.brandSettings.backgroundColor,
     surfaceColor: els.brandSurfaceColor?.value || state.brandSettings.surfaceColor,
     textColor: els.brandTextColor?.value || state.brandSettings.textColor,
     mutedColor: els.brandMutedColor?.value || state.brandSettings.mutedColor,
-	    borderColor: els.brandBorderColor?.value || state.brandSettings.borderColor,
-	    sceneColor: els.brandSceneColor?.value || state.brandSettings.sceneColor,
-	    heroTitle: els.heroTitleInput?.value || state.brandSettings.heroTitle,
-	    heroText: els.heroTextInput?.value || state.brandSettings.heroText,
-	    heroModelId: els.heroEditorTarget?.value || state.brandSettings.heroModelId,
-	    content: readContentSettingsFromEditor()
-	  });
-	  applyBrandSettings();
-	}
+    borderColor: els.brandBorderColor?.value || state.brandSettings.borderColor,
+    sceneColor: els.brandSceneColor?.value || state.brandSettings.sceneColor,
+    heroTitle: els.heroTitleInput?.value || state.brandSettings.heroTitle,
+    heroText: els.heroTextInput?.value || state.brandSettings.heroText,
+    heroModelId: els.heroEditorTarget?.value || state.brandSettings.heroModelId,
+    publishingEnabled: els.publishingEnabledToggle?.checked === true,
+    content: readContentSettingsFromEditor()
+  });
+  applyBrandSettings();
+}
 
 async function hydrateSystemStatus() {
   try {
@@ -6101,10 +6181,14 @@ function renderPublishedDesignPreview() {
   const p = designGeometryParams(state.params);
   const definition = normalizeParametricDesign(state.activeParametricDesign);
   const style = normalizeDesignStyle(definition);
-  const frontMaterial = new THREE.MeshStandardMaterial({ color: style.frameColor, roughness: 0.37, metalness: 0.035 });
-  const templeMaterial = new THREE.MeshStandardMaterial({ color: style.templeColor, roughness: 0.37, metalness: 0.035 });
+  const frontMaterial = designPreviewMaterial(THREE.MeshStandardMaterial, { color: style.frameColor, roughness: 0.37, metalness: 0.035 }, style.frameOpacity);
+  const templeMaterial = designPreviewMaterial(THREE.MeshStandardMaterial, { color: style.templeColor, roughness: 0.37, metalness: 0.035 }, style.templeOpacity);
   const detailMaterial = new THREE.MeshStandardMaterial({ color: style.detailColor, roughness: 0.42, metalness: 0.02 });
-  const lensMaterial = new THREE.MeshPhysicalMaterial({ color: style.lensColor, transparent: true, opacity: 0.62, roughness: 0.16, transmission: 0.24 });
+  const lensMaterial = designPreviewMaterial(THREE.MeshPhysicalMaterial, {
+    color: style.lensColor,
+    roughness: 0.16,
+    transmission: style.lensOpacity < 0.995 ? 0.24 : 0
+  }, style.lensOpacity);
   const outerLensWidth = p.lens_width + p.rim_thickness * 2;
   const center = p.bridge_width / 2 + outerLensWidth / 2;
   addDesignFrontBody(p, frontMaterial, definition, modelGroup);
@@ -6888,6 +6972,7 @@ function updateAccountUi() {
   els.openLicenses.hidden = !isDeveloper();
   if (els.saveDesignCollection) els.saveDesignCollection.hidden = !isDeveloper();
   if (els.submitDesign) els.submitDesign.hidden = isDeveloper();
+  updateDesignPublishingAccess();
   els.studioPanel.hidden = els.studioPanel.hidden || !isDeveloper();
   els.collectionEditorPanel.hidden = els.collectionEditorPanel.hidden || !isDeveloper();
   els.licensePanel.hidden = els.licensePanel.hidden || !isDeveloper();
@@ -9299,6 +9384,25 @@ function showLoader(visible, title = "Preparing file", text = "Preparing product
 
 function collectCurrentMesh() {
   return collectMeshFromObject(modelGroup);
+}
+
+function makeExportMaterialsOpaque(root) {
+  root.traverse((child) => {
+    if (!child.isMesh || !child.material) return;
+    const makeOpaque = (material) => {
+      if (!material) return material;
+      const clone = material.clone();
+      clone.transparent = false;
+      clone.opacity = 1;
+      clone.depthWrite = true;
+      if ("transmission" in clone) clone.transmission = 0;
+      clone.needsUpdate = true;
+      return clone;
+    };
+    child.material = Array.isArray(child.material)
+      ? child.material.map((material) => makeOpaque(material))
+      : makeOpaque(child.material);
+  });
 }
 
 function collectMeshFromObject(root) {

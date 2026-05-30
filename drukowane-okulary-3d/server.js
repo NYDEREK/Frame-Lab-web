@@ -177,6 +177,7 @@ const defaultBrandSettings = {
   heroText: "Choose a collection, combine a front with temples, and prepare a clean production kit for additive manufacturing.",
   heroImage: "",
   heroModelId: "",
+  publishingEnabled: false,
   content: cloneJson(defaultContentSettings)
 };
 const maxRequestBodySize = 80_000_000;
@@ -365,6 +366,7 @@ function sanitizeSettings(settings = {}) {
     heroText: String(settings.heroText || defaultBrandSettings.heroText).trim().slice(0, 320) || defaultBrandSettings.heroText,
     heroImage,
     heroModelId: String(settings.heroModelId || "").trim().slice(0, 120),
+    publishingEnabled: settings.publishingEnabled === true,
     content: sanitizeContentSettings(settings.content)
   };
 }
@@ -1198,6 +1200,10 @@ async function handleApi(req, res, url) {
   if (req.method === "POST" && pathname === "/api/design-submissions") {
     const user = currentUser(req, db);
     if (!user) return sendJson(res, 401, { error: "Login is required to submit a design." });
+    const settings = sanitizeSettings(db.settings);
+    if (user.role !== "developer" && settings.publishingEnabled !== true) {
+      return sendJson(res, 403, { error: "Publishing is coming soon." });
+    }
     const body = await readBody(req);
     const submission = sanitizeDesignSubmission(body, user);
     if (!submission.scadSource.trim()) return sendJson(res, 400, { error: "OpenSCAD source is required." });
