@@ -5777,10 +5777,17 @@ function renderComponentFileList() {
 function renderFrameEditorAssets() {
   if (!els.frameEditorPhoto || !els.frameEditorComponentGallery) return;
   const model = state.editingModelId ? state.models.find((item) => item.id === state.editingModelId) : null;
+  const pendingThumbnail = state.croppedCollectionImage;
   if (!model) {
-    els.frameEditorPhoto.removeAttribute("src");
-    els.frameEditorPhoto.alt = "";
-    els.frameEditorPhotoCaption.textContent = "Save the frame first to manage its photo and components here.";
+    if (pendingThumbnail) {
+      els.frameEditorPhoto.src = pendingThumbnail;
+      els.frameEditorPhoto.alt = "Custom collection thumbnail preview";
+      els.frameEditorPhotoCaption.textContent = "Custom thumbnail ready. Save collection to publish it.";
+    } else {
+      els.frameEditorPhoto.removeAttribute("src");
+      els.frameEditorPhoto.alt = "";
+      els.frameEditorPhotoCaption.textContent = "Save the frame first to manage its photo and components here.";
+    }
     els.frameEditorComponentGallery.innerHTML = `
       <div class="frame-component-empty">
         <strong>No frame selected.</strong>
@@ -5789,10 +5796,10 @@ function renderFrameEditorAssets() {
     `;
     return;
   }
-  const thumbnail = model.thumbnail || makeAutoCollectionThumbnail(model.name, model.params || defaultParams, model.category);
+  const thumbnail = pendingThumbnail || model.thumbnail || makeAutoCollectionThumbnail(model.name, model.params || defaultParams, model.category);
   els.frameEditorPhoto.src = thumbnail;
-  els.frameEditorPhoto.alt = `${model.name} photo`;
-  els.frameEditorPhotoCaption.textContent = model.name;
+  els.frameEditorPhoto.alt = pendingThumbnail ? `${model.name} custom thumbnail preview` : `${model.name} photo`;
+  els.frameEditorPhotoCaption.textContent = pendingThumbnail ? "Custom thumbnail ready. Save changes to publish it." : model.name;
 
   const components = componentsForModel(model);
   if (!components.length) {
@@ -7540,8 +7547,7 @@ function handleGalleryClick(event) {
       log("Editing is available only in developer mode.");
       return;
     }
-    if (model.design) loadPublishedDesignIntoLab(model);
-    else startModelEdit(model);
+    startModelEdit(model);
     return;
   }
   if (button.dataset.action === "move-left" || button.dataset.action === "move-right") {
@@ -7584,8 +7590,7 @@ function handleDeveloperCollectionListClick(event) {
   const model = state.models.find((item) => item.id === row?.dataset.modelId);
   if (!model) return;
   if (button.dataset.devAction === "edit") {
-    if (model.design) loadPublishedDesignIntoLab(model);
-    else startModelEdit(model);
+    startModelEdit(model);
     return;
   }
   if (button.dataset.devAction === "move-left" || button.dataset.devAction === "move-right") {
@@ -7773,6 +7778,8 @@ async function addCollectionFromStudio() {
   selectModel(model.id, { logSelection: false, captureThumbnail: !thumbnail });
   renderGallery();
   clearCollectionUploadInputs();
+  state.cropImage = null;
+  state.croppedCollectionImage = "";
   els.addCollection.textContent = "Save changes";
   syncStudioModeUi();
   navigateToView("collection-editor");
@@ -7837,6 +7844,7 @@ function applyImageCrop() {
   state.croppedCollectionImage = els.cropCanvas.toDataURL("image/jpeg", 0.92);
   els.cropPanel.hidden = true;
   els.cropNote.textContent = "Cropped image ready.";
+  renderFrameEditorAssets();
   log("Cropped gallery image ready.");
 }
 
@@ -7845,6 +7853,7 @@ function cancelImageCrop() {
   state.croppedCollectionImage = "";
   els.collectionImageInput.value = "";
   els.cropPanel.hidden = true;
+  renderFrameEditorAssets();
 }
 
 function handleComponentFileSelect() {
@@ -7876,6 +7885,8 @@ function syncComponentSideInput() {
 function startModelEdit(model) {
   selectModel(model.id, { logSelection: false, captureThumbnail: false });
   state.editingModelId = model.id;
+  state.cropImage = null;
+  state.croppedCollectionImage = "";
   els.collectionTitle.value = model.name;
   els.collectionCategory.value = model.category === "optical" ? "optical" : "sun";
   els.collectionAccess.value = "basic";
