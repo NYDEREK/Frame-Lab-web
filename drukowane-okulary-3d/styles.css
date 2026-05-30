@@ -379,6 +379,56 @@ small,
   gap: clamp(0.85rem, 1.6vw, 1.25rem);
 }
 
+.pricing-carousel {
+  position: relative;
+  display: grid;
+  align-items: stretch;
+}
+
+.pricing-carousel-track {
+  display: flex;
+  grid-template-columns: none;
+  gap: clamp(0.85rem, 1.6vw, 1.25rem);
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x mandatory;
+  scroll-padding-inline: clamp(0.25rem, 2vw, 1rem);
+  padding: 0.35rem clamp(2.8rem, 5vw, 4.5rem) 1rem;
+  scrollbar-width: thin;
+}
+
+.pricing-carousel-track .pricing-card {
+  flex: 0 0 clamp(18.5rem, 29vw, 27rem);
+  min-height: 32rem;
+  scroll-snap-align: center;
+}
+
+.pricing-carousel-control {
+  position: absolute;
+  z-index: 2;
+  top: 50%;
+  width: 2.7rem;
+  height: 5.2rem;
+  transform: translateY(-50%);
+  display: grid;
+  place-items: center;
+  border-color: color-mix(in srgb, var(--accent) 36%, var(--line));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface) 80%, transparent);
+  color: var(--accent-2);
+  font-size: 2.2rem;
+  line-height: 1;
+  box-shadow: var(--shadow);
+}
+
+.pricing-carousel-control.previous {
+  left: 0;
+}
+
+.pricing-carousel-control.next {
+  right: 0;
+}
+
 .pricing-card {
   display: grid;
   gap: 0.9rem;
@@ -793,7 +843,7 @@ small,
   color: var(--muted);
   text-decoration: none;
   font-size: 0.9rem;
-  font-weight: 760;
+  font-weight: 850;
   transition: color 160ms ease, background-color 160ms ease;
 }
 
@@ -810,6 +860,7 @@ button.nav-link {
 
 .nav-link.active {
   background: color-mix(in srgb, var(--accent) 8%, transparent);
+  font-weight: 950;
 }
 
 .nav-link::after {
@@ -2639,6 +2690,15 @@ input[type="password"] {
   line-height: 1.55;
 }
 
+.public-plans-panel {
+  display: grid;
+  gap: clamp(0.9rem, 1.6vw, 1.25rem);
+}
+
+.public-plans-panel .pricing-grid {
+  margin-top: 0.35rem;
+}
+
 .roadmap-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -3504,6 +3564,21 @@ input[type="password"] {
 
   .pricing-grid {
     grid-template-columns: 1fr;
+  }
+
+  .pricing-carousel-track {
+    padding-inline: 2.25rem;
+  }
+
+  .pricing-carousel-track .pricing-card {
+    flex-basis: min(82vw, 24rem);
+    min-height: 29rem;
+  }
+
+  .pricing-carousel-control {
+    width: 2.1rem;
+    height: 4rem;
+    font-size: 1.75rem;
   }
 
   .plan-code-activation {

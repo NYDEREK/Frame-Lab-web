@@ -307,7 +307,7 @@ const defaultContentSettings = {
       period: "one-time support",
       exports: "No Creator access included",
       description: "Support Frame Lab development without plan benefits.",
-      benefits: ["Supports Frame Lab development", "No Creator access or commercial license included", "No activation code required"]
+      benefits: []
     },
     {
       plan: "ultra_support",
@@ -719,11 +719,18 @@ const els = {
   redeemPlanLicenseCode: document.querySelector("#redeemPlanLicenseCode"),
   planLicenseCodeNote: document.querySelector("#planLicenseCodeNote"),
   makerWorldPlanTarget: document.querySelector("#makerWorldPlanTarget"),
+  publicPlanLicenseCodeInput: document.querySelector("#publicPlanLicenseCodeInput"),
+  redeemPublicPlanLicenseCode: document.querySelector("#redeemPublicPlanLicenseCode"),
+  publicPlanLicenseCodeNote: document.querySelector("#publicPlanLicenseCodeNote"),
+  publicMakerWorldPlanTarget: document.querySelector("#publicMakerWorldPlanTarget"),
   profileOpenPlans: document.querySelector("#profileOpenPlans"),
   profileSignOut: document.querySelector("#profileSignOut"),
   cancelSubscription: document.querySelector("#cancelSubscription"),
 	  closeProfilePanel: document.querySelector("#closeProfilePanel"),
-	  pricingGrid: document.querySelector("#pricingGrid"),
+  pricingGrid: document.querySelector("#pricingGrid"),
+  publicPricingGrid: document.querySelector("#publicPricingGrid"),
+  plansCarouselPrevious: document.querySelector("#plansCarouselPrevious"),
+  plansCarouselNext: document.querySelector("#plansCarouselNext"),
 	  cropPanel: document.querySelector("#cropPanel"),
   cropCanvas: document.querySelector("#cropCanvas"),
   cropZoom: document.querySelector("#cropZoom"),
@@ -840,6 +847,7 @@ const els = {
   designStatus: document.querySelector("#designStatus"),
   designSubmissionStatus: document.querySelector("#designSubmissionStatus"),
   resetDesign: document.querySelector("#resetDesign"),
+  exportDesign3mf: document.querySelector("#exportDesign3mf"),
   downloadDesignScad: document.querySelector("#downloadDesignScad"),
   saveDesignCollection: document.querySelector("#saveDesignCollection"),
   submitDesign: document.querySelector("#submitDesign"),
@@ -3117,8 +3125,9 @@ function bindUi() {
     updateAccountUi();
     if (state.account.role === "visitor") els.accountEmail.focus();
   });
-  els.plansButton.addEventListener("click", () => {
-    openPlansPanel();
+  els.plansButton.addEventListener("click", (event) => {
+    event.preventDefault();
+    scrollHomeSection("#plansPublicPanel");
   });
   els.closeAccountPanel.addEventListener("click", () => {
     els.accountPanel.hidden = true;
@@ -3161,6 +3170,17 @@ function bindUi() {
     redeemLicenseCode("plans");
   });
   els.redeemPlanLicenseCode?.addEventListener("click", () => redeemLicenseCode("plans"));
+  els.publicPlanLicenseCodeInput?.addEventListener("input", () => {
+    els.publicPlanLicenseCodeInput.value = formatLicenseCode(els.publicPlanLicenseCodeInput.value);
+  });
+  els.publicPlanLicenseCodeInput?.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    redeemLicenseCode("public-plans");
+  });
+  els.redeemPublicPlanLicenseCode?.addEventListener("click", () => redeemLicenseCode("public-plans"));
+  els.plansCarouselPrevious?.addEventListener("click", () => scrollPlansCarousel(-1));
+  els.plansCarouselNext?.addEventListener("click", () => scrollPlansCarousel(1));
   els.signOutAccount.addEventListener("click", () => signOutAccount());
   els.profileSignOut.addEventListener("click", () => signOutAccount());
   els.cancelSubscription.addEventListener("click", () => cancelSubscription());
@@ -3283,6 +3303,7 @@ function bindUi() {
   els.heroBrowse.addEventListener("click", scrollGalleryIntoView);
   els.heroEditor.addEventListener("click", () => navigateToView("design-lab"));
   els.startDesignLab?.addEventListener("click", () => {
+    if (!canOpenCreator()) return;
     resetDesignDraft();
     navigateToView("design-lab");
   });
@@ -3320,6 +3341,7 @@ function bindUi() {
   });
   els.applyDesignCode?.addEventListener("click", applyDesignCode);
   els.resetDesign?.addEventListener("click", resetDesignDraft);
+  els.exportDesign3mf?.addEventListener("click", exportDesign3mf);
   els.downloadDesignScad?.addEventListener("click", exportDesignScad);
   els.saveDesignCollection?.addEventListener("click", saveDesignToCollections);
   els.submitDesign?.addEventListener("click", submitDesignForReview);
@@ -4110,6 +4132,37 @@ async function exportDesignScad() {
   }
 }
 
+async function exportDesign3mf() {
+  handleDesignProjectCopyChange();
+  if (!(await ensureDownloadAllowed(null))) return;
+  showLoader(true, "Generating Creator 3MF", "Packing the full front, hinges, temples and lenses...");
+  await waitFrame();
+  try {
+    renderDesignPreview({ fitView: false });
+    await waitFrame();
+    if (!designModelGroup) throw new Error("Creator preview is not ready.");
+    const exportGroup = designModelGroup.clone(true);
+    exportGroup.position.set(0, 0, 0);
+    exportGroup.rotation.set(0, 0, 0);
+    exportGroup.scale.setScalar(1);
+    const mesh = collectMeshFromObject(exportGroup);
+    if (!mesh.triangles.length) throw new Error("No geometry to export.");
+    const fileName = `${slugify(state.designDraft.name) || "frame-lab-creator"}.3mf`;
+    const saved = await recordDesignDownload(fileName, mesh);
+    if (!saved) return;
+    downloadBlob(fileName, make3mfBlob(mesh, {
+      title: state.designDraft.name || "Frame Lab Creator",
+      lens: "Generated acrylic lenses"
+    }));
+    setDesignNote(`Complete 3MF exported: ${mesh.triangles.length.toLocaleString("en-US")} triangles.`);
+  } catch (error) {
+    setDesignNote(`Could not export 3MF: ${error.message}`);
+    log(`Could not export Creator 3MF: ${error.message}`);
+  } finally {
+    showLoader(false);
+  }
+}
+
 function setDesignNote(message) {
   if (els.designStatus) els.designStatus.textContent = message;
 }
@@ -4605,19 +4658,20 @@ function syncBrandSettingsUi() {
 	}
 
 function renderPlanCards() {
-  if (!els.pricingGrid) return;
+  if (!els.pricingGrid && !els.publicPricingGrid) return;
   const content = normalizeContentSettings(state.brandSettings.content);
   const plans = content.plans;
   const makerWorldUrl = sanitizeExternalUrl(content.makerWorldUrl, "");
-  if (els.makerWorldPlanTarget) {
-    els.makerWorldPlanTarget.innerHTML = makerWorldUrl
+  [els.makerWorldPlanTarget, els.publicMakerWorldPlanTarget].forEach((target) => {
+    if (!target) return;
+    target.innerHTML = makerWorldUrl
       ? `<a href="${escapeAttr(makerWorldUrl)}" target="_blank" rel="noopener">MakerWorld</a>`
       : "MakerWorld";
-  }
-  els.pricingGrid.innerHTML = plans.map((plan) => {
+  });
+  const cards = plans.map((plan) => {
     const featured = plan.plan === "commercial_lifetime";
     const active = plan.access !== "free" && state.account.plan === plan.access;
-    const benefits = normalizePlanBenefits(plan.benefits, [plan.exports, plan.description]);
+    const benefits = plan.plan === "supporter" ? [] : normalizePlanBenefits(plan.benefits, [plan.exports, plan.description]);
     return `
       <article class="pricing-card${featured ? " featured" : ""}${active ? " active" : ""}${plan.access === "free" ? " supporter" : ""}">
         <header>
@@ -4626,12 +4680,24 @@ function renderPlanCards() {
         </header>
         <div class="price-line"><strong>${escapeHtml(plan.price)}</strong><small>${escapeHtml(plan.period)}</small></div>
         <p>${escapeHtml(plan.description)}</p>
-        <ul class="pricing-benefits">
-          ${benefits.map((benefit) => `<li>${escapeHtml(benefit)}</li>`).join("")}
-        </ul>
+        ${benefits.length ? `
+          <ul class="pricing-benefits">
+            ${benefits.map((benefit) => `<li>${escapeHtml(benefit)}</li>`).join("")}
+          </ul>
+        ` : ""}
       </article>
     `;
   }).join("");
+  if (els.pricingGrid) els.pricingGrid.innerHTML = cards;
+  if (els.publicPricingGrid) els.publicPricingGrid.innerHTML = cards;
+}
+
+function scrollPlansCarousel(direction) {
+  const track = els.publicPricingGrid;
+  if (!track) return;
+  const distance = Math.max(280, track.clientWidth * 0.82);
+  const maxScroll = Math.max(0, track.scrollWidth - track.clientWidth);
+  track.scrollLeft = THREE.MathUtils.clamp(track.scrollLeft + direction * distance, 0, maxScroll);
 }
 
 function renderMarketingContent() {
@@ -6325,6 +6391,7 @@ function homeNavigationEntries() {
   return [
     { selector: "#top", element: document.querySelector(".hero-page"), link: els.openHome },
     { selector: "#galleryPanel", element: els.galleryPanel, link: els.openGallery },
+    { selector: "#plansPublicPanel", element: document.querySelector("#plansPublicPanel"), link: els.plansButton },
     { selector: "#printGuidePanel", element: document.querySelector("#printGuidePanel"), link: els.openPrintGuide },
     { selector: "#roadmapPanel", element: document.querySelector("#roadmapPanel"), link: els.openRoadmap },
     { selector: "#licenseInfoPanel", element: document.querySelector("#licenseInfoPanel"), link: els.openLicenseInfo },
@@ -6355,6 +6422,10 @@ function updateNavigationHistory(hash, options = {}) {
 }
 
 function navigateToView(section, options = {}) {
+  if ((section === "configurator" || section === "design-lab") && !canOpenCreator()) {
+    scrollHomeSection("#plansPublicPanel", { replace: options.replace });
+    return;
+  }
   const activeSection = setActiveSection(section);
   updateNavigationHistory(routeForView(activeSection), options);
   if (activeSection !== "home") window.scrollTo({ top: 0, behavior: "auto" });
@@ -6405,6 +6476,12 @@ function restoreNavigationRoute() {
     "#codes": "licenses"
   };
   const view = viewSections[window.location.hash];
+  if ((view === "configurator" || view === "design-lab") && !hasCreatorAccess()) {
+    scrollHomeSection("#plansPublicPanel", { history: false, behavior: "auto" });
+    openPlansPanel("Activate a Creator plan to open collections, use Creator and export production files.");
+    updateNavigationHistory("#plansPublicPanel", { replace: true });
+    return;
+  }
   if (view) {
     const activeSection = setActiveSection(view);
     if (activeSection !== view) updateNavigationHistory("#top", { replace: true });
@@ -6555,9 +6632,19 @@ function modelAccessPlan(access) {
   return "basic";
 }
 
+function hasCreatorAccess() {
+  return isDeveloper() || planRank[state.account.plan] > planRank.free;
+}
+
+function canOpenCreator(message = "Activate a Creator plan to open collections, use Creator and export production files.") {
+  if (hasCreatorAccess()) return true;
+  openPlansPanel(message);
+  log(message);
+  return false;
+}
+
 function canAccessModel(model) {
-  if (isDeveloper()) return true;
-  return planRank[state.account.plan] >= planRank[modelAccessPlan(model?.access)];
+  return hasCreatorAccess();
 }
 
 function accessLabel(access) {
@@ -6846,9 +6933,23 @@ function formatLicenseCode(value) {
 }
 
 async function redeemLicenseCode(source = "account") {
-  const input = source === "plans" ? els.planLicenseCodeInput : els.licenseCodeInput;
-  const note = source === "plans" ? els.planLicenseCodeNote : els.licenseCodeNote;
-  const button = source === "plans" ? els.redeemPlanLicenseCode : els.redeemLicenseCode;
+  const isModalPlans = source === "plans";
+  const isPublicPlans = source === "public-plans";
+  const input = isPublicPlans
+    ? els.publicPlanLicenseCodeInput
+    : isModalPlans
+      ? els.planLicenseCodeInput
+      : els.licenseCodeInput;
+  const note = isPublicPlans
+    ? els.publicPlanLicenseCodeNote
+    : isModalPlans
+      ? els.planLicenseCodeNote
+      : els.licenseCodeNote;
+  const button = isPublicPlans
+    ? els.redeemPublicPlanLicenseCode
+    : isModalPlans
+      ? els.redeemPlanLicenseCode
+      : els.redeemLicenseCode;
   if (!input || !note || !button) return;
   if (state.account.role === "visitor") {
     note.textContent = "Create an account or log in before activating a code.";
@@ -6872,12 +6973,14 @@ async function redeemLicenseCode(source = "account") {
     state.account = accountFromUser(payload.user);
     persistActiveAccount();
     input.value = "";
-    if (els.licenseCodeInput && els.licenseCodeInput !== input) els.licenseCodeInput.value = "";
-    if (els.planLicenseCodeInput && els.planLicenseCodeInput !== input) els.planLicenseCodeInput.value = "";
+    [els.licenseCodeInput, els.planLicenseCodeInput, els.publicPlanLicenseCodeInput].forEach((codeInput) => {
+      if (codeInput && codeInput !== input) codeInput.value = "";
+    });
     const message = payload.message || "Code activated.";
     note.textContent = message;
-    if (els.licenseCodeNote && els.licenseCodeNote !== note) els.licenseCodeNote.textContent = message;
-    if (els.planLicenseCodeNote && els.planLicenseCodeNote !== note) els.planLicenseCodeNote.textContent = message;
+    [els.licenseCodeNote, els.planLicenseCodeNote, els.publicPlanLicenseCodeNote].forEach((codeNote) => {
+      if (codeNote && codeNote !== note) codeNote.textContent = message;
+    });
     await loadDownloadQuota({ silent: true });
     if (isDeveloper()) await Promise.all([loadStaticLicenseCodes({ silent: true }), loadLicenseCodes({ silent: true })]);
     updateAccountUi();
@@ -7204,7 +7307,6 @@ function renderGallery() {
             <h3>${escapeHtml(model.name)}</h3>
             ${meta ? `<div class="gallery-meta">${escapeHtml(meta)}</div>` : ""}
           </div>
-          <span class="access-badge access-${modelAccessPlan(model.access)}">${accessLabel(model.access)}</span>
         </div>
         <div class="gallery-actions">
           <button type="button" class="accent" data-action="open">${t("open")}</button>
@@ -7238,6 +7340,7 @@ function renderHeroEditorTargetOptions() {
 }
 
 function openHeroEditorTarget() {
+  if (!canOpenCreator("Activate a Creator plan to open collections and export production files.")) return;
   const model = heroEditorModel();
   if (model) selectModel(model.id);
   navigateToView("configurator");
@@ -7269,7 +7372,7 @@ function renderDeveloperCollectionList() {
       <article class="developer-collection-row${active ? " active" : ""}" data-model-id="${escapeHtml(model.id)}">
         <div class="developer-collection-copy">
           <strong>${escapeHtml(model.name)}</strong>
-          <small>${escapeHtml(model.category === "optical" ? t("opticalHeading") : t("sunHeading"))} · ${escapeHtml(accessLabel(model.access))} · ${escapeHtml(summary)}</small>
+          <small>${escapeHtml(model.category === "optical" ? t("opticalHeading") : t("sunHeading"))} · ${escapeHtml(summary)}</small>
         </div>
         <div class="developer-collection-actions">
           <button type="button" class="compact${active ? " accent" : ""}" data-dev-action="edit">Edit</button>
@@ -7299,14 +7402,18 @@ function handleGalleryClick(event) {
   const model = state.models.find((item) => item.id === card?.dataset.modelId);
   if (!model) return;
   if (button.dataset.action === "open") {
+    if (!canOpenCreator("Activate a Creator plan to open collections and export production files.")) {
+      scrollHomeSection("#plansPublicPanel");
+      return;
+    }
     selectModel(model.id);
     navigateToView("configurator");
     return;
   }
   if (button.dataset.action === "export") {
     if (!canAccessModel(model)) {
-      els.accountPanel.hidden = false;
-      log(`${model.name}: ${t("lockedModel")} ${accessLabel(model.access)}.`);
+      openPlansPanel("Activate a Creator plan to export collection files.");
+      log(`${model.name}: ${t("lockedModel")}.`);
       return;
     }
     downloadText(`${slugify(model.name)}.scad`, model.scadSource, "application/scad");
@@ -7510,7 +7617,7 @@ async function addCollectionFromStudio() {
     id: modelId,
     name: title,
     category,
-    access: ["basic", "pro", "studio"].includes(els.collectionAccess.value) ? els.collectionAccess.value : "pro",
+    access: "basic",
     description: els.collectionDescription.value.trim(),
     scadSource: scadFile ? source : existing?.scadSource || source,
     params,
@@ -7646,7 +7753,7 @@ function startModelEdit(model) {
   state.editingModelId = model.id;
   els.collectionTitle.value = model.name;
   els.collectionCategory.value = model.category === "optical" ? "optical" : "sun";
-  els.collectionAccess.value = ["basic", "pro", "studio"].includes(modelAccessPlan(model.access)) ? modelAccessPlan(model.access) : "basic";
+  els.collectionAccess.value = "basic";
   els.collectionDescription.value = model.description || "";
   els.galleryScadInput.value = "";
   els.collectionImageInput.value = "";
@@ -8474,13 +8581,18 @@ async function generate3mf() {
 
 async function ensureDownloadAllowed(model) {
   if (model && !canAccessModel(model)) {
-    openPlansPanel(`${model.name} requires ${accessLabel(model.access)} to download 3MF.`);
-    log(`${model.name}: ${t("lockedModel")} ${accessLabel(model.access)}.`);
+    openPlansPanel("Activate a Creator plan to download 3MF production files.");
+    log(`${model.name}: ${t("lockedModel")}.`);
     return false;
   }
   if (state.account.role === "visitor" || !sessionToken()) {
     openPlansPanel("Create an account, buy a Creator plan on MakerWorld, then activate it with your code.");
     log("Create an account and activate a Creator plan before downloading 3MF.");
+    return false;
+  }
+  if (!hasCreatorAccess()) {
+    openPlansPanel("Activate a Creator plan to export 3MF production files.");
+    log("A Creator plan is required before exporting 3MF production files.");
     return false;
   }
   await loadDownloadQuota({ silent: true });
@@ -8631,7 +8743,7 @@ async function recordDownload(fileName, mesh) {
     fileName,
     modelId: model?.id || state.activeModelId,
     modelName: state.modelName,
-    plan: modelAccessPlan(model?.access),
+    plan: state.account.role === "developer" ? "studio" : state.account.plan,
     lensMode: currentLensConfig().mode,
     lensLabel: selectedLensLabel(),
     configuration: {
@@ -8654,6 +8766,52 @@ async function recordDownload(fileName, mesh) {
   } catch (error) {
     if (/download limit|Upgrade your plan/i.test(error.message || "")) openPlansPanel(error.message);
     log(error.message || "Could not save download history.");
+    return false;
+  }
+}
+
+async function recordDesignDownload(fileName, mesh) {
+  if (state.account.role === "visitor" || !sessionToken()) return false;
+  const draft = designDefinitionFromDraft();
+  const payload = {
+    fileName,
+    modelId: state.designDraft.collectionId || "creator-draft",
+    modelName: state.designDraft.name || "Creator frame",
+    plan: state.account.role === "developer" ? "studio" : state.account.plan,
+    lensMode: "component",
+    lensLabel: "Generated acrylic lenses",
+    configuration: {
+      model: {
+        id: state.designDraft.collectionId || "creator-draft",
+        name: state.designDraft.name || "Creator frame",
+        access: state.account.role === "developer" ? "studio" : state.account.plan
+      },
+      creator: draft,
+      parameters: { ...state.designDraft.params },
+      lens: { mode: "generated", label: "Generated acrylic lenses" },
+      colors: {
+        front: draft.frameColor,
+        temples: draft.templeColor,
+        lens: draft.lensColor
+      },
+      mesh: {
+        triangles: mesh.triangles.length,
+        vertices: mesh.vertices.length
+      }
+    }
+  };
+  try {
+    const response = await apiRequest("/api/downloads", {
+      method: "POST",
+      body: JSON.stringify(payload)
+    });
+    state.downloads = [response.download, ...state.downloads.filter((item) => item.id !== response.download.id)].slice(0, 100);
+    state.downloadQuota = response.quota || state.downloadQuota;
+    renderDownloadFolder();
+    return true;
+  } catch (error) {
+    if (/download limit|Upgrade your plan/i.test(error.message || "")) openPlansPanel(error.message);
+    setDesignNote(error.message || "Could not save Creator export history.");
     return false;
   }
 }
@@ -8864,7 +9022,11 @@ function showLoader(visible, title = "Preparing file", text = "Preparing product
 }
 
 function collectCurrentMesh() {
-  modelGroup.updateMatrixWorld(true);
+  return collectMeshFromObject(modelGroup);
+}
+
+function collectMeshFromObject(root) {
+  root.updateMatrixWorld(true);
   const vertices = [];
   const triangles = [];
   const vertexMap = new Map();
@@ -8877,7 +9039,7 @@ function collectCurrentMesh() {
     return index;
   };
 
-  modelGroup.traverse((child) => {
+  root.traverse((child) => {
     if (!child.isMesh || !child.geometry) return;
     const geometry = child.geometry;
     const position = geometry.getAttribute("position");
@@ -8901,12 +9063,14 @@ function collectCurrentMesh() {
   return { vertices, triangles };
 }
 
-function make3mfBlob(mesh) {
+function make3mfBlob(mesh, options = {}) {
+  const title = options.title || state.modelName;
+  const lens = options.lens || lensModeLabel();
   const modelXml = `<?xml version="1.0" encoding="UTF-8"?>
 <model unit="millimeter" xml:lang="en-US" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">
-  <metadata name="Title">${escapeXml(state.modelName)}</metadata>
+  <metadata name="Title">${escapeXml(title)}</metadata>
   <metadata name="Designer">Frame Lab</metadata>
-  <metadata name="Lens">${escapeXml(lensModeLabel())}</metadata>
+  <metadata name="Lens">${escapeXml(lens)}</metadata>
   <resources>
     <object id="1" type="model">
       <mesh>

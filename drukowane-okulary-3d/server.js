@@ -116,7 +116,7 @@ const defaultContentSettings = {
       period: "one-time support",
       exports: "No Creator access included",
       description: "Support Frame Lab development without plan benefits.",
-      benefits: ["Supports Frame Lab development", "No Creator access or commercial license included", "No activation code required"]
+      benefits: []
     },
     {
       plan: "ultra_support",
@@ -272,7 +272,7 @@ function sanitizePlanContent(item = {}, fallback = {}) {
     period: cleanText(item.period, fallback.period, 32),
     exports: cleanText(item.exports, fallback.exports, 90),
     description: cleanText(item.description, fallback.description, 180),
-    benefits: sanitizePlanBenefits(item.benefits, fallback.benefits)
+    benefits: plan === "supporter" ? [] : sanitizePlanBenefits(item.benefits, fallback.benefits)
   };
 }
 

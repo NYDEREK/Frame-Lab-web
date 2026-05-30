@@ -16,7 +16,7 @@
         document.documentElement.dataset.appError = event.reason?.message || String(event.reason || "promise");
       });
     </script>
-    <link rel="stylesheet" href="./styles.css?v=creator-entry-20260530-7" />
+    <link rel="stylesheet" href="./styles.css?v=creator-entry-20260530-9" />
     <script type="importmap">
       {
         "imports": {
@@ -272,7 +272,7 @@
           <nav class="topbar-tabs" aria-label="Navigation" data-i18n-attr="aria-label:navLabel">
             <a id="openHome" class="nav-link active" href="#top" data-i18n="tabHome">Start</a>
             <a id="openGallery" class="nav-link" href="#galleryPanel" data-i18n="tabGallery">Collections</a>
-            <button id="plansButton" type="button" class="nav-link">Plans</button>
+            <a id="plansButton" class="nav-link" href="#plansPublicPanel">Plans</a>
             <a id="openPrintGuide" class="nav-link" href="#printGuidePanel">Print</a>
             <a id="openRoadmap" class="nav-link" href="#roadmapPanel">Roadmap</a>
             <a id="openLicenseInfo" class="nav-link" href="#licenseInfoPanel">License</a>
@@ -353,6 +353,32 @@
                 </div>
               </article>
             </div>
+          </section>
+        </section>
+        <section id="plansPublicPanel" class="content-section public-plans-panel" aria-label="Plans">
+          <div class="content-section-copy">
+            <p class="eyebrow">Creator access</p>
+            <h2>Plans</h2>
+            <p>Choose a Creator access tier, purchase on MakerWorld, then activate your plan with the code from your order.</p>
+          </div>
+          <div class="pricing-carousel" aria-label="Creator plan offers">
+            <button id="plansCarouselPrevious" class="pricing-carousel-control previous" type="button" aria-label="Previous plans">‹</button>
+            <div id="publicPricingGrid" class="pricing-grid pricing-carousel-track" tabindex="0"></div>
+            <button id="plansCarouselNext" class="pricing-carousel-control next" type="button" aria-label="Next plans">›</button>
+          </div>
+          <div class="plans-purchase-note">
+            Purchase is available only on <span id="publicMakerWorldPlanTarget">MakerWorld</span>. After purchase, enter the activation code here.
+          </div>
+          <section class="plan-code-activation" aria-label="Activate plan code">
+            <div>
+              <p class="eyebrow">Activate</p>
+              <h3>Enter code to activate your plan</h3>
+            </div>
+            <div class="license-redeem-row">
+              <input id="publicPlanLicenseCodeInput" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="14" placeholder="1234-5678-9012" />
+              <button id="redeemPublicPlanLicenseCode" type="button" class="accent">Activate</button>
+            </div>
+            <p id="publicPlanLicenseCodeNote" class="account-note"></p>
           </section>
         </section>
         <section id="printGuidePanel" class="content-section print-guide-panel">
@@ -665,6 +691,7 @@
             <div id="designSubmissionStatus" class="design-submission-status"></div>
             <div class="design-submit-actions">
               <button id="resetDesign" type="button">Reset</button>
+              <button id="exportDesign3mf" type="button" class="accent">3MF full export</button>
               <button id="downloadDesignScad" type="button">Project .zip</button>
               <button id="saveDesignCollection" type="button" class="accent" hidden>Save collection</button>
               <button id="submitDesign" type="button" class="accent">Submit for review</button>
@@ -803,9 +830,7 @@
               <option value="sun" data-i18n="sunCategory">Sunglasses</option>
             </select>
             <select id="collectionAccess" class="component-select">
-              <option value="basic">Personal</option>
-              <option value="pro">Commercial</option>
-              <option value="studio">Ultra Support</option>
+              <option value="basic">Creator access</option>
             </select>
             <input id="collectionDescription" type="text" data-i18n-attr="placeholder:collectionDescriptionPlaceholder" placeholder="Short description" />
             <label class="file-button" for="collectionImageInput">
@@ -939,6 +964,6 @@
       document.querySelector("#heroEditor")?.addEventListener("click", (event) => queueDesignLabDuringBoot(event, false));
       document.querySelector("#startDesignLab")?.addEventListener("click", (event) => queueDesignLabDuringBoot(event, true));
     </script>
-    <script type="module" src="./src/app.js?v=creator-entry-20260530-7"></script>
+    <script type="module" src="./src/app.js?v=creator-entry-20260530-9"></script>
   </body>
 </html>
