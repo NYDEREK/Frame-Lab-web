@@ -1585,12 +1585,52 @@ button.nav-link {
   flex: 1 1 0;
 }
 
+.design-submit-actions button.is-saving {
+  position: relative;
+  color: transparent;
+}
+
+.design-submit-actions button.is-saving::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 1rem;
+  height: 1rem;
+  margin: -0.5rem 0 0 -0.5rem;
+  border: 2px solid color-mix(in srgb, white 45%, transparent);
+  border-top-color: white;
+  border-radius: 999px;
+  animation: spin 0.78s linear infinite;
+}
+
+.design-submit-actions button.is-saved {
+  border-color: color-mix(in srgb, var(--accent) 72%, var(--line));
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent-2) 86%, white), var(--accent));
+}
+
+.design-submit-actions button.is-error {
+  border-color: color-mix(in srgb, #ff6b42 70%, var(--line));
+}
+
 .design-note {
   min-height: 1.2rem;
   color: var(--muted);
   font-size: 0.75rem;
   font-weight: 680;
   line-height: 1.4;
+}
+
+.design-note[data-tone="saving"] {
+  color: var(--accent-2);
+}
+
+.design-note[data-tone="success"] {
+  color: color-mix(in srgb, var(--accent-2) 76%, white);
+}
+
+.design-note[data-tone="error"] {
+  color: #ff8a61;
 }
 
 .design-submit {
@@ -2574,6 +2614,11 @@ input[type="password"] {
   border-color: var(--accent);
 }
 
+.gallery-card.just-saved {
+  border-color: var(--accent);
+  animation: cardIn 520ms ease both, collectionSavedPulse 1.6s ease-out 120ms both;
+}
+
 .gallery-card.locked .gallery-thumb,
 .gallery-card.locked .gallery-body {
   opacity: 0.68;
@@ -3501,11 +3546,25 @@ input[type="password"] {
   }
 }
 
+@keyframes collectionSavedPulse {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 42%, transparent);
+  }
+  45% {
+    box-shadow: 0 0 0 0.35rem color-mix(in srgb, var(--accent) 22%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 0.85rem transparent;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .gallery-loading-spinner,
   .gallery-skeleton-preview::after,
   .gallery-skeleton-line::after,
-  .gallery-skeleton-action::after {
+  .gallery-skeleton-action::after,
+  .design-submit-actions button.is-saving::after,
+  .gallery-card.just-saved {
     animation-duration: 2.4s;
   }
 }

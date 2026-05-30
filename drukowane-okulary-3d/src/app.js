@@ -522,6 +522,7 @@ glasses();
 const modelStorageKey = "framelab.openscadModels.v1";
 const componentDbName = "framelab-component-files";
 const componentStoreName = "components";
+const saveDesignCollectionDefaultLabel = "Save collection";
 const seedComponentAssets = [
   {
     id: "frame001-front",
@@ -649,6 +650,7 @@ const state = {
     storage: { persistent: false, source: "unknown", message: "" }
   },
   selectedPlanId: "",
+  recentSavedCollectionId: "",
   assemblySize: "M",
   assembly: {
     front: { modelId: "frame001-front", size: "M" },
@@ -945,6 +947,7 @@ let dragState = null;
 let triangleCount = 0;
 let persistTimer = null;
 let backendPersistTimer = null;
+let saveCollectionFeedbackTimer = null;
 let cameraZoomScale = 1;
 let viewerFitRadius = 100;
 const cameraTarget = new THREE.Vector3(0, 0, 0);
@@ -4168,8 +4171,11 @@ async function exportDesign3mf() {
   }
 }
 
-function setDesignNote(message) {
-  if (els.designStatus) els.designStatus.textContent = message;
+function setDesignNote(message, tone = "") {
+  if (!els.designStatus) return;
+  els.designStatus.textContent = message;
+  if (tone) els.designStatus.dataset.tone = tone;
+  else delete els.designStatus.dataset.tone;
 }
 
 function captureDesignThumbnail() {
@@ -4226,14 +4232,18 @@ async function submitDesignForReview() {
 
 async function saveDesignToCollections() {
   if (!isDeveloper() || !sessionToken()) {
-    setDesignNote("Developer access is required to publish a collection template.");
+    setDesignNote("Developer access is required to publish a collection template.", "error");
     return;
   }
+  if (els.saveDesignCollection?.disabled) return;
+  setSaveCollectionButtonState("saving");
+  setDesignNote("Saving collection to gallery...", "saving");
   handleDesignProjectCopyChange();
   const source = state.designDraft.manualCode ? String(els.designScadCode?.value || "") : buildDesignScad(state.designDraft);
   const existing = state.designDraft.collectionId
     ? state.models.find((model) => model.id === state.designDraft.collectionId)
     : null;
+  const previousModels = state.models.map((model) => structuredClone(model));
   const category = "sun";
   const nextOrder = Math.max(-1, ...state.models.filter((item) => item.category === category).map((item) => Number(item.order || 0))) + 1;
   const collection = normalizeStoredModel({
@@ -4257,15 +4267,58 @@ async function saveDesignToCollections() {
     ? state.models.map((model) => model.id === existing.id ? collection : model)
     : [collection, ...state.models];
   normalizeGalleryOrder(category);
-  persistModels({ syncBackend: false });
   try {
     await syncCollectionsToBackend({ announce: true });
+    persistModels({ syncBackend: false });
     state.designDraft.collectionId = collection.id;
+    state.recentSavedCollectionId = collection.id;
     renderGallery();
-    setDesignNote(`${collection.name} saved to Collections.`);
+    setDesignNote(`${collection.name} saved to Collections.`, "success");
+    setSaveCollectionButtonState("saved");
   } catch (error) {
-    setDesignNote(error.message || "Could not save this collection.");
+    state.models = previousModels;
+    persistModels({ syncBackend: false });
+    renderGallery();
+    setDesignNote(error.message || "Could not save this collection.", "error");
+    setSaveCollectionButtonState("error");
   }
+}
+
+function setSaveCollectionButtonState(mode = "idle") {
+  const button = els.saveDesignCollection;
+  if (!button) return;
+  clearTimeout(saveCollectionFeedbackTimer);
+  button.classList.remove("is-saving", "is-saved", "is-error");
+  button.removeAttribute("aria-busy");
+  button.disabled = false;
+  if (mode === "saving") {
+    button.disabled = true;
+    button.classList.add("is-saving");
+    button.setAttribute("aria-busy", "true");
+    button.textContent = "Saving...";
+    return;
+  }
+  if (mode === "saved") {
+    button.classList.add("is-saved");
+    button.textContent = "Saved";
+    saveCollectionFeedbackTimer = setTimeout(() => {
+      button.classList.remove("is-saved");
+      button.textContent = saveDesignCollectionDefaultLabel;
+      state.recentSavedCollectionId = "";
+      renderGallery();
+    }, 2400);
+    return;
+  }
+  if (mode === "error") {
+    button.classList.add("is-error");
+    button.textContent = "Try again";
+    saveCollectionFeedbackTimer = setTimeout(() => {
+      button.classList.remove("is-error");
+      button.textContent = saveDesignCollectionDefaultLabel;
+    }, 2200);
+    return;
+  }
+  button.textContent = saveDesignCollectionDefaultLabel;
 }
 
 async function loadMyDesignSubmissions() {
@@ -7320,7 +7373,7 @@ function renderGallery() {
   if (els.opticalGalleryGrid) els.opticalGalleryGrid.innerHTML = "";
   galleryModels().forEach((model, index) => {
     const card = document.createElement("article");
-    card.className = `gallery-card${model.id === state.activeModelId ? " active" : ""}`;
+    card.className = `gallery-card${model.id === state.activeModelId ? " active" : ""}${model.id === state.recentSavedCollectionId ? " just-saved" : ""}`;
     card.dataset.modelId = model.id;
     const thumb = model.thumbnail
       ? `<img src="${model.thumbnail}" alt="Miniatura modelu ${escapeHtml(model.name)}" />`
