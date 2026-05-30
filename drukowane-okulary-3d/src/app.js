@@ -267,7 +267,7 @@ const defaultContentSettings = {
       period: "one-time",
       exports: "Lifetime Creator access",
       description: "Personal use license for your own frames and fit experiments.",
-      benefits: ["Lifetime access to the Creator", "Personal use for your own printed frames", "Activated with a MakerWorld code"]
+      benefits: ["Lifetime access to the Creator", "Personal use for your own printed frames"]
     },
     {
       plan: "commercial_lifetime",
@@ -277,7 +277,7 @@ const defaultContentSettings = {
       period: "one-time",
       exports: "Lifetime commercial Creator access",
       description: "Commercial use license for paid work, products and client projects.",
-      benefits: ["Lifetime access to the Creator", "Commercial use for exported frame designs", "Activated with a MakerWorld code"]
+      benefits: ["Lifetime access to the Creator", "Commercial use for exported frame designs"]
     },
     {
       plan: "personal_year",
@@ -4671,7 +4671,8 @@ function renderPlanCards() {
   const cards = plans.map((plan) => {
     const featured = plan.plan === "commercial_lifetime";
     const active = plan.access !== "free" && state.account.plan === plan.access;
-    const benefits = plan.plan === "supporter" ? [] : normalizePlanBenefits(plan.benefits, [plan.exports, plan.description]);
+    const benefits = (plan.plan === "supporter" ? [] : normalizePlanBenefits(plan.benefits, [plan.exports, plan.description]))
+      .filter((benefit) => !/makerworld/i.test(benefit));
     return `
       <article class="pricing-card${featured ? " featured" : ""}${active ? " active" : ""}${plan.access === "free" ? " supporter" : ""}">
         <header>
@@ -4695,9 +4696,14 @@ function renderPlanCards() {
 function scrollPlansCarousel(direction) {
   const track = els.publicPricingGrid;
   if (!track) return;
-  const distance = Math.max(280, track.clientWidth * 0.82);
+  const firstCard = track.querySelector(".pricing-card");
+  const gap = Number.parseFloat(getComputedStyle(track).columnGap) || 0;
+  const distance = firstCard
+    ? firstCard.getBoundingClientRect().width + gap
+    : Math.max(280, track.clientWidth / 3);
   const maxScroll = Math.max(0, track.scrollWidth - track.clientWidth);
-  track.scrollLeft = THREE.MathUtils.clamp(track.scrollLeft + direction * distance, 0, maxScroll);
+  const nextScroll = THREE.MathUtils.clamp(track.scrollLeft + direction * distance, 0, maxScroll);
+  track.scrollLeft = nextScroll;
 }
 
 function renderMarketingContent() {

@@ -76,7 +76,7 @@ const defaultContentSettings = {
       period: "one-time",
       exports: "Lifetime Creator access",
       description: "Personal use license for your own frames and fit experiments.",
-      benefits: ["Lifetime access to the Creator", "Personal use for your own printed frames", "Activated with a MakerWorld code"]
+      benefits: ["Lifetime access to the Creator", "Personal use for your own printed frames"]
     },
     {
       plan: "commercial_lifetime",
@@ -86,7 +86,7 @@ const defaultContentSettings = {
       period: "one-time",
       exports: "Lifetime commercial Creator access",
       description: "Commercial use license for paid work, products and client projects.",
-      benefits: ["Lifetime access to the Creator", "Commercial use for exported frame designs", "Activated with a MakerWorld code"]
+      benefits: ["Lifetime access to the Creator", "Commercial use for exported frame designs"]
     },
     {
       plan: "personal_year",

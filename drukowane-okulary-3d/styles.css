@@ -383,24 +383,27 @@ small,
   position: relative;
   display: grid;
   align-items: stretch;
+  --plans-gap: clamp(0.75rem, 1.2vw, 1rem);
+  --plans-side-pad: clamp(2.25rem, 4vw, 3.2rem);
 }
 
 .pricing-carousel-track {
   display: flex;
   grid-template-columns: none;
-  gap: clamp(0.85rem, 1.6vw, 1.25rem);
+  gap: var(--plans-gap);
   overflow-x: auto;
   overscroll-behavior-x: contain;
   scroll-snap-type: x mandatory;
-  scroll-padding-inline: clamp(0.25rem, 2vw, 1rem);
-  padding: 0.35rem clamp(2.8rem, 5vw, 4.5rem) 1rem;
+  scroll-padding-inline: var(--plans-side-pad);
+  padding: 0.35rem var(--plans-side-pad) 1rem;
   scrollbar-width: thin;
 }
 
 .pricing-carousel-track .pricing-card {
-  flex: 0 0 clamp(18.5rem, 29vw, 27rem);
-  min-height: 32rem;
-  scroll-snap-align: center;
+  flex: 0 0 calc((100% - var(--plans-side-pad) - var(--plans-side-pad) - var(--plans-gap) - var(--plans-gap)) / 3);
+  min-width: 16.25rem;
+  min-height: 29.5rem;
+  scroll-snap-align: start;
 }
 
 .pricing-carousel-control {
@@ -419,6 +422,20 @@ small,
   font-size: 2.2rem;
   line-height: 1;
   box-shadow: var(--shadow);
+  user-select: none;
+  transition: border-color 160ms ease, background 160ms ease, color 160ms ease, box-shadow 160ms ease;
+}
+
+.pricing-carousel-control:hover,
+.pricing-carousel-control:active {
+  transform: translateY(-50%);
+  border-color: color-mix(in srgb, var(--accent) 58%, var(--line));
+  background: var(--surface);
+  color: var(--accent-2);
+}
+
+.pricing-carousel-control:active {
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 34%, transparent);
 }
 
 .pricing-carousel-control.previous {
@@ -436,13 +453,13 @@ small,
   min-height: 22rem;
   padding: clamp(1rem, 2vw, 1.45rem);
   border: 1px solid var(--line);
-  border-radius: 14px;
-  background: var(--subtle-bg);
+  border-radius: 8px;
+  background: var(--surface);
 }
 
 .pricing-card.featured {
-  border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent-soft) 70%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 42%, var(--line));
+  background: var(--surface);
 }
 
 .pricing-card.active {
@@ -450,7 +467,7 @@ small,
 }
 
 .pricing-card.supporter {
-  background: color-mix(in srgb, var(--surface) 72%, var(--subtle-bg));
+  background: var(--surface);
 }
 
 .pricing-card header {
