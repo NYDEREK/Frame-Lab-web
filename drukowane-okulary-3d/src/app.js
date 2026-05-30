@@ -184,7 +184,7 @@ const defaultDesignStyle = {
   lensOpacity: 0.62,
   detailColor: "#e59a62"
 };
-const templePatternIds = ["ribs", "micro-ribs", "slots", "dots", "diamond", "wave", "ladder"];
+const templePatternIds = ["ribs", "micro-ribs", "slots", "dots", "diamond", "wave"];
 const defaultDesignSketchPoints = [
   [-0.42, 0.5],
   [0.36, 0.5],
@@ -226,7 +226,10 @@ const defaultDesignConstruction = {
   templeChamferEnabled: false,
   templeChamferAmount: 0.35,
   templeTextureDepth: 0.45,
+  templePatternStart: 14,
+  templePatternEnd: 76,
   templePatternSpacing: 9,
+  templePatternSize: 4.2,
   templeTextSize: 4,
   templeTextPosition: 36,
   templeTextYOffset: 0,
@@ -808,14 +811,15 @@ const els = {
   designRightTempleTextControls: document.querySelector("#designRightTempleTextControls"),
   designTempleText: document.querySelector("#designTempleText"),
   designRightTempleText: document.querySelector("#designRightTempleText"),
-	  designBrowBar: document.querySelector("#designBrowBar"),
-	  designFrameColor: document.querySelector("#designFrameColor"),
-	  designTempleColor: document.querySelector("#designTempleColor"),
-	  designLensColor: document.querySelector("#designLensColor"),
-	  designFrameOpacity: document.querySelector("#designFrameOpacity"),
-	  designTempleOpacity: document.querySelector("#designTempleOpacity"),
-	  designLensOpacity: document.querySelector("#designLensOpacity"),
-	  designPublicParameters: document.querySelector("#designPublicParameters"),
+  designBrowBar: document.querySelector("#designBrowBar"),
+  designFrameColor: document.querySelector("#designFrameColor"),
+  designTempleColor: document.querySelector("#designTempleColor"),
+  designLensColor: document.querySelector("#designLensColor"),
+  designDetailColor: document.querySelector("#designDetailColor"),
+  designFrameOpacity: document.querySelector("#designFrameOpacity"),
+  designTempleOpacity: document.querySelector("#designTempleOpacity"),
+  designLensOpacity: document.querySelector("#designLensOpacity"),
+  designPublicParameters: document.querySelector("#designPublicParameters"),
   designProductionChecks: document.querySelector("#designProductionChecks"),
   addSketchPoint: document.querySelector("#addSketchPoint"),
   removeSketchPoint: document.querySelector("#removeSketchPoint"),
@@ -854,7 +858,10 @@ const els = {
   designTempleDepth: document.querySelector("#designTempleDepth"),
   designTempleCornerRadius: document.querySelector("#designTempleCornerRadius"),
   designTempleTextureDepth: document.querySelector("#designTempleTextureDepth"),
+  designTemplePatternStart: document.querySelector("#designTemplePatternStart"),
+  designTemplePatternEnd: document.querySelector("#designTemplePatternEnd"),
   designTemplePatternSpacing: document.querySelector("#designTemplePatternSpacing"),
+  designTemplePatternSize: document.querySelector("#designTemplePatternSize"),
   designTempleTextSize: document.querySelector("#designTempleTextSize"),
   designTempleTextPosition: document.querySelector("#designTempleTextPosition"),
   designTempleTextDepth: document.querySelector("#designTempleTextDepth"),
@@ -1272,6 +1279,14 @@ function normalizeDesignConstruction(construction = {}) {
     return THREE.MathUtils.clamp(Number.isFinite(next) ? next : fallback, min, max);
   };
   const bridgeThickness = bounded("bridgeThickness", 3, 12);
+  const templeStraight = bounded("templeStraight", 35, 120);
+  const templePatternSpacing = bounded("templePatternSpacing", 4, 28);
+  const templePatternStart = bounded("templePatternStart", 0, 110);
+  const templePatternEnd = THREE.MathUtils.clamp(
+    bounded("templePatternEnd", 8, 120),
+    templePatternStart + 2,
+    120
+  );
   return {
     hingeStandard: "FL-H1",
     lensThickness: 1,
@@ -1284,7 +1299,7 @@ function normalizeDesignConstruction(construction = {}) {
     bridgeThickness,
     bridgeTopJoinOffset: bounded("bridgeTopJoinOffset", -18, 18, bridgeThickness / 2),
     bridgeBottomJoinOffset: bounded("bridgeBottomJoinOffset", -18, 18, -bridgeThickness / 2),
-    templeStraight: bounded("templeStraight", 35, 120),
+    templeStraight,
     templeHook: bounded("templeHook", 10, 60),
     templeHookAngle: bounded("templeHookAngle", 10, 75),
     templeBarHeight: bounded("templeBarHeight", 3, 10),
@@ -1293,7 +1308,10 @@ function normalizeDesignConstruction(construction = {}) {
     templeChamferEnabled: parseDesignBoolean(construction.templeChamferEnabled, defaultDesignConstruction.templeChamferEnabled),
     templeChamferAmount: bounded("templeChamferAmount", 0, 1.2),
     templeTextureDepth: bounded("templeTextureDepth", 0.2, 1.2),
-    templePatternSpacing: bounded("templePatternSpacing", 5, 18),
+    templePatternStart,
+    templePatternEnd,
+    templePatternSpacing,
+    templePatternSize: bounded("templePatternSize", 0.5, 8),
     templeTextSize: bounded("templeTextSize", 2, 8),
     templeTextPosition: bounded("templeTextPosition", 0, 120),
     templeTextYOffset: bounded("templeTextYOffset", -5, 5),
@@ -2009,10 +2027,10 @@ function drawTempleTextSafetyZone(ctx, metrics, mirrored, colors, displayPoints)
 }
 
 function drawTemplePatternPreview(ctx, pattern, x, y, scale, construction, index, mirrored) {
-  const spacing = construction.templePatternSpacing;
-  const markHeight = construction.templeBarHeight * scale * 0.32;
-  const segment = Math.min(5.4, spacing * 0.72) * scale;
-  const dotRadius = Math.max(1.45, Math.min(3.2, construction.templeBarHeight * scale * 0.16));
+  const detailSize = Math.max(0.5, parseDesignNumber(construction.templePatternSize, defaultDesignConstruction.templePatternSize));
+  const segment = Math.max(1.5, detailSize * scale);
+  const markHeight = Math.max(2, Math.min(construction.templeBarHeight * scale * 0.72, segment * 1.1));
+  const dotRadius = Math.max(1.45, Math.min(3.6, detailSize * scale * 0.36));
   const mirror = mirrored ? -1 : 1;
   const line = (length, angle = 0, offsetX = 0, offsetY = 0) => {
     ctx.save();
@@ -2025,11 +2043,11 @@ function drawTemplePatternPreview(ctx, pattern, x, y, scale, construction, index
     ctx.restore();
   };
   if (pattern === "ribs") {
-    line(markHeight * 2, Math.PI / 2);
+    line(markHeight, Math.PI / 2);
   } else if (pattern === "micro-ribs") {
-    const offset = Math.min(1.25, spacing * 0.14);
-    line(markHeight * 1.55, Math.PI / 2, -offset);
-    line(markHeight * 1.55, Math.PI / 2, offset);
+    const offset = Math.min(1.25, detailSize * 0.28);
+    line(markHeight * 0.82, Math.PI / 2, -offset);
+    line(markHeight * 0.82, Math.PI / 2, offset);
   } else if (pattern === "slots") {
     line(segment, 0);
   } else if (pattern === "dots") {
@@ -2042,9 +2060,6 @@ function drawTemplePatternPreview(ctx, pattern, x, y, scale, construction, index
   } else if (pattern === "diamond") {
     line(segment, Math.PI / 4);
     line(segment, -Math.PI / 4);
-  } else if (pattern === "ladder") {
-    line(markHeight * 1.6, Math.PI / 2);
-    line(segment * 0.68, 0, 0, index % 2 === 0 ? -construction.templeBarHeight * 0.18 : construction.templeBarHeight * 0.18);
   } else {
     line(segment, (index % 2 ? -1 : 1) * Math.PI / 5);
   }
@@ -2079,11 +2094,12 @@ function drawTempleSketch(mirrored = false) {
     ctx.beginPath();
     traceRoundedPolygon(ctx, displayPoints, profile.cornerRadii.map((radius) => radius * scale));
     ctx.clip();
-    ctx.strokeStyle = colors.dimension;
+    ctx.strokeStyle = style.detailColor;
+    ctx.fillStyle = style.detailColor;
     ctx.lineWidth = Math.max(1.25, c.templeTextureDepth * scale * 0.45);
-    const start = 14;
-    const end = Math.min(c.templeStraight - 8, 76);
-    for (let z = start, index = 0; z < end; z += c.templePatternSpacing, index += 1) {
+    const start = Math.max(0, c.templePatternStart);
+    const end = Math.min(c.templePatternEnd, c.templeStraight - 4);
+    for (let z = start, index = 0; z <= end; z += c.templePatternSpacing, index += 1) {
       const x = point({ x: origin.x + z * scale, y: origin.y }).x;
       drawTemplePatternPreview(ctx, style.templePattern, x, origin.y, scale, c, index, mirrored);
     }
@@ -3021,11 +3037,11 @@ function addDesignTemple(side, p, outerLensWidth, frameMaterial, detailMaterial,
   profile.position.set(attachX, designTempleBarCenterY, armStartZ);
   temple.add(profile);
   if (style.templeDetailMode === "texture") {
-    addDesignTempleRelief(side, temple, frameMaterial, construction, style.templePattern);
+    addDesignTempleRelief(side, temple, detailMaterial, construction, style.templePattern);
   }
   const templeText = side < 0 ? style.rightTempleText : style.leftTempleText;
   if (style.templeDetailMode === "text" && templeText) {
-    addDesignTextRelief(templeText, side, temple, frameMaterial, construction);
+    addDesignTextRelief(templeText, side, temple, detailMaterial, construction);
   }
   target.add(temple);
 }
@@ -3033,7 +3049,13 @@ function addDesignTemple(side, p, outerLensWidth, frameMaterial, detailMaterial,
 function addDesignTempleRelief(side, temple, material, construction, pattern) {
   const depth = construction.templeTextureDepth;
   const outsideX = side * (2.5 + construction.templeDepth / 2 + depth / 2 - 0.06);
-  const limit = Math.min(construction.templeStraight - 8, 76);
+  const maxEnd = Math.max(0, construction.templeStraight - 4);
+  const start = Math.min(Math.max(0, construction.templePatternStart), maxEnd);
+  const limit = Math.min(Math.max(start, construction.templePatternEnd), maxEnd);
+  const detailSize = Math.max(0.5, construction.templePatternSize);
+  const ribWidth = Math.max(0.5, Math.min(1.8, detailSize * 0.22));
+  const markHeight = Math.max(0.65, Math.min(construction.templeBarHeight * 0.72, detailSize * 1.1));
+  const stripHeight = Math.max(0.45, Math.min(1.25, detailSize * 0.17));
   const addMark = (width, height, z, angle = 0, yOffset = 0) => {
     const mark = new THREE.Mesh(roundedPrismGeometry(width, height, depth, Math.min(0.26, height / 3), 0.04), material);
     mark.rotation.y = Math.PI / 2;
@@ -3041,27 +3063,24 @@ function addDesignTempleRelief(side, temple, material, construction, pattern) {
     mark.position.set(outsideX, designTempleBarCenterY + yOffset, designTempleProfileStartZ - z);
     temple.add(mark);
   };
-  for (let z = 14, index = 0; z < limit; z += construction.templePatternSpacing, index += 1) {
-    const segment = Math.min(5.4, construction.templePatternSpacing * 0.72);
+  for (let z = start, index = 0; z <= limit; z += construction.templePatternSpacing, index += 1) {
+    const segment = detailSize;
     if (pattern === "ribs") {
-      addMark(1.2, construction.templeBarHeight * 0.68, z);
+      addMark(ribWidth, markHeight, z);
     } else if (pattern === "micro-ribs") {
-      const offset = Math.min(1.25, construction.templePatternSpacing * 0.14);
-      addMark(0.68, construction.templeBarHeight * 0.54, z - offset);
-      addMark(0.68, construction.templeBarHeight * 0.54, z + offset);
+      const offset = Math.min(1.25, detailSize * 0.28);
+      addMark(ribWidth * 0.72, markHeight * 0.82, z - offset);
+      addMark(ribWidth * 0.72, markHeight * 0.82, z + offset);
     } else if (pattern === "slots") {
-      addMark(segment, 0.72, z);
+      addMark(segment, stripHeight, z);
     } else if (pattern === "dots") {
-      const dot = Math.min(2.2, Math.max(1.15, construction.templeBarHeight * 0.38));
+      const dot = Math.max(0.7, Math.min(construction.templeBarHeight * 0.5, detailSize * 0.58));
       addMark(dot, dot, z);
     } else if (pattern === "diamond") {
-      addMark(segment, 0.72, z, Math.PI / 4);
-      addMark(segment, 0.72, z, -Math.PI / 4);
-    } else if (pattern === "ladder") {
-      addMark(0.78, construction.templeBarHeight * 0.62, z);
-      addMark(segment * 0.68, 0.55, z, 0, (index % 2 === 0 ? -1 : 1) * construction.templeBarHeight * 0.18);
+      addMark(segment, stripHeight, z, Math.PI / 4);
+      addMark(segment, stripHeight, z, -Math.PI / 4);
     } else {
-      addMark(segment, 0.72, z, (index % 2 ? -1 : 1) * Math.PI / 5);
+      addMark(segment, stripHeight, z, (index % 2 ? -1 : 1) * Math.PI / 5);
     }
   }
 }
@@ -3658,6 +3677,7 @@ function syncDesignFields() {
   if (els.designFrameColor) els.designFrameColor.value = style.frameColor;
   if (els.designTempleColor) els.designTempleColor.value = style.templeColor;
   if (els.designLensColor) els.designLensColor.value = style.lensColor;
+  if (els.designDetailColor) els.designDetailColor.value = style.detailColor;
   setDesignSliderFieldValue(els.designFrameOpacity, designOpacityPercent(style.frameOpacity, 1), "%");
   setDesignSliderFieldValue(els.designTempleOpacity, designOpacityPercent(style.templeOpacity, 1), "%");
   setDesignSliderFieldValue(els.designLensOpacity, designOpacityPercent(style.lensOpacity, defaultDesignStyle.lensOpacity), "%");
@@ -3694,7 +3714,10 @@ function syncDesignFields() {
   if (els.designTempleChamferEnabled) els.designTempleChamferEnabled.checked = construction.templeChamferEnabled;
   setDesignSliderFieldValue(els.designTempleChamferAmount, construction.templeChamferAmount, "mm");
   setDesignSliderFieldValue(els.designTempleTextureDepth, construction.templeTextureDepth, "mm");
+  setDesignSliderFieldValue(els.designTemplePatternStart, construction.templePatternStart, "mm");
+  setDesignSliderFieldValue(els.designTemplePatternEnd, construction.templePatternEnd, "mm");
   setDesignSliderFieldValue(els.designTemplePatternSpacing, construction.templePatternSpacing, "mm");
+  setDesignSliderFieldValue(els.designTemplePatternSize, construction.templePatternSize, "mm");
   setDesignSliderFieldValue(els.designTempleTextSize, construction.templeTextSize, "mm");
   setDesignSliderFieldValue(els.designTempleTextPosition, construction.templeTextPosition, "mm");
   setDesignSliderFieldValue(els.designTempleTextDepth, construction.templeTextDepth, "mm");
@@ -3878,7 +3901,10 @@ function handleDesignOperationChange(event) {
     els.designTempleChamferEnabled,
     els.designTempleChamferAmount,
     els.designTempleTextureDepth,
+    els.designTemplePatternStart,
+    els.designTemplePatternEnd,
     els.designTemplePatternSpacing,
+    els.designTemplePatternSize,
     els.designTempleTextSize,
     els.designTempleTextPosition,
     els.designTempleTextDepth
@@ -3910,7 +3936,10 @@ function handleDesignOperationChange(event) {
       templeChamferEnabled: els.designTempleChamferEnabled?.checked,
       templeChamferAmount: els.designTempleChamferAmount?.value,
       templeTextureDepth: els.designTempleTextureDepth?.value,
+      templePatternStart: els.designTemplePatternStart?.value,
+      templePatternEnd: els.designTemplePatternEnd?.value,
       templePatternSpacing: els.designTemplePatternSpacing?.value,
+      templePatternSize: els.designTemplePatternSize?.value,
       templeTextSize: els.designTempleTextSize?.value,
       templeTextPosition: els.designTempleTextPosition?.value,
       templeTextDepth: els.designTempleTextDepth?.value
@@ -3966,6 +3995,7 @@ function handleDesignOperationChange(event) {
     frameColor: els.designFrameColor?.value,
     templeColor: els.designTempleColor?.value,
     lensColor: els.designLensColor?.value,
+    detailColor: els.designDetailColor?.value,
     frameOpacity: Number(els.designFrameOpacity?.value) / 100,
     templeOpacity: Number(els.designTempleOpacity?.value) / 100,
     lensOpacity: Number(els.designLensOpacity?.value) / 100
@@ -4136,7 +4166,10 @@ function parseDesignCode(source) {
       templeChamferEnabled: readBool("temple_chamfer_enabled", state.designDraft.construction?.templeChamferEnabled),
       templeChamferAmount: readNumber("temple_chamfer_amount", state.designDraft.construction?.templeChamferAmount),
       templeTextureDepth: readNumber("temple_texture_depth", state.designDraft.construction?.templeTextureDepth),
+      templePatternStart: readNumber("temple_pattern_start", state.designDraft.construction?.templePatternStart),
+      templePatternEnd: readNumber("temple_pattern_end", state.designDraft.construction?.templePatternEnd),
       templePatternSpacing: readNumber("temple_pattern_spacing", state.designDraft.construction?.templePatternSpacing),
+      templePatternSize: readNumber("temple_pattern_size", state.designDraft.construction?.templePatternSize),
       templeTextSize: readNumber("temple_text_size", state.designDraft.construction?.templeTextSize),
       templeTextPosition: readNumber("temple_text_position", state.designDraft.construction?.templeTextPosition),
       templeTextYOffset: readNumber("temple_text_y_offset", state.designDraft.construction?.templeTextYOffset),
@@ -8699,7 +8732,10 @@ temple_corner_radius = ${formatNumber(construction.templeCornerRadius)};
 temple_chamfer_enabled = ${construction.templeChamferEnabled ? "true" : "false"};
 temple_chamfer_amount = ${formatNumber(construction.templeChamferAmount)};
 temple_texture_depth = ${formatNumber(construction.templeTextureDepth)};
+temple_pattern_start = ${formatNumber(construction.templePatternStart)};
+temple_pattern_end = ${formatNumber(construction.templePatternEnd)};
 temple_pattern_spacing = ${formatNumber(construction.templePatternSpacing)};
+temple_pattern_size = ${formatNumber(construction.templePatternSize)};
 temple_text_size = ${formatNumber(construction.templeTextSize)};
 temple_text_position = ${formatNumber(construction.templeTextPosition)};
 temple_text_y_offset = ${formatNumber(construction.templeTextYOffset)};
@@ -8883,32 +8919,33 @@ module temple_side_relief_mark(side=1, z=20, width=1.4, height=4, angle=0, y_off
 
 module temple_pattern_relief(side=1) {
   if (temple_detail_mode == "texture") {
-    for (z=[14:temple_pattern_spacing:min(active_temple_straight-8,76)]) {
-      index = floor((z - 14) / temple_pattern_spacing);
-      segment = min(5.4, temple_pattern_spacing * 0.72);
+    pattern_start = min(max(0, temple_pattern_start), max(0, active_temple_straight - 4));
+    pattern_end = min(max(pattern_start, temple_pattern_end), max(0, active_temple_straight - 4));
+    for (z=[pattern_start:temple_pattern_spacing:pattern_end]) {
+      index = floor((z - pattern_start) / temple_pattern_spacing);
+      segment = temple_pattern_size;
+      rib_width = min(1.8, max(0.5, temple_pattern_size * 0.22));
+      mark_height = min(temple_bar_height * 0.72, max(0.65, temple_pattern_size * 1.1));
+      strip_height = min(1.25, max(0.45, temple_pattern_size * 0.17));
       if (temple_pattern == "ribs")
-        temple_side_relief_mark(side, z, 1.2, temple_bar_height * 0.68, 0);
+        temple_side_relief_mark(side, z, rib_width, mark_height, 0);
       if (temple_pattern == "micro-ribs") {
-        offset = min(1.25, temple_pattern_spacing * 0.14);
-        temple_side_relief_mark(side, z - offset, 0.68, temple_bar_height * 0.54, 0);
-        temple_side_relief_mark(side, z + offset, 0.68, temple_bar_height * 0.54, 0);
+        offset = min(1.25, temple_pattern_size * 0.28);
+        temple_side_relief_mark(side, z - offset, rib_width * 0.72, mark_height * 0.82, 0);
+        temple_side_relief_mark(side, z + offset, rib_width * 0.72, mark_height * 0.82, 0);
       }
       if (temple_pattern == "slots")
-        temple_side_relief_mark(side, z, segment, 0.72, 0);
+        temple_side_relief_mark(side, z, segment, strip_height, 0);
       if (temple_pattern == "dots") {
-        dot = min(2.2, max(1.15, temple_bar_height * 0.38));
+        dot = min(temple_bar_height * 0.5, max(0.7, temple_pattern_size * 0.58));
         temple_side_relief_mark(side, z, dot, dot, 0);
       }
       if (temple_pattern == "diamond") {
-        temple_side_relief_mark(side, z, segment, 0.72, 45);
-        temple_side_relief_mark(side, z, segment, 0.72, -45);
+        temple_side_relief_mark(side, z, segment, strip_height, 45);
+        temple_side_relief_mark(side, z, segment, strip_height, -45);
       }
       if (temple_pattern == "wave")
-        temple_side_relief_mark(side, z, segment, 0.72, (index % 2 == 0) ? 34 : -34);
-      if (temple_pattern == "ladder") {
-        temple_side_relief_mark(side, z, 0.78, temple_bar_height * 0.62, 0);
-        temple_side_relief_mark(side, z, segment * 0.68, 0.55, 0, (index % 2 == 0 ? -1 : 1) * temple_bar_height * 0.18);
-      }
+        temple_side_relief_mark(side, z, segment, strip_height, (index % 2 == 0) ? 34 : -34);
     }
   }
 }
@@ -8944,8 +8981,8 @@ module temple(side=1) {
   union() {
     temple_hinge(side);
     temple_profile_body(side);
-    temple_pattern_relief(side);
-    temple_mark(side);
+    color(detail_color) temple_pattern_relief(side);
+    color(detail_color) temple_mark(side);
   }
 }
 
@@ -9224,7 +9261,8 @@ async function recordDesignDownload(fileName, mesh) {
       colors: {
         front: draft.frameColor,
         temples: draft.templeColor,
-        lens: draft.lensColor
+        lens: draft.lensColor,
+        detail: draft.detailColor
       },
       mesh: {
         triangles: mesh.triangles.length,

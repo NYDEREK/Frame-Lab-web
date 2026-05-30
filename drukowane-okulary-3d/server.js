@@ -897,7 +897,7 @@ function sanitizeParametricDesign(style = {}) {
     return [key, { min: Math.min(first, second), max: Math.max(first, second), step }];
   }));
   const rawTemplePattern = String(style.templePattern || "");
-  const templePattern = ["none", "ribs", "micro-ribs", "slots", "dots", "diamond", "wave", "ladder"].includes(rawTemplePattern)
+  const templePattern = ["none", "ribs", "micro-ribs", "slots", "dots", "diamond", "wave"].includes(rawTemplePattern)
     ? rawTemplePattern
     : rawTemplePattern === "perforated" ? "diamond" : "none";
   const leftTempleText = cleanText(style.leftTempleText ?? style.templeText, "", 24);
@@ -918,6 +918,7 @@ function sanitizeParametricDesign(style = {}) {
     rightTempleText,
     browBar: false,
     frameColor: color("frameColor", "#ff741f"),
+    templeColor: color("templeColor", color("frameColor", "#ff741f")),
     lensColor: color("lensColor", "#202529"),
     detailColor: color("detailColor", "#e59a62"),
     sketch: {
@@ -961,7 +962,10 @@ function sanitizeParametricDesign(style = {}) {
       templeBarHeight: value(style.construction?.templeBarHeight, 3, 10, 5.4),
       templeCornerRadius: value(style.construction?.templeCornerRadius, 0, 4, 1.4),
       templeTextureDepth: value(style.construction?.templeTextureDepth, 0.2, 1.2, 0.45),
-      templePatternSpacing: value(style.construction?.templePatternSpacing, 5, 18, 9)
+      templePatternStart: value(style.construction?.templePatternStart, 0, 110, 14),
+      templePatternEnd: value(style.construction?.templePatternEnd, 8, 120, 76),
+      templePatternSpacing: value(style.construction?.templePatternSpacing, 4, 28, 9),
+      templePatternSize: value(style.construction?.templePatternSize, 0.5, 8, 4.2)
     },
     publicParameters: [...new Set(Array.isArray(style.publicParameters)
       ? style.publicParameters.filter((key) => validParameterKeys.has(key))
