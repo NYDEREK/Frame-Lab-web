@@ -184,6 +184,7 @@ const defaultDesignStyle = {
   lensOpacity: 0.62,
   detailColor: "#e59a62"
 };
+const templePatternIds = ["ribs", "micro-ribs", "slots", "dots", "diamond", "wave", "ladder"];
 const defaultDesignSketchPoints = [
   [-0.42, 0.5],
   [0.36, 0.5],
@@ -1113,7 +1114,7 @@ function normalizeDesignStyle(style = {}) {
   const rightTempleText = String(style.rightTempleText ?? style.templeText ?? "").trim().slice(0, 24);
   const frameColor = sanitizeHexColor(style.frameColor ?? style.frontColor, defaultDesignStyle.frameColor);
   const legacyPattern = style.templePattern;
-  const templePattern = ["ribs", "diamond", "wave"].includes(legacyPattern)
+  const templePattern = templePatternIds.includes(legacyPattern)
     ? legacyPattern
     : legacyPattern === "perforated" ? "diamond" : defaultDesignStyle.templePattern;
   const inferredMode = leftTempleText || rightTempleText
@@ -2007,6 +2008,48 @@ function drawTempleTextSafetyZone(ctx, metrics, mirrored, colors, displayPoints)
   ctx.restore();
 }
 
+function drawTemplePatternPreview(ctx, pattern, x, y, scale, construction, index, mirrored) {
+  const spacing = construction.templePatternSpacing;
+  const markHeight = construction.templeBarHeight * scale * 0.32;
+  const segment = Math.min(5.4, spacing * 0.72) * scale;
+  const dotRadius = Math.max(1.45, Math.min(3.2, construction.templeBarHeight * scale * 0.16));
+  const mirror = mirrored ? -1 : 1;
+  const line = (length, angle = 0, offsetX = 0, offsetY = 0) => {
+    ctx.save();
+    ctx.translate(x + mirror * offsetX * scale, y + offsetY * scale);
+    ctx.rotate((mirrored ? -angle : angle));
+    ctx.beginPath();
+    ctx.moveTo(-length / 2, 0);
+    ctx.lineTo(length / 2, 0);
+    ctx.stroke();
+    ctx.restore();
+  };
+  if (pattern === "ribs") {
+    line(markHeight * 2, Math.PI / 2);
+  } else if (pattern === "micro-ribs") {
+    const offset = Math.min(1.25, spacing * 0.14);
+    line(markHeight * 1.55, Math.PI / 2, -offset);
+    line(markHeight * 1.55, Math.PI / 2, offset);
+  } else if (pattern === "slots") {
+    line(segment, 0);
+  } else if (pattern === "dots") {
+    const fill = ctx.fillStyle;
+    ctx.fillStyle = ctx.strokeStyle;
+    ctx.beginPath();
+    ctx.arc(x, y, dotRadius, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = fill;
+  } else if (pattern === "diamond") {
+    line(segment, Math.PI / 4);
+    line(segment, -Math.PI / 4);
+  } else if (pattern === "ladder") {
+    line(markHeight * 1.6, Math.PI / 2);
+    line(segment * 0.68, 0, 0, index % 2 === 0 ? -construction.templeBarHeight * 0.18 : construction.templeBarHeight * 0.18);
+  } else {
+    line(segment, (index % 2 ? -1 : 1) * Math.PI / 5);
+  }
+}
+
 function drawTempleSketch(mirrored = false) {
   const canvas = els.designSketchCanvas;
   const metrics = templeSketchMetrics();
@@ -2040,24 +2083,9 @@ function drawTempleSketch(mirrored = false) {
     ctx.lineWidth = Math.max(1.25, c.templeTextureDepth * scale * 0.45);
     const start = 14;
     const end = Math.min(c.templeStraight - 8, 76);
-    for (let z = start; z < end; z += c.templePatternSpacing) {
+    for (let z = start, index = 0; z < end; z += c.templePatternSpacing, index += 1) {
       const x = point({ x: origin.x + z * scale, y: origin.y }).x;
-      const markHeight = c.templeBarHeight * scale * 0.32;
-      ctx.beginPath();
-      if (style.templePattern === "ribs") {
-        ctx.moveTo(x, origin.y - markHeight);
-        ctx.lineTo(x, origin.y + markHeight);
-      } else {
-        const shift = Math.min(5, c.templePatternSpacing * 0.7) * scale / 2;
-        const tilt = style.templePattern === "diamond" ? markHeight : markHeight * 0.72;
-        ctx.moveTo(x - shift, origin.y - tilt);
-        ctx.lineTo(x + shift, origin.y + tilt);
-        if (style.templePattern === "diamond") {
-          ctx.moveTo(x - shift, origin.y + tilt);
-          ctx.lineTo(x + shift, origin.y - tilt);
-        }
-      }
-      ctx.stroke();
+      drawTemplePatternPreview(ctx, style.templePattern, x, origin.y, scale, c, index, mirrored);
     }
     ctx.restore();
   }
@@ -2993,7 +3021,7 @@ function addDesignTemple(side, p, outerLensWidth, frameMaterial, detailMaterial,
   profile.position.set(attachX, designTempleBarCenterY, armStartZ);
   temple.add(profile);
   if (style.templeDetailMode === "texture") {
-    addDesignTempleRelief(side, temple, detailMaterial, construction, style.templePattern);
+    addDesignTempleRelief(side, temple, frameMaterial, construction, style.templePattern);
   }
   const templeText = side < 0 ? style.rightTempleText : style.leftTempleText;
   if (style.templeDetailMode === "text" && templeText) {
@@ -3006,21 +3034,34 @@ function addDesignTempleRelief(side, temple, material, construction, pattern) {
   const depth = construction.templeTextureDepth;
   const outsideX = side * (2.5 + construction.templeDepth / 2 + depth / 2 - 0.06);
   const limit = Math.min(construction.templeStraight - 8, 76);
-  const addMark = (width, height, z, angle = 0) => {
+  const addMark = (width, height, z, angle = 0, yOffset = 0) => {
     const mark = new THREE.Mesh(roundedPrismGeometry(width, height, depth, Math.min(0.26, height / 3), 0.04), material);
     mark.rotation.y = Math.PI / 2;
     mark.rotation.x = angle;
-    mark.position.set(outsideX, designTempleBarCenterY, designTempleProfileStartZ - z);
+    mark.position.set(outsideX, designTempleBarCenterY + yOffset, designTempleProfileStartZ - z);
     temple.add(mark);
   };
-  for (let z = 14; z < limit; z += construction.templePatternSpacing) {
+  for (let z = 14, index = 0; z < limit; z += construction.templePatternSpacing, index += 1) {
+    const segment = Math.min(5.4, construction.templePatternSpacing * 0.72);
     if (pattern === "ribs") {
       addMark(1.2, construction.templeBarHeight * 0.68, z);
+    } else if (pattern === "micro-ribs") {
+      const offset = Math.min(1.25, construction.templePatternSpacing * 0.14);
+      addMark(0.68, construction.templeBarHeight * 0.54, z - offset);
+      addMark(0.68, construction.templeBarHeight * 0.54, z + offset);
+    } else if (pattern === "slots") {
+      addMark(segment, 0.72, z);
+    } else if (pattern === "dots") {
+      const dot = Math.min(2.2, Math.max(1.15, construction.templeBarHeight * 0.38));
+      addMark(dot, dot, z);
     } else if (pattern === "diamond") {
-      addMark(Math.min(5.2, construction.templePatternSpacing * 0.7), 0.72, z, Math.PI / 4);
-      addMark(Math.min(5.2, construction.templePatternSpacing * 0.7), 0.72, z, -Math.PI / 4);
+      addMark(segment, 0.72, z, Math.PI / 4);
+      addMark(segment, 0.72, z, -Math.PI / 4);
+    } else if (pattern === "ladder") {
+      addMark(0.78, construction.templeBarHeight * 0.62, z);
+      addMark(segment * 0.68, 0.55, z, 0, (index % 2 === 0 ? -1 : 1) * construction.templeBarHeight * 0.18);
     } else {
-      addMark(Math.min(5, construction.templePatternSpacing * 0.7), 0.72, z, (Math.floor(z / construction.templePatternSpacing) % 2 ? -1 : 1) * Math.PI / 5);
+      addMark(segment, 0.72, z, (index % 2 ? -1 : 1) * Math.PI / 5);
     }
   }
 }
@@ -8825,21 +8866,51 @@ module front() {
   }
 }
 
+module temple_side_relief_mark(side=1, z=20, width=1.4, height=4, angle=0, y_offset=0) {
+  safe_width = max(0.2, width);
+  safe_height = max(0.2, height);
+  safe_radius = max(0.02, min(min(safe_width, safe_height)/2 - 0.01, 0.42));
+  translate([
+    side*2.5 + side*(temple_depth/2 - temple_texture_depth*0.35),
+    temple_bar_center_y + y_offset,
+    temple_arm_start_z-z
+  ])
+  rotate([90, side > 0 ? 90 : -90, 0])
+  rotate([0, 0, angle])
+  linear_extrude(height=temple_texture_depth, convexity=5)
+    rounded_rect([safe_width, safe_height], safe_radius);
+}
+
 module temple_pattern_relief(side=1) {
-  if (temple_detail_mode == "texture" && temple_pattern == "ribs")
-    for (z=[20:temple_pattern_spacing:min(active_temple_straight-5,74)])
-      translate([side*2.5, temple_bar_center_y, temple_arm_start_z-z])
-      soft_bar([temple_depth + temple_texture_depth, temple_bar_height + temple_texture_depth, 1.4], 0.35);
-  if (temple_detail_mode == "texture" && temple_pattern == "diamond")
-    for (z=[20:temple_pattern_spacing:min(active_temple_straight-5,74)])
-      translate([side*2.5, temple_bar_center_y, temple_arm_start_z-z])
-      rotate([0, 0, 45])
-      soft_bar([temple_depth + temple_texture_depth, temple_bar_height + temple_texture_depth, 2], 0.3);
-  if (temple_detail_mode == "texture" && temple_pattern == "wave")
-    for (z=[20:temple_pattern_spacing:min(active_temple_straight-5,74)])
-      translate([side*2.5, temple_bar_center_y, temple_arm_start_z-z])
-      rotate([0, 0, (floor(z/temple_pattern_spacing) % 2 == 0) ? 34 : -34])
-      soft_bar([temple_depth + temple_texture_depth, temple_bar_height + temple_texture_depth, 2], 0.3);
+  if (temple_detail_mode == "texture") {
+    for (z=[14:temple_pattern_spacing:min(active_temple_straight-8,76)]) {
+      index = floor((z - 14) / temple_pattern_spacing);
+      segment = min(5.4, temple_pattern_spacing * 0.72);
+      if (temple_pattern == "ribs")
+        temple_side_relief_mark(side, z, 1.2, temple_bar_height * 0.68, 0);
+      if (temple_pattern == "micro-ribs") {
+        offset = min(1.25, temple_pattern_spacing * 0.14);
+        temple_side_relief_mark(side, z - offset, 0.68, temple_bar_height * 0.54, 0);
+        temple_side_relief_mark(side, z + offset, 0.68, temple_bar_height * 0.54, 0);
+      }
+      if (temple_pattern == "slots")
+        temple_side_relief_mark(side, z, segment, 0.72, 0);
+      if (temple_pattern == "dots") {
+        dot = min(2.2, max(1.15, temple_bar_height * 0.38));
+        temple_side_relief_mark(side, z, dot, dot, 0);
+      }
+      if (temple_pattern == "diamond") {
+        temple_side_relief_mark(side, z, segment, 0.72, 45);
+        temple_side_relief_mark(side, z, segment, 0.72, -45);
+      }
+      if (temple_pattern == "wave")
+        temple_side_relief_mark(side, z, segment, 0.72, (index % 2 == 0) ? 34 : -34);
+      if (temple_pattern == "ladder") {
+        temple_side_relief_mark(side, z, 0.78, temple_bar_height * 0.62, 0);
+        temple_side_relief_mark(side, z, segment * 0.68, 0.55, 0, (index % 2 == 0 ? -1 : 1) * temple_bar_height * 0.18);
+      }
+    }
+  }
 }
 
 module temple_mark(side=1) {

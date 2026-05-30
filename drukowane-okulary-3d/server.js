@@ -896,13 +896,26 @@ function sanitizeParametricDesign(style = {}) {
     const second = value(source.max, min, max, max);
     return [key, { min: Math.min(first, second), max: Math.max(first, second), step }];
   }));
+  const rawTemplePattern = String(style.templePattern || "");
+  const templePattern = ["none", "ribs", "micro-ribs", "slots", "dots", "diamond", "wave", "ladder"].includes(rawTemplePattern)
+    ? rawTemplePattern
+    : rawTemplePattern === "perforated" ? "diamond" : "none";
+  const leftTempleText = cleanText(style.leftTempleText ?? style.templeText, "", 24);
+  const rightTempleText = cleanText(style.rightTempleText ?? style.templeText, "", 24);
+  const inferredTempleDetailMode = leftTempleText || rightTempleText
+    ? "text"
+    : templePattern !== "none" ? "texture" : "none";
+  const templeDetailMode = ["none", "text", "texture"].includes(style.templeDetailMode)
+    ? style.templeDetailMode
+    : inferredTempleDetailMode;
   return {
     type: "parametric-openscad",
     lensShape: ["soft-square", "round", "sharp"].includes(style.lensShape) ? style.lensShape : "soft-square",
-    templePattern: ["none", "ribs", "perforated", "diamond"].includes(style.templePattern) ? style.templePattern : "none",
-    templeText: cleanText(style.templeText, "", 24),
-    leftTempleText: cleanText(style.leftTempleText ?? style.templeText, "", 24),
-    rightTempleText: cleanText(style.rightTempleText ?? style.templeText, "", 24),
+    templeDetailMode,
+    templePattern,
+    templeText: leftTempleText,
+    leftTempleText,
+    rightTempleText,
     browBar: false,
     frameColor: color("frameColor", "#ff741f"),
     lensColor: color("lensColor", "#202529"),
