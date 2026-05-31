@@ -4275,33 +4275,90 @@ async function exportDesignScad() {
 async function exportDesign3mf() {
   handleDesignProjectCopyChange();
   if (!(await ensureDownloadAllowed(null))) return;
-  showLoader(true, "Generating Creator 3MF", "Packing the full front, hinges, temples and lenses...");
+  showLoader(true, "Generating Creator 3MF", "Packing separate front, lens and temple production files...");
   await waitFrame();
   try {
     renderDesignPreview({ fitView: false });
     await waitFrame();
     if (!designModelGroup) throw new Error("Creator preview is not ready.");
-    const exportGroup = designModelGroup.clone(true);
-    exportGroup.position.set(0, 0, 0);
-    exportGroup.rotation.set(0, 0, 0);
-    exportGroup.scale.setScalar(1);
-    makeExportMaterialsOpaque(exportGroup);
-    const mesh = collectMeshFromObject(exportGroup);
-    if (!mesh.triangles.length) throw new Error("No geometry to export.");
-    const fileName = `${slugify(state.designDraft.name) || "frame-lab-creator"}.3mf`;
-    const saved = await recordDesignDownload(fileName, mesh);
+    const projectRoot = slugify(state.designDraft.name) || "frame-lab-creator";
+    const parts = buildDesign3mfExportParts(projectRoot);
+    const missing = parts.filter((part) => !part.mesh.triangles.length).map((part) => part.label);
+    if (missing.length) throw new Error(`No geometry for: ${missing.join(", ")}.`);
+    const totals = meshExportCounts(parts.map((part) => part.mesh));
+    const fileName = `${projectRoot}-3mf-parts.zip`;
+    const saved = await recordDesignDownload(fileName, totals);
     if (!saved) return;
-    downloadBlob(fileName, make3mfBlob(mesh, {
-      title: state.designDraft.name || "Frame Lab Creator",
-      lens: "Generated acrylic lenses"
-    }));
-    setDesignNote(`Complete 3MF exported: ${mesh.triangles.length.toLocaleString("en-US")} triangles.`);
+    const files = Object.fromEntries(parts.map((part) => [
+      `${projectRoot}/${part.fileName}`,
+      make3mfBytes(part.mesh, { title: part.title, lens: part.lens })
+    ]));
+    files[`${projectRoot}/manifest.json`] = strToU8(JSON.stringify({
+      project: state.designDraft.name || "Frame Lab Creator",
+      exportedAt: new Date().toISOString(),
+      format: "Frame Lab Creator split 3MF package",
+      parts: parts.map((part) => ({
+        id: part.id,
+        fileName: part.fileName,
+        triangles: part.mesh.triangles.length,
+        vertices: part.mesh.vertices.length
+      }))
+    }, null, 2));
+    downloadBlob(fileName, new Blob([zipSync(files)], { type: "application/zip" }));
+    setDesignNote(`3MF parts exported: front, lenses, left temple and right temple (${totals.triangles.toLocaleString("en-US")} triangles).`);
   } catch (error) {
     setDesignNote(`Could not export 3MF: ${error.message}`);
     log(`Could not export Creator 3MF: ${error.message}`);
   } finally {
     showLoader(false);
   }
+}
+
+function buildDesign3mfExportParts(projectRoot) {
+  const p = designGeometryParams();
+  const definition = designDefinitionFromDraft();
+  const style = normalizeDesignStyle(definition);
+  const frontMaterial = new THREE.MeshStandardMaterial({ color: style.frameColor, roughness: 0.37, metalness: 0.035 });
+  const templeMaterial = new THREE.MeshStandardMaterial({ color: style.templeColor, roughness: 0.37, metalness: 0.035 });
+  const detailMaterial = new THREE.MeshStandardMaterial({ color: style.detailColor, roughness: 0.42, metalness: 0.02 });
+  const lensMaterial = new THREE.MeshStandardMaterial({ color: style.lensColor, roughness: 0.16, metalness: 0.04 });
+  const outerLensWidth = p.lens_width + p.rim_thickness * 2;
+  const lensCenter = p.bridge_width / 2 + outerLensWidth / 2;
+  const part = (id, label, fileName, title, builder, lens = "Generated acrylic lenses") => {
+    const group = new THREE.Group();
+    builder(group);
+    centerObjectForViewerPivot(group);
+    makeExportMaterialsOpaque(group);
+    return {
+      id,
+      label,
+      fileName,
+      title,
+      lens,
+      mesh: collectMeshFromObject(group)
+    };
+  };
+  return [
+    part("front", "front", `${projectRoot}-front.3mf`, `${state.designDraft.name || "Frame Lab Creator"} front`, (group) => {
+      addDesignFrontBody(p, frontMaterial, definition, group);
+      [-1, 1].forEach((side) => addDesignHingeAsset(
+        side < 0 ? "frontRight" : "frontLeft",
+        designHingeDatum(side, p, definition),
+        frontMaterial,
+        group
+      ));
+    }, "No lenses in this part"),
+    part("lenses", "lenses", `${projectRoot}-lenses.3mf`, `${state.designDraft.name || "Frame Lab Creator"} lenses`, (group) => {
+      addDesignLens(-lensCenter, p, lensMaterial, definition, group);
+      addDesignLens(lensCenter, p, lensMaterial, definition, group);
+    }),
+    part("left-temple", "left temple", `${projectRoot}-left-temple.3mf`, `${state.designDraft.name || "Frame Lab Creator"} left temple`, (group) => {
+      addDesignTemple(1, p, outerLensWidth, templeMaterial, detailMaterial, style, definition, group);
+    }, "No lenses in this part"),
+    part("right-temple", "right temple", `${projectRoot}-right-temple.3mf`, `${state.designDraft.name || "Frame Lab Creator"} right temple`, (group) => {
+      addDesignTemple(-1, p, outerLensWidth, templeMaterial, detailMaterial, style, definition, group);
+    }, "No lenses in this part")
+  ];
 }
 
 function setDesignNote(message, tone = "") {
@@ -9246,6 +9303,7 @@ async function recordDownload(fileName, mesh) {
 async function recordDesignDownload(fileName, mesh) {
   if (state.account.role === "visitor" || !sessionToken()) return false;
   const draft = designDefinitionFromDraft();
+  const meshCounts = meshExportCounts(mesh);
   const payload = {
     fileName,
     modelId: state.designDraft.collectionId || "creator-draft",
@@ -9269,8 +9327,8 @@ async function recordDesignDownload(fileName, mesh) {
         detail: draft.detailColor
       },
       mesh: {
-        triangles: mesh.triangles.length,
-        vertices: mesh.vertices.length
+        triangles: meshCounts.triangles,
+        vertices: meshCounts.vertices
       }
     }
   };
@@ -9556,7 +9614,22 @@ function collectMeshFromObject(root) {
   return { vertices, triangles };
 }
 
-function make3mfBlob(mesh, options = {}) {
+function meshExportCounts(meshOrMeshes) {
+  const meshes = Array.isArray(meshOrMeshes) ? meshOrMeshes : [meshOrMeshes];
+  return meshes.reduce((totals, mesh) => {
+    const triangles = Array.isArray(mesh?.triangles)
+      ? mesh.triangles.length
+      : Math.max(0, Math.floor(Number(mesh?.triangles ?? mesh?.triangleCount ?? 0)));
+    const vertices = Array.isArray(mesh?.vertices)
+      ? mesh.vertices.length
+      : Math.max(0, Math.floor(Number(mesh?.vertices ?? mesh?.vertexCount ?? 0)));
+    totals.triangles += triangles;
+    totals.vertices += vertices;
+    return totals;
+  }, { triangles: 0, vertices: 0 });
+}
+
+function make3mfBytes(mesh, options = {}) {
   const title = options.title || state.modelName;
   const lens = options.lens || lensModeLabel();
   const modelXml = `<?xml version="1.0" encoding="UTF-8"?>
@@ -9592,11 +9665,15 @@ ${mesh.triangles.map(([a, b, c]) => `          <triangle v1="${a}" v2="${b}" v3=
   <Relationship Target="/3D/3dmodel.model" Id="rel0" Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"/>
 </Relationships>`;
 
-  const zipped = zipSync({
+  return zipSync({
     "[Content_Types].xml": strToU8(contentTypes),
     "_rels/.rels": strToU8(rels),
     "3D/3dmodel.model": strToU8(modelXml)
   });
+}
+
+function make3mfBlob(mesh, options = {}) {
+  const zipped = make3mfBytes(mesh, options);
   return new Blob([zipped], { type: "model/3mf" });
 }
 
