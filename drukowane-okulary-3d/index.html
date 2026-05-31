@@ -999,7 +999,7 @@
         }
         showBootLoader("Loading Creator", "Preparing drawing tools and 3D previews...");
       };
-      document.querySelector("#heroEditor")?.addEventListener("click", (event) => queueDesignLabDuringBoot(event, false));
+      document.querySelector("#heroEditor")?.addEventListener("click", (event) => queueDesignLabDuringBoot(event, true));
       document.querySelector("#startDesignLab")?.addEventListener("click", (event) => queueDesignLabDuringBoot(event, true));
     </script>
     <script type="module" src="./src/app.js?v=creator-entry-20260530-17"></script>

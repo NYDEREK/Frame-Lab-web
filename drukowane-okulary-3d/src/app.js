@@ -3416,7 +3416,11 @@ function bindUi() {
   els.refreshStorageDebug?.addEventListener("click", () => loadStorageDebug());
   els.generateLicenseCodes.addEventListener("click", () => generateLicenseCodes());
   els.heroBrowse.addEventListener("click", scrollGalleryIntoView);
-  els.heroEditor.addEventListener("click", () => navigateToView("design-lab"));
+  els.heroEditor.addEventListener("click", () => {
+    if (!canOpenCreator()) return;
+    resetDesignDraft();
+    navigateToView("design-lab");
+  });
   els.startDesignLab?.addEventListener("click", () => {
     if (!canOpenCreator()) return;
     resetDesignDraft();
