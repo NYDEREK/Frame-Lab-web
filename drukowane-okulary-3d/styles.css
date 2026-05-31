@@ -382,53 +382,86 @@ small,
 .pricing-carousel {
   position: relative;
   display: grid;
-  align-items: stretch;
-  --plans-gap: clamp(0.75rem, 1.2vw, 1rem);
-  --plans-side-pad: clamp(2.25rem, 4vw, 3.2rem);
+  grid-template-columns: 2.8rem minmax(0, 1fr) 2.8rem;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(0.55rem, 1.1vw, 0.9rem);
+  width: 100%;
+  max-width: calc(var(--plans-visible-width) + 7.4rem);
+  margin: clamp(0.65rem, 1.4vw, 1.15rem) auto 0;
+  --plans-gap: clamp(0.85rem, 1.15vw, 1rem);
+  --plans-card-width: clamp(17rem, 22vw, 20.25rem);
+  --plans-visible-width: calc(
+    var(--plans-card-width) + var(--plans-card-width) + var(--plans-card-width) +
+    var(--plans-gap) + var(--plans-gap)
+  );
 }
 
 .pricing-carousel-track {
   display: flex;
+  grid-column: 2;
+  justify-self: center;
   grid-template-columns: none;
   gap: var(--plans-gap);
   overflow-x: auto;
   overscroll-behavior-x: contain;
   scroll-snap-type: x mandatory;
-  scroll-padding-inline: var(--plans-side-pad);
-  padding: 0.35rem var(--plans-side-pad) 1rem;
-  scrollbar-width: thin;
+  scroll-behavior: smooth;
+  width: min(100%, var(--plans-visible-width));
+  padding: 0.35rem 0 1rem;
+  scrollbar-width: none;
+}
+
+.pricing-carousel-track::-webkit-scrollbar {
+  display: none;
 }
 
 .pricing-carousel-track .pricing-card {
-  flex: 0 0 calc((100% - var(--plans-side-pad) - var(--plans-side-pad) - var(--plans-gap) - var(--plans-gap)) / 3);
-  min-width: 16.25rem;
+  flex: 0 0 var(--plans-card-width);
+  min-width: 0;
   min-height: 29.5rem;
   scroll-snap-align: start;
+  scroll-snap-stop: always;
 }
 
 .pricing-carousel-control {
-  position: absolute;
+  position: relative;
   z-index: 2;
-  top: 50%;
   width: 2.7rem;
   height: 5.2rem;
-  transform: translateY(-50%);
-  display: grid;
-  place-items: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
   border-color: color-mix(in srgb, var(--accent) 36%, var(--line));
   border-radius: 999px;
   background: color-mix(in srgb, var(--surface) 80%, transparent);
   color: var(--accent-2);
-  font-size: 2.2rem;
+  font-size: 0;
   line-height: 1;
   box-shadow: var(--shadow);
   user-select: none;
   transition: border-color 160ms ease, background 160ms ease, color 160ms ease, box-shadow 160ms ease;
 }
 
+.pricing-carousel-control::before {
+  content: "";
+  width: 0.72rem;
+  height: 0.72rem;
+  border-top: 0.18rem solid currentColor;
+  border-left: 0.18rem solid currentColor;
+}
+
+.pricing-carousel-control.previous::before {
+  transform: translateX(0.12rem) rotate(-45deg);
+}
+
+.pricing-carousel-control.next::before {
+  transform: translateX(-0.12rem) rotate(135deg);
+}
+
 .pricing-carousel-control:hover,
 .pricing-carousel-control:active {
-  transform: translateY(-50%);
   border-color: color-mix(in srgb, var(--accent) 58%, var(--line));
   background: var(--surface);
   color: var(--accent-2);
@@ -439,11 +472,13 @@ small,
 }
 
 .pricing-carousel-control.previous {
-  left: 0;
+  grid-column: 1;
+  justify-self: end;
 }
 
 .pricing-carousel-control.next {
-  right: 0;
+  grid-column: 3;
+  justify-self: start;
 }
 
 .pricing-card {
@@ -3815,12 +3850,18 @@ input[type="password"] {
     grid-template-columns: 1fr;
   }
 
+  .pricing-carousel {
+    grid-template-columns: 2.35rem minmax(0, 1fr) 2.35rem;
+    max-width: calc(var(--plans-visible-width) + 6.2rem);
+    --plans-card-width: min(19.5rem, calc((100vw - 8rem - var(--plans-gap)) / 2));
+    --plans-visible-width: calc(var(--plans-card-width) + var(--plans-card-width) + var(--plans-gap));
+  }
+
   .pricing-carousel-track {
-    padding-inline: 2.25rem;
+    width: min(100%, var(--plans-visible-width));
   }
 
   .pricing-carousel-track .pricing-card {
-    flex-basis: min(82vw, 24rem);
     min-height: 29rem;
   }
 
@@ -3983,6 +4024,15 @@ input[type="password"] {
     inset: auto 0.75rem 0.75rem;
     max-height: 58%;
     width: auto;
+  }
+}
+
+@media (max-width: 520px) {
+  .pricing-carousel {
+    grid-template-columns: 2.1rem minmax(0, 1fr) 2.1rem;
+    max-width: calc(var(--plans-visible-width) + 5rem);
+    --plans-card-width: min(72vw, 20rem);
+    --plans-visible-width: var(--plans-card-width);
   }
 }
 

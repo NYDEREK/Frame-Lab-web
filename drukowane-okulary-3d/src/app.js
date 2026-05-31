@@ -3310,8 +3310,12 @@ function bindUi() {
   els.publicPricingGrid?.addEventListener("click", selectPricingPlan);
   els.pricingGrid?.addEventListener("keydown", handlePricingPlanKeydown);
   els.publicPricingGrid?.addEventListener("keydown", handlePricingPlanKeydown);
-  els.plansCarouselPrevious?.addEventListener("click", () => scrollPlansCarousel(-1));
-  els.plansCarouselNext?.addEventListener("click", () => scrollPlansCarousel(1));
+  els.plansCarouselPrevious?.addEventListener("click", (event) => activatePlansCarouselControl(event, -1));
+  els.plansCarouselNext?.addEventListener("click", (event) => activatePlansCarouselControl(event, 1));
+  els.plansCarouselPrevious?.addEventListener("pointerup", (event) => activatePlansCarouselControl(event, -1));
+  els.plansCarouselNext?.addEventListener("pointerup", (event) => activatePlansCarouselControl(event, 1));
+  els.plansCarouselPrevious?.addEventListener("keydown", (event) => handlePlansCarouselControlKeydown(event, -1));
+  els.plansCarouselNext?.addEventListener("keydown", (event) => handlePlansCarouselControlKeydown(event, 1));
   els.signOutAccount.addEventListener("click", () => signOutAccount());
   els.profileSignOut.addEventListener("click", () => signOutAccount());
   els.cancelSubscription.addEventListener("click", () => cancelSubscription());
@@ -5100,6 +5104,7 @@ function renderPlanCards() {
   const content = normalizeContentSettings(state.brandSettings.content);
   const plans = content.plans;
   const makerWorldUrl = sanitizeExternalUrl(content.makerWorldUrl, "");
+  const publicPlanScroll = els.publicPricingGrid?.scrollLeft || 0;
   [els.makerWorldPlanTarget, els.publicMakerWorldPlanTarget].forEach((target) => {
     if (!target) return;
     target.innerHTML = makerWorldUrl
@@ -5128,7 +5133,11 @@ function renderPlanCards() {
     `;
   }).join("");
   if (els.pricingGrid) els.pricingGrid.innerHTML = cards;
-  if (els.publicPricingGrid) els.publicPricingGrid.innerHTML = cards;
+  if (els.publicPricingGrid) {
+    els.publicPricingGrid.innerHTML = cards;
+    els.publicPricingGrid.scrollLeft = publicPlanScroll;
+    requestAnimationFrame(() => snapPlansCarouselToGrid("auto"));
+  }
 }
 
 function selectPricingPlan(event) {
@@ -5147,6 +5156,24 @@ function handlePricingPlanKeydown(event) {
   renderPlanCards();
 }
 
+let lastPlansCarouselPointerActivation = 0;
+
+function activatePlansCarouselControl(event, direction) {
+  const now = performance.now();
+  if (event.type === "click" && lastPlansCarouselPointerActivation && now - lastPlansCarouselPointerActivation < 320) {
+    event.preventDefault();
+    return;
+  }
+  if (event.type === "pointerup") lastPlansCarouselPointerActivation = now;
+  event.preventDefault();
+  scrollPlansCarousel(direction);
+}
+
+function handlePlansCarouselControlKeydown(event, direction) {
+  if (event.key !== "Enter" && event.key !== " ") return;
+  activatePlansCarouselControl(event, direction);
+}
+
 function scrollPlansCarousel(direction) {
   const track = els.publicPricingGrid;
   if (!track) return;
@@ -5156,8 +5183,28 @@ function scrollPlansCarousel(direction) {
     ? firstCard.getBoundingClientRect().width + gap
     : Math.max(280, track.clientWidth / 3);
   const maxScroll = Math.max(0, track.scrollWidth - track.clientWidth);
-  const nextScroll = THREE.MathUtils.clamp(track.scrollLeft + direction * distance, 0, maxScroll);
-  track.scrollLeft = nextScroll;
+  const currentIndex = distance > 0 ? Math.round(track.scrollLeft / distance) : 0;
+  const maxIndex = distance > 0 ? Math.ceil(maxScroll / distance) : 0;
+  const nextIndex = THREE.MathUtils.clamp(currentIndex + direction, 0, maxIndex);
+  const nextScroll = THREE.MathUtils.clamp(nextIndex * distance, 0, maxScroll);
+  track.scrollTo({ left: nextScroll, behavior: "smooth" });
+  window.setTimeout(() => {
+    if (Math.abs(track.scrollLeft - nextScroll) > 2) track.scrollLeft = nextScroll;
+  }, 220);
+}
+
+function snapPlansCarouselToGrid(behavior = "smooth") {
+  const track = els.publicPricingGrid;
+  if (!track) return;
+  const firstCard = track.querySelector(".pricing-card");
+  if (!firstCard) return;
+  const gap = Number.parseFloat(getComputedStyle(track).columnGap) || 0;
+  const distance = firstCard.getBoundingClientRect().width + gap;
+  if (distance <= 0) return;
+  const maxScroll = Math.max(0, track.scrollWidth - track.clientWidth);
+  const index = Math.round(track.scrollLeft / distance);
+  const nextScroll = THREE.MathUtils.clamp(index * distance, 0, maxScroll);
+  track.scrollTo({ left: nextScroll, behavior });
 }
 
 function renderMarketingContent() {
