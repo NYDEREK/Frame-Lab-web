@@ -833,17 +833,74 @@ function publicStaticLicenseCode(item) {
   };
 }
 
+function scadNumberValue(source, key) {
+  const match = String(source || "").match(new RegExp(`(?:^|\\n)\\s*${key}\\s*=\\s*(-?\\d*\\.?\\d+)\\s*;`));
+  if (!match) return undefined;
+  const number = Number(match[1]);
+  return Number.isFinite(number) ? number : undefined;
+}
+
+function scadBooleanValue(source, key) {
+  const match = String(source || "").match(new RegExp(`(?:^|\\n)\\s*${key}\\s*=\\s*(true|false)\\s*;`));
+  return match ? match[1] === "true" : undefined;
+}
+
+function mergeScadConstructionHints(design = {}, scadSource = "") {
+  const construction = { ...(design.construction || {}) };
+  const numberFields = {
+    lensSeatWidth: "lens_seat_width",
+    lensSeatDepth: "lens_seat_depth",
+    lensClearance: "lens_clearance",
+    lensChannelOffset: "lens_channel_offset",
+    hingeMountHeight: "hinge_mount_height",
+    hingeMountOffset: "hinge_mount_offset",
+    bridgeThickness: "bridge_thickness",
+    bridgeTopJoinOffset: "bridge_top_join_offset",
+    bridgeBottomJoinOffset: "bridge_bottom_join_offset",
+    templeStraight: "temple_straight",
+    templeHook: "temple_hook",
+    templeHookAngle: "temple_hook_angle",
+    templeBarHeight: "temple_bar_height",
+    templeDepth: "temple_depth",
+    templeCornerRadius: "temple_corner_radius",
+    templeChamferAmount: "temple_chamfer_amount",
+    templeTextureDepth: "temple_texture_depth",
+    templePatternStart: "temple_pattern_start",
+    templePatternEnd: "temple_pattern_end",
+    templePatternSpacing: "temple_pattern_spacing",
+    templePatternSize: "temple_pattern_size",
+    templeTextSize: "temple_text_size",
+    templeTextPosition: "temple_text_position",
+    templeTextYOffset: "temple_text_y_offset",
+    templeTextDepth: "temple_text_depth"
+  };
+  Object.entries(numberFields).forEach(([field, key]) => {
+    if (construction[field] !== undefined) return;
+    const number = scadNumberValue(scadSource, key);
+    if (number !== undefined) construction[field] = number;
+  });
+  if (construction.templeChamferEnabled === undefined) {
+    const enabled = scadBooleanValue(scadSource, "temple_chamfer_enabled");
+    if (enabled !== undefined) construction.templeChamferEnabled = enabled;
+  }
+  return { ...design, construction };
+}
+
 function sanitizeCollection(model) {
   if (!model || typeof model !== "object") return null;
+  const scadSource = String(model.scadSource || "").slice(0, 500_000);
+  const design = model.design && typeof model.design === "object"
+    ? sanitizeParametricDesign(mergeScadConstructionHints(model.design, scadSource))
+    : null;
   return {
     id: String(model.id || randomBytes(8).toString("hex")),
     name: String(model.name || "Frame collection").slice(0, 120),
     category: model.category === "optical" ? "optical" : "sun",
     access: normalizeAccess(model.access),
     description: String(model.description || "").slice(0, 260),
-    scadSource: String(model.scadSource || "").slice(0, 500_000),
+    scadSource,
     params: model.params && typeof model.params === "object" ? model.params : {},
-    design: model.design && typeof model.design === "object" ? sanitizeParametricDesign(model.design) : null,
+    design,
     lensMode: ["none", "component"].includes(model.lensMode) ? model.lensMode : "none",
     thumbnail: typeof model.thumbnail === "string" ? model.thumbnail : "",
     thumbnailSource: model.thumbnailSource === "custom" ? "custom" : (model.thumbnailSource === "creator" ? "creator" : ""),
@@ -857,6 +914,16 @@ function sanitizeCollection(model) {
 
 function sanitizeParametricDesign(style = {}) {
   const color = (key, fallback) => sanitizeHexColor(style[key], fallback);
+  const boolean = (next, fallback = false) => {
+    if (next === undefined || next === null) return fallback;
+    if (typeof next === "string") {
+      const normalized = next.trim().toLowerCase();
+      if (["true", "1", "yes", "on"].includes(normalized)) return true;
+      if (["false", "0", "no", "off"].includes(normalized)) return false;
+      return fallback;
+    }
+    return Boolean(next);
+  };
   const validParameterKeys = new Set([
     "head_width", "bridge_width", "lens_width", "lens_height", "rim_thickness",
     "temple_length", "temple_drop", "temple_spread"
@@ -954,18 +1021,28 @@ function sanitizeParametricDesign(style = {}) {
       lensSeatDepth: value(style.construction?.lensSeatDepth, 0.15, 1.2, 0.35),
       lensClearance: value(style.construction?.lensClearance, 0, 0.6, 0.2),
       lensChannelOffset: value(style.construction?.lensChannelOffset, -1, 1, 0),
-      hingeMountHeight: value(style.construction?.hingeMountHeight, -12, 22, 10),
-      hingeMountOffset: value(style.construction?.hingeMountOffset, -4, 8, 0),
+      hingeMountHeight: value(style.construction?.hingeMountHeight, -12, 12, 10),
+      hingeMountOffset: value(style.construction?.hingeMountOffset, -4, 0, 0),
+      bridgeThickness: value(style.construction?.bridgeThickness, 3, 12, 6),
+      bridgeTopJoinOffset: value(style.construction?.bridgeTopJoinOffset, -18, 18, 3),
+      bridgeBottomJoinOffset: value(style.construction?.bridgeBottomJoinOffset, -18, 18, -3),
       templeStraight: value(style.construction?.templeStraight, 35, 120, 65),
       templeHook: value(style.construction?.templeHook, 10, 60, 30),
       templeHookAngle: value(style.construction?.templeHookAngle, 10, 75, 45),
       templeBarHeight: value(style.construction?.templeBarHeight, 3, 10, 5.4),
+      templeDepth: value(style.construction?.templeDepth, 2.4, 6, 3.6),
       templeCornerRadius: value(style.construction?.templeCornerRadius, 0, 4, 1.4),
+      templeChamferEnabled: boolean(style.construction?.templeChamferEnabled, false),
+      templeChamferAmount: value(style.construction?.templeChamferAmount, 0, 1.2, 0.35),
       templeTextureDepth: value(style.construction?.templeTextureDepth, 0.2, 1.2, 0.45),
       templePatternStart: value(style.construction?.templePatternStart, 0, 110, 14),
       templePatternEnd: value(style.construction?.templePatternEnd, 8, 120, 76),
       templePatternSpacing: value(style.construction?.templePatternSpacing, 4, 28, 9),
-      templePatternSize: value(style.construction?.templePatternSize, 0.5, 8, 4.2)
+      templePatternSize: value(style.construction?.templePatternSize, 0.5, 8, 4.2),
+      templeTextSize: value(style.construction?.templeTextSize, 2, 8, 4),
+      templeTextPosition: value(style.construction?.templeTextPosition, 0, 120, 36),
+      templeTextYOffset: value(style.construction?.templeTextYOffset, -5, 5, 0),
+      templeTextDepth: value(style.construction?.templeTextDepth, 0.15, 1.2, 0.45)
     },
     publicParameters: [...new Set(Array.isArray(style.publicParameters)
       ? style.publicParameters.filter((key) => validParameterKeys.has(key))
@@ -1024,6 +1101,7 @@ function publicDesignSubmission(item, includeOwner = false) {
 }
 
 function sanitizeDesignSubmission(body = {}, user) {
+  const scadSource = String(body.scadSource || "").slice(0, 500_000);
   return {
     id: randomBytes(12).toString("hex"),
     userId: user.id,
@@ -1032,8 +1110,8 @@ function sanitizeDesignSubmission(body = {}, user) {
     name: cleanText(body.name, "Custom sunglasses", 120),
     description: cleanText(body.description, "", 260),
     params: sanitizeDesignParams(body.params),
-    design: sanitizeParametricDesign(body.design),
-    scadSource: String(body.scadSource || "").slice(0, 500_000),
+    design: sanitizeParametricDesign(mergeScadConstructionHints(body.design || {}, scadSource)),
+    scadSource,
     thumbnail: sanitizeDesignThumbnail(body.thumbnail),
     status: "pending",
     collectionId: "",
