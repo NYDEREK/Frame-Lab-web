@@ -2288,34 +2288,36 @@ function sketchDimension(ctx, x1, y1, x2, y2, label) {
 
 function drawDesignNoseWingsSketch(ctx, metrics, colors, construction) {
   if (!construction.noseWingEnabled) return;
-  const bridge = designBridgeMetrics(metrics.p, state.designDraft);
-  const height = construction.noseWingHeight;
-  const width = construction.noseWingWidth;
-  const dropX = Math.tan(THREE.MathUtils.degToRad(construction.noseWingAngle)) * height * 0.48;
-  const baseY = bridge.bottomJoinY + construction.noseWingOffset - width * 0.18;
-  const rootOverlap = Math.min(height * 0.16, width * 1.4);
+  const polygons = [-1, 1].flatMap((side) => designNoseWingFootprintPolygons(metrics.p, state.designDraft, side));
+  if (!polygons.length) return;
+  const toCanvas = ([x, y]) => ({
+    x: metrics.centerX + x * metrics.scale,
+    y: metrics.centerY - y * metrics.scale
+  });
   ctx.save();
   ctx.globalAlpha = 0.58;
-  ctx.strokeStyle = colors.stroke;
   ctx.fillStyle = colors.fill;
-  ctx.lineWidth = Math.max(2.2, width * metrics.scale);
-  ctx.lineCap = "round";
-  ctx.lineJoin = "round";
-  [-1, 1].forEach((side) => {
-    const baseX = side * (metrics.p.bridge_width / 2 + metrics.p.rim_thickness * 0.48);
-    const screenBase = {
-      x: metrics.centerX + (baseX - side * dropX / Math.max(height, 1) * rootOverlap) * metrics.scale,
-      y: metrics.centerY - (baseY + rootOverlap) * metrics.scale
-    };
-    const screenTip = {
-      x: metrics.centerX + (baseX + side * dropX) * metrics.scale,
-      y: metrics.centerY - (baseY - height) * metrics.scale
-    };
+  ctx.strokeStyle = colors.stroke;
+  ctx.lineWidth = Math.max(1.1, metrics.scale * 0.26);
+  ctx.beginPath();
+  polygons.forEach((polygon) => polygon.forEach((ring) => {
+    const points = designCleanRing(ring).map(toCanvas);
+    if (points.length < 3) return;
+    ctx.moveTo(points[0].x, points[0].y);
+    points.slice(1).forEach((point) => ctx.lineTo(point.x, point.y));
+    ctx.closePath();
+  }));
+  ctx.fill("evenodd");
+  ctx.globalAlpha = 0.9;
+  polygons.forEach((polygon) => polygon.forEach((ring) => {
+    const points = designCleanRing(ring).map(toCanvas);
+    if (points.length < 3) return;
     ctx.beginPath();
-    ctx.moveTo(screenBase.x, screenBase.y);
-    ctx.lineTo(screenTip.x, screenTip.y);
+    ctx.moveTo(points[0].x, points[0].y);
+    points.slice(1).forEach((point) => ctx.lineTo(point.x, point.y));
+    ctx.closePath();
     ctx.stroke();
-  });
+  }));
   ctx.restore();
 }
 
@@ -3145,6 +3147,58 @@ function designFrontShapes(p, definition, innerExpansion = 0) {
   });
 }
 
+function designShapesFromPolygons(polygons) {
+  return (Array.isArray(polygons) ? polygons : [])
+    .filter((polygon) => Array.isArray(polygon?.[0]) && polygon[0].length >= 3)
+    .map((polygon) => {
+      const shape = ringPath(designCleanRing(polygon[0]));
+      polygon.slice(1).forEach((ring) => {
+        const hole = designCleanRing(ring);
+        if (hole.length >= 3) shape.holes.push(ringPath(hole, new THREE.Path()));
+      });
+      return shape;
+    });
+}
+
+function designNoseWingPath(p, definition, side) {
+  const construction = normalizeDesignConstruction(definition?.construction);
+  const bridge = designBridgeMetrics(p, definition);
+  const height = Math.max(1, construction.noseWingHeight);
+  const width = Math.max(0.6, construction.noseWingWidth);
+  const dropX = Math.tan(THREE.MathUtils.degToRad(construction.noseWingAngle)) * height * 0.48;
+  const baseY = bridge.bottomJoinY + construction.noseWingOffset - width * 0.18;
+  const rootOverlap = Math.min(height * 0.16, width * 1.4);
+  const baseX = side * (p.bridge_width / 2 + p.rim_thickness * 0.48);
+  return {
+    width,
+    start: [
+      baseX - side * dropX / height * rootOverlap,
+      baseY + rootOverlap
+    ],
+    end: [
+      baseX + side * dropX,
+      baseY - height
+    ]
+  };
+}
+
+function designNoseWingFootprintPolygons(p, definition, side) {
+  const construction = normalizeDesignConstruction(definition?.construction);
+  if (!construction.noseWingEnabled) return [];
+  const path = designNoseWingPath(p, definition, side);
+  const radius = Math.max(0.35, Math.min(path.width * 0.52, p.rim_thickness * 0.72));
+  const footprint = designSegmentCapsuleRing(path.start, path.end, radius, 10);
+  if (footprint.length < 3) return [];
+  try {
+    return polygonClipping.intersection(
+      designFrontPlanarPolygons(p, definition, 0),
+      [footprint]
+    );
+  } catch {
+    return [];
+  }
+}
+
 function drawDesignFrontPlanarProfile(ctx, metrics, colors) {
   const { p, scale, centerX, centerY } = metrics;
   const polygons = designFrontPlanarPolygons(p, state.designDraft, 0);
@@ -3358,66 +3412,25 @@ function addDesignFrontBody(p, material, definition, target = designModelGroup) 
   }
 }
 
-function noseWingBlendGeometry(width, length, depth, bevel) {
-  const root = Math.min(length * 0.22, width * 2.35);
-  const topY = length / 2 + root * 0.34;
-  const shoulderY = length / 2 - root * 0.62;
-  const bottomY = -length / 2 - root * 0.08;
-  const topHalf = width * 0.9;
-  const shoulderHalf = width * 0.56;
-  const tipHalf = width * 0.38;
-  const tipRound = Math.min(width * 0.82, root * 0.46, length * 0.16);
-  const shape = new THREE.Shape();
-  shape.moveTo(-topHalf, topY - root * 0.28);
-  shape.quadraticCurveTo(-topHalf, topY, -topHalf * 0.2, topY);
-  shape.quadraticCurveTo(topHalf, topY, topHalf, topY - root * 0.28);
-  shape.bezierCurveTo(topHalf * 0.9, shoulderY + root * 0.28, shoulderHalf, shoulderY, shoulderHalf, shoulderY - root * 0.18);
-  shape.lineTo(tipHalf, bottomY + tipRound);
-  shape.quadraticCurveTo(tipHalf, bottomY, 0, bottomY);
-  shape.quadraticCurveTo(-tipHalf, bottomY, -tipHalf, bottomY + tipRound);
-  shape.lineTo(-shoulderHalf, shoulderY - root * 0.18);
-  shape.bezierCurveTo(-shoulderHalf, shoulderY, -topHalf * 0.9, shoulderY + root * 0.28, -topHalf, topY - root * 0.28);
-  shape.closePath();
-  const safeBevel = Math.min(bevel, depth * 0.18, width * 0.12);
-  const geometry = new THREE.ExtrudeGeometry(shape, {
-    depth,
-    bevelEnabled: safeBevel > 0.001,
-    bevelThickness: Math.max(0.01, safeBevel),
-    bevelSize: Math.max(0.01, safeBevel),
-    bevelSegments: safeBevel > 0.001 ? 3 : 0
-  });
-  geometry.center();
-  geometry.computeVertexNormals();
-  return geometry;
-}
-
 function addDesignNoseWings(p, material, definition, target = designModelGroup) {
   const construction = normalizeDesignConstruction(definition?.construction);
   if (!construction.noseWingEnabled) return;
   const features = normalizeDesignFeatures(definition?.features, p);
-  const bridge = designBridgeMetrics(p, definition);
-  const height = construction.noseWingHeight;
-  const width = construction.noseWingWidth;
   const depth = construction.noseWingDepth;
-  const spread = THREE.MathUtils.degToRad(construction.noseWingAngle);
-  const dropX = Math.tan(spread) * height * 0.48;
-  const baseY = bridge.bottomJoinY + construction.noseWingOffset - width * 0.18;
-  const bevel = Math.min(0.26, width * 0.1, depth * 0.07);
+  const bevel = Math.min(depth * 0.28, construction.noseWingWidth * 0.22, 0.9);
+  const overlap = Math.min(0.12, depth * 0.06);
   [-1, 1].forEach((side) => {
-    const baseX = side * (p.bridge_width / 2 + p.rim_thickness * 0.48);
-    const bladeLength = Math.hypot(height, dropX);
-    const wing = new THREE.Mesh(
-      noseWingBlendGeometry(width, bladeLength, depth, bevel),
-      material
-    );
-    wing.position.set(
-      baseX + side * dropX * 0.5,
-      baseY - height * 0.5,
-      -features.extrude.depth / 2 - depth * 0.28
-    );
-    wing.rotation.z = side * Math.atan2(dropX, height);
-    wing.name = `nose-wing-${side < 0 ? "left" : "right"}`;
-    target.add(wing);
+    const polygons = designNoseWingFootprintPolygons(p, definition, side);
+    designShapesFromPolygons(polygons).forEach((shape) => {
+      const extrusion = containedBevelExtrudeOptions(depth, bevel, 5);
+      const geometry = new THREE.ExtrudeGeometry(shape, extrusion.options);
+      geometry.translate(0, 0, -extrusion.centerOffset);
+      geometry.computeVertexNormals();
+      const wing = new THREE.Mesh(geometry, material);
+      wing.position.z = -features.extrude.depth / 2 - depth / 2 + overlap;
+      wing.name = `nose-wing-${side < 0 ? "left" : "right"}`;
+      target.add(wing);
+    });
   });
 }
 
@@ -9801,32 +9814,36 @@ module hinge_connector_profile(side=1) {
   polygon(side < 0 ? hinge_connector_left_path : hinge_connector_right_path);
 }
 
-module nose_wing_section(width_scale=1, length_scale=1, depth_scale=1) {
-  safe_width = max(0.6, nose_wing_width * width_scale);
-  safe_length = max(0.8, nose_wing_width * length_scale);
-  safe_depth = max(0.8, nose_wing_depth * depth_scale);
-  soft_bar([safe_width, safe_length, safe_depth], min(min(safe_width, safe_length) * 0.36, 0.95));
+module nose_wing_footprint(side=1) {
+  bridge_center_y = lens_height * 0.18;
+  base_x = side * (bridge_width / 2 + rim_thickness * 0.48);
+  base_y = bridge_center_y + bridge_bottom_join_offset + nose_wing_offset - nose_wing_width * 0.18;
+  tip_dx = side * tan(nose_wing_angle) * nose_wing_height * 0.48;
+  root_overlap = min(nose_wing_height * 0.16, nose_wing_width * 1.4);
+  root_x = base_x - side * tip_dx / max(nose_wing_height, 1) * root_overlap;
+  root_y = base_y + root_overlap;
+  tip_x = base_x + tip_dx;
+  tip_y = base_y - nose_wing_height;
+  footprint_radius = max(0.35, min(nose_wing_width * 0.52, rim_thickness * 0.72));
+  intersection() {
+    front_planar_profile();
+    hull() {
+      translate([root_x, root_y])
+        rounded_rect([footprint_radius * 2, footprint_radius * 2], footprint_radius);
+      translate([tip_x, tip_y])
+        rounded_rect([footprint_radius * 2, footprint_radius * 2], footprint_radius);
+    }
+  }
 }
 
 module nose_wing(side=1) {
   if (nose_wing_enabled) {
-    bridge_center_y = lens_height * 0.18;
-    base_x = side * (bridge_width / 2 + rim_thickness * 0.48);
-    base_y = bridge_center_y + bridge_bottom_join_offset + nose_wing_offset - nose_wing_width * 0.18;
-    tip_dx = side * tan(nose_wing_angle) * nose_wing_height * 0.48;
-    root_overlap = min(nose_wing_height * 0.16, nose_wing_width * 1.4);
-    root_x = base_x - side * tip_dx / max(nose_wing_height, 1) * root_overlap;
-    root_y = base_y + root_overlap;
-    root_z = -front_face_z + nose_wing_depth * 0.08;
-    tip_z = -front_face_z - nose_wing_depth * 0.78;
-    hull() {
-      translate([root_x, root_y, root_z])
-        rotate([0, 0, side * nose_wing_angle * 0.18])
-          nose_wing_section(1.45, 1.08, 0.46);
-      translate([base_x + tip_dx, base_y - nose_wing_height, tip_z])
-        rotate([0, 0, side * nose_wing_angle])
-          nose_wing_section(0.72, 0.82, 0.82);
-    }
+    bump_depth = max(0.4, nose_wing_depth);
+    bump_round = min(bump_depth * 0.28, nose_wing_width * 0.22, 0.9);
+    bump_overlap = min(0.12, bump_depth * 0.06);
+    translate([0, 0, -front_face_z - bump_depth / 2 + bump_overlap])
+      chamfered_profile_extrude(bump_depth, bump_round)
+        nose_wing_footprint(side);
   }
 }
 
