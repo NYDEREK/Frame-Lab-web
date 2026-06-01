@@ -16,7 +16,7 @@
         document.documentElement.dataset.appError = event.reason?.message || String(event.reason || "promise");
       });
     </script>
-    <link rel="stylesheet" href="./styles.css?v=creator-entry-20260531-04" />
+    <link rel="stylesheet" href="./styles.css?v=creator-entry-20260601-02" />
     <script type="importmap">
       {
         "imports": {
@@ -486,8 +486,15 @@
             <button id="designViewSketch" type="button" class="active">Drawing</button>
             <button id="designView3d" type="button">Assembly 3D</button>
           </div>
+          <div class="design-stage-tools" role="group" aria-label="Creator tools">
+            <button id="designUndo" type="button" disabled>Undo</button>
+            <button id="designRedo" type="button" disabled>Redo</button>
+            <button id="designMeasureToggle" type="button">Measure</button>
+            <button id="designMeasureClear" type="button" disabled>Clear</button>
+          </div>
           <div class="design-stage-footer">
             <span id="designDimensions">150 mm frame / 18 mm bridge / 100 mm temple</span>
+            <span id="designMeasureReadout">Measure off</span>
             <span id="designViewHint">Drag profile points to define the front opening</span>
           </div>
         </section>
@@ -517,6 +524,10 @@
               <label><span>Temple opacity</span><input id="designTempleOpacity" type="range" min="15" max="100" step="1" value="100" /><small>100%</small></label>
               <label><span>Lens opacity</span><input id="designLensOpacity" type="range" min="15" max="100" step="1" value="62" /><small>62%</small></label>
             </div>
+          </section>
+          <section class="design-control-section design-warning-section">
+            <h3>Fit warnings</h3>
+            <div id="designWarnings" class="design-warning-list"></div>
           </section>
           <section id="designOperationsPanel" class="design-operations" role="tabpanel">
             <section class="design-control-section design-front-point-section">
@@ -575,6 +586,20 @@
                 <label><span>Hinge height</span><input id="designHingeMountHeight" type="number" min="-12" max="12" step="0.5" value="10" /><small>mm</small></label>
                 <label><span>Side inset</span><input id="designHingeMountOffset" type="number" min="-4" max="0" step="0.5" value="0" /><small>mm</small></label>
                 <label><span>Bridge thickness</span><input id="designBridgeThickness" type="number" min="3" max="12" step="0.1" value="6" /><small>mm</small></label>
+              </div>
+            </section>
+            <section class="design-control-section">
+              <h3>Nose wings</h3>
+              <div class="design-construction-grid">
+                <label class="design-slider-toggle">
+                  <span><input id="designNoseWingEnabled" type="checkbox" checked /> Enabled</span>
+                  <input id="designNoseWingHeight" type="range" min="4" max="24" step="0.5" value="12" aria-label="Nose wing height" />
+                  <small>12 mm</small>
+                </label>
+                <label><span>Spread angle</span><input id="designNoseWingAngle" type="range" min="0" max="38" step="1" value="16" /><small>16 deg</small></label>
+                <label><span>Depth</span><input id="designNoseWingDepth" type="range" min="2" max="10" step="0.5" value="5.5" /><small>5.5 mm</small></label>
+                <label><span>Contact width</span><input id="designNoseWingWidth" type="range" min="1.8" max="6" step="0.1" value="3.2" /><small>3.2 mm</small></label>
+                <label><span>Mount offset</span><input id="designNoseWingOffset" type="range" min="-8" max="8" step="0.5" value="0" /><small>0 mm</small></label>
               </div>
             </section>
           </section>
@@ -684,6 +709,7 @@
                 <span>Acrylic lenses</span><strong>Generated</strong>
                 <span>Lens channel</span><strong id="designLensChannelSummary">1.20 mm slot / 0.75 mm grip / 0.12 mm clearance</strong>
               </div>
+              <div id="designProductionChecks" class="design-production-checks"></div>
             </section>
             <section class="design-control-section">
               <h3>Customer sliders</h3>
@@ -1002,6 +1028,6 @@
       document.querySelector("#heroEditor")?.addEventListener("click", (event) => queueDesignLabDuringBoot(event, true));
       document.querySelector("#startDesignLab")?.addEventListener("click", (event) => queueDesignLabDuringBoot(event, true));
     </script>
-    <script type="module" src="./src/app.js?v=creator-entry-20260531-04"></script>
+    <script type="module" src="./src/app.js?v=creator-entry-20260601-02"></script>
   </body>
 </html>

@@ -1091,6 +1091,38 @@ button.nav-link {
   color: var(--accent-2);
 }
 
+.design-stage-tools {
+  position: absolute;
+  top: 4.25rem;
+  right: 1.15rem;
+  display: flex;
+  gap: 0.35rem;
+  padding: 0.28rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--panel-bg) 92%, transparent);
+  backdrop-filter: blur(12px);
+}
+
+.design-stage-tools button {
+  min-height: 2rem;
+  padding: 0 0.68rem;
+  border-color: transparent;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.design-stage-tools button.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent-2);
+}
+
+.design-stage-tools button:disabled {
+  opacity: 0.45;
+}
+
 .design-stage-footer {
   position: absolute;
   left: 1.15rem;
@@ -1103,6 +1135,14 @@ button.nav-link {
   font-size: 0.78rem;
   font-weight: 760;
   pointer-events: none;
+}
+
+.design-stage-footer span:nth-child(2) {
+  text-align: center;
+}
+
+.design-stage-footer span:last-child {
+  text-align: right;
 }
 
 .design-sidebar {
@@ -1339,6 +1379,49 @@ button.nav-link {
 .design-assembly-checks strong {
   color: var(--accent-2);
   text-align: right;
+}
+
+.design-warning-list {
+  display: grid;
+  gap: 0.48rem;
+}
+
+.design-warning {
+  display: grid;
+  gap: 0.16rem;
+  padding: 0.58rem 0.64rem;
+  border: 1px solid color-mix(in srgb, var(--accent) 44%, var(--line));
+  border-radius: 0.45rem;
+  background: color-mix(in srgb, var(--accent-soft) 36%, var(--subtle-bg));
+}
+
+.design-warning strong {
+  color: var(--ink);
+  font-size: 0.76rem;
+}
+
+.design-warning small {
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 720;
+  line-height: 1.35;
+}
+
+.design-warning em {
+  color: var(--accent-2);
+  font-size: 0.62rem;
+  font-style: normal;
+  font-weight: 820;
+  text-transform: uppercase;
+}
+
+.design-warning.is-ok {
+  border-color: var(--line);
+  background: var(--subtle-bg);
+}
+
+.design-warning.is-ok em {
+  color: color-mix(in srgb, var(--accent-2) 62%, var(--muted));
 }
 
 .design-production-checks {
