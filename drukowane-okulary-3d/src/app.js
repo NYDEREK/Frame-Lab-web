@@ -2293,6 +2293,7 @@ function drawDesignNoseWingsSketch(ctx, metrics, colors, construction) {
   const width = construction.noseWingWidth;
   const dropX = Math.tan(THREE.MathUtils.degToRad(construction.noseWingAngle)) * height * 0.48;
   const baseY = bridge.bottomJoinY + construction.noseWingOffset - width * 0.18;
+  const rootOverlap = Math.min(height * 0.16, width * 1.4);
   ctx.save();
   ctx.globalAlpha = 0.58;
   ctx.strokeStyle = colors.stroke;
@@ -2303,8 +2304,8 @@ function drawDesignNoseWingsSketch(ctx, metrics, colors, construction) {
   [-1, 1].forEach((side) => {
     const baseX = side * (metrics.p.bridge_width / 2 + metrics.p.rim_thickness * 0.48);
     const screenBase = {
-      x: metrics.centerX + baseX * metrics.scale,
-      y: metrics.centerY - baseY * metrics.scale
+      x: metrics.centerX + (baseX - side * dropX / Math.max(height, 1) * rootOverlap) * metrics.scale,
+      y: metrics.centerY - (baseY + rootOverlap) * metrics.scale
     };
     const screenTip = {
       x: metrics.centerX + (baseX + side * dropX) * metrics.scale,
@@ -2313,10 +2314,6 @@ function drawDesignNoseWingsSketch(ctx, metrics, colors, construction) {
     ctx.beginPath();
     ctx.moveTo(screenBase.x, screenBase.y);
     ctx.lineTo(screenTip.x, screenTip.y);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.arc(screenTip.x, screenTip.y, Math.max(2.5, width * metrics.scale * 0.48), 0, Math.PI * 2);
-    ctx.fill();
     ctx.stroke();
   });
   ctx.restore();
@@ -3361,6 +3358,39 @@ function addDesignFrontBody(p, material, definition, target = designModelGroup) 
   }
 }
 
+function noseWingBlendGeometry(width, length, depth, bevel) {
+  const root = Math.min(length * 0.22, width * 2.35);
+  const topY = length / 2 + root * 0.34;
+  const shoulderY = length / 2 - root * 0.62;
+  const bottomY = -length / 2 - root * 0.08;
+  const topHalf = width * 0.9;
+  const shoulderHalf = width * 0.56;
+  const tipHalf = width * 0.38;
+  const tipRound = Math.min(width * 0.82, root * 0.46, length * 0.16);
+  const shape = new THREE.Shape();
+  shape.moveTo(-topHalf, topY - root * 0.28);
+  shape.quadraticCurveTo(-topHalf, topY, -topHalf * 0.2, topY);
+  shape.quadraticCurveTo(topHalf, topY, topHalf, topY - root * 0.28);
+  shape.bezierCurveTo(topHalf * 0.9, shoulderY + root * 0.28, shoulderHalf, shoulderY, shoulderHalf, shoulderY - root * 0.18);
+  shape.lineTo(tipHalf, bottomY + tipRound);
+  shape.quadraticCurveTo(tipHalf, bottomY, 0, bottomY);
+  shape.quadraticCurveTo(-tipHalf, bottomY, -tipHalf, bottomY + tipRound);
+  shape.lineTo(-shoulderHalf, shoulderY - root * 0.18);
+  shape.bezierCurveTo(-shoulderHalf, shoulderY, -topHalf * 0.9, shoulderY + root * 0.28, -topHalf, topY - root * 0.28);
+  shape.closePath();
+  const safeBevel = Math.min(bevel, depth * 0.18, width * 0.12);
+  const geometry = new THREE.ExtrudeGeometry(shape, {
+    depth,
+    bevelEnabled: safeBevel > 0.001,
+    bevelThickness: Math.max(0.01, safeBevel),
+    bevelSize: Math.max(0.01, safeBevel),
+    bevelSegments: safeBevel > 0.001 ? 3 : 0
+  });
+  geometry.center();
+  geometry.computeVertexNormals();
+  return geometry;
+}
+
 function addDesignNoseWings(p, material, definition, target = designModelGroup) {
   const construction = normalizeDesignConstruction(definition?.construction);
   if (!construction.noseWingEnabled) return;
@@ -3372,38 +3402,22 @@ function addDesignNoseWings(p, material, definition, target = designModelGroup) 
   const spread = THREE.MathUtils.degToRad(construction.noseWingAngle);
   const dropX = Math.tan(spread) * height * 0.48;
   const baseY = bridge.bottomJoinY + construction.noseWingOffset - width * 0.18;
-  const radius = Math.min(width * 0.36, 1.1);
-  const bevel = Math.min(0.22, width * 0.08, depth * 0.06);
+  const bevel = Math.min(0.26, width * 0.1, depth * 0.07);
   [-1, 1].forEach((side) => {
     const baseX = side * (p.bridge_width / 2 + p.rim_thickness * 0.48);
     const bladeLength = Math.hypot(height, dropX);
-    const blade = new THREE.Mesh(
-      roundedPrismGeometry(width, bladeLength, depth, radius, bevel),
+    const wing = new THREE.Mesh(
+      noseWingBlendGeometry(width, bladeLength, depth, bevel),
       material
     );
-    blade.position.set(
+    wing.position.set(
       baseX + side * dropX * 0.5,
       baseY - height * 0.5,
-      -features.extrude.depth / 2 - depth * 0.42
+      -features.extrude.depth / 2 - depth * 0.28
     );
-    blade.rotation.z = side * Math.atan2(dropX, height);
-    target.add(blade);
-
-    const base = new THREE.Mesh(
-      roundedPrismGeometry(width * 1.14, width * 0.9, depth * 0.78, radius * 0.7, bevel),
-      material
-    );
-    base.position.set(baseX, baseY, -features.extrude.depth / 2 - depth * 0.2);
-    base.rotation.z = blade.rotation.z * 0.35;
-    target.add(base);
-
-    const tip = new THREE.Mesh(
-      roundedPrismGeometry(width * 1.12, width * 1.15, depth * 0.82, radius * 0.72, bevel),
-      material
-    );
-    tip.position.set(baseX + side * dropX, baseY - height, -features.extrude.depth / 2 - depth * 0.82);
-    tip.rotation.z = blade.rotation.z;
-    target.add(tip);
+    wing.rotation.z = side * Math.atan2(dropX, height);
+    wing.name = `nose-wing-${side < 0 ? "left" : "right"}`;
+    target.add(wing);
   });
 }
 
@@ -9787,10 +9801,11 @@ module hinge_connector_profile(side=1) {
   polygon(side < 0 ? hinge_connector_left_path : hinge_connector_right_path);
 }
 
-module nose_wing_section(size_scale=1) {
-  safe_width = max(0.6, nose_wing_width * size_scale);
-  safe_depth = max(0.8, nose_wing_depth * 0.72 * size_scale);
-  soft_bar([safe_width, max(1.0, nose_wing_width * 0.74 * size_scale), safe_depth], min(safe_width * 0.28, 0.9));
+module nose_wing_section(width_scale=1, length_scale=1, depth_scale=1) {
+  safe_width = max(0.6, nose_wing_width * width_scale);
+  safe_length = max(0.8, nose_wing_width * length_scale);
+  safe_depth = max(0.8, nose_wing_depth * depth_scale);
+  soft_bar([safe_width, safe_length, safe_depth], min(min(safe_width, safe_length) * 0.36, 0.95));
 }
 
 module nose_wing(side=1) {
@@ -9799,20 +9814,18 @@ module nose_wing(side=1) {
     base_x = side * (bridge_width / 2 + rim_thickness * 0.48);
     base_y = bridge_center_y + bridge_bottom_join_offset + nose_wing_offset - nose_wing_width * 0.18;
     tip_dx = side * tan(nose_wing_angle) * nose_wing_height * 0.48;
-    mid_dx = tip_dx * 0.52;
-    base_z = -front_face_z - nose_wing_depth * 0.16;
-    mid_z = -front_face_z - nose_wing_depth * 0.62;
-    tip_z = -front_face_z - nose_wing_depth;
+    root_overlap = min(nose_wing_height * 0.16, nose_wing_width * 1.4);
+    root_x = base_x - side * tip_dx / max(nose_wing_height, 1) * root_overlap;
+    root_y = base_y + root_overlap;
+    root_z = -front_face_z + nose_wing_depth * 0.08;
+    tip_z = -front_face_z - nose_wing_depth * 0.78;
     hull() {
-      translate([base_x, base_y, base_z])
-        rotate([0, 0, side * nose_wing_angle * 0.35])
-          nose_wing_section(1.05);
-      translate([base_x + mid_dx, base_y - nose_wing_height * 0.52, mid_z])
-        rotate([0, 0, side * nose_wing_angle * 0.65])
-          nose_wing_section(0.95);
+      translate([root_x, root_y, root_z])
+        rotate([0, 0, side * nose_wing_angle * 0.18])
+          nose_wing_section(1.45, 1.08, 0.46);
       translate([base_x + tip_dx, base_y - nose_wing_height, tip_z])
         rotate([0, 0, side * nose_wing_angle])
-          nose_wing_section(0.72);
+          nose_wing_section(0.72, 0.82, 0.82);
     }
   }
 }
