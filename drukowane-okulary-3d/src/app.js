@@ -1264,6 +1264,19 @@ function normalizeDesignTempleSketch(sketch = {}, construction = defaultDesignCo
   return points.length >= 4 ? { points, cornerRadii } : fallback;
 }
 
+function designTempleSketchMatchesConstruction(sketch = {}, construction = defaultDesignConstruction) {
+  const normalized = normalizeDesignTempleSketch(sketch, construction);
+  const generated = normalizeDesignTempleSketch(designTempleProfileFromConstruction(construction), construction);
+  if (normalized.points.length !== generated.points.length) return false;
+  const closeEnough = (left, right, tolerance = 0.05) => Math.abs(Number(left) - Number(right)) <= tolerance;
+  return generated.points.every((point, index) => {
+    const source = normalized.points[index] || [];
+    return closeEnough(source[0], point[0])
+      && closeEnough(source[1], point[1])
+      && closeEnough(normalized.cornerRadii[index] || 0, generated.cornerRadii[index] || 0);
+  });
+}
+
 function normalizeDesignFeatures(features = {}, params = defaultParams) {
   const defaults = createDefaultDesignFeatures(params);
   const clamp = (value, min, max, fallback) => {
@@ -4039,6 +4052,14 @@ function handleDesignOperationChange(event) {
     els.designTempleTextDepth
   ].includes(event.target)) {
     const currentConstruction = normalizeDesignConstruction(state.designDraft.construction);
+    const templeShapeControls = [
+      els.designTempleStraight,
+      els.designTempleHook,
+      els.designTempleHookAngle,
+      els.designTempleBarHeight
+    ];
+    const shouldRegenerateTempleSketch = templeShapeControls.includes(event.target)
+      && designTempleSketchMatchesConstruction(state.designDraft.templeSketch, currentConstruction);
     const nextBridgeThickness = THREE.MathUtils.clamp(
       parseDesignNumber(els.designBridgeThickness?.value, currentConstruction.bridgeThickness),
       3,
@@ -4079,12 +4100,7 @@ function handleDesignOperationChange(event) {
     }
     state.designDraft.construction = normalizeDesignConstruction(nextConstructionInput);
     state.designDraft.params.temple_length = state.designDraft.construction.templeStraight + state.designDraft.construction.templeHook;
-    if ([
-      els.designTempleStraight,
-      els.designTempleHook,
-      els.designTempleHookAngle,
-      els.designTempleBarHeight
-    ].includes(event.target)) {
+    if (shouldRegenerateTempleSketch) {
       state.designDraft.templeSketch = designTempleProfileFromConstruction(state.designDraft.construction);
       designTempleSketchSelectedIndex = 0;
     }
@@ -6752,10 +6768,11 @@ function normalizeStoredModel(model) {
   const category = model.category === "optical" ? "optical" : "sun";
   const access = ["free", "basic", "pro", "studio"].includes(model.access) ? model.access : "basic";
   const description = String(model.description || "").trim();
-  const scadSource = String(model.scadSource || sampleScad);
+  const storedScadSource = typeof model.scadSource === "string" ? model.scadSource : "";
+  const scadSource = storedScadSource || sampleScad;
   const params = { ...structuredClone(defaultParams), ...(model.params || parseScadParameters(scadSource)) };
   const designInput = model.design && typeof model.design === "object"
-    ? mergeDesignConstructionFromScad(model.design, scadSource)
+    ? mergeDesignConstructionFromScad(model.design, storedScadSource)
     : null;
   return {
     id: String(model.id || crypto.randomUUID()),
@@ -6789,6 +6806,33 @@ function readScadBooleanLiteral(source, key) {
   return value === undefined ? undefined : value === "true";
 }
 
+function readScadArrayLiteral(source, key) {
+  return String(source || "").match(new RegExp(`(?:^|\\n)\\s*${key}\\s*=\\s*\\[([\\s\\S]*?)\\]\\s*;`))?.[1] || "";
+}
+
+function boundedScadLiteralNumber(value, min, max) {
+  const number = Number(value);
+  return Number.isFinite(number) ? THREE.MathUtils.clamp(number, min, max) : null;
+}
+
+function readScadPointListLiteral(source, key, bounds, limit) {
+  const [minX, maxX, minY, maxY] = bounds;
+  return [...readScadArrayLiteral(source, key).matchAll(/\[\s*(-?\d*\.?\d+)\s*,\s*(-?\d*\.?\d+)\s*\]/g)]
+    .slice(0, limit)
+    .map((match) => [
+      boundedScadLiteralNumber(match[1], minX, maxX),
+      boundedScadLiteralNumber(match[2], minY, maxY)
+    ])
+    .filter(([x, y]) => x !== null && y !== null);
+}
+
+function readScadNumberListLiteral(source, key, min, max, limit) {
+  return [...readScadArrayLiteral(source, key).matchAll(/-?\d*\.?\d+/g)]
+    .slice(0, limit)
+    .map((match) => boundedScadLiteralNumber(match[0], min, max))
+    .filter((number) => number !== null);
+}
+
 function mergeDesignConstructionFromScad(design, scadSource) {
   const construction = { ...(design.construction || {}) };
   const numberFields = {
@@ -6819,15 +6863,31 @@ function mergeDesignConstructionFromScad(design, scadSource) {
     templeTextDepth: "temple_text_depth"
   };
   Object.entries(numberFields).forEach(([field, key]) => {
-    if (construction[field] !== undefined) return;
     const number = readScadNumberLiteral(scadSource, key);
     if (number !== undefined) construction[field] = number;
   });
-  if (construction.templeChamferEnabled === undefined) {
-    const enabled = readScadBooleanLiteral(scadSource, "temple_chamfer_enabled");
-    if (enabled !== undefined) construction.templeChamferEnabled = enabled;
+  const enabled = readScadBooleanLiteral(scadSource, "temple_chamfer_enabled");
+  if (enabled !== undefined) construction.templeChamferEnabled = enabled;
+  const nextDesign = { ...design, construction };
+  const sketchPoints = readScadPointListLiteral(scadSource, "profile_points", [-0.7, 0.7, -0.7, 0.7], 20);
+  if (sketchPoints.length >= 4) {
+    const cornerRadii = readScadNumberListLiteral(scadSource, "profile_corner_radii", 0, 30, sketchPoints.length);
+    nextDesign.sketch = {
+      ...(design.sketch || {}),
+      points: sketchPoints,
+      cornerRadii: cornerRadii.length ? cornerRadii : design.sketch?.cornerRadii
+    };
   }
-  return { ...design, construction };
+  const templePoints = readScadPointListLiteral(scadSource, "temple_profile_points", [0, 150, -80, 20], 24);
+  if (templePoints.length >= 4) {
+    const cornerRadii = readScadNumberListLiteral(scadSource, "temple_profile_corner_radii", 0, 12, templePoints.length);
+    nextDesign.templeSketch = {
+      ...(design.templeSketch || {}),
+      points: templePoints,
+      cornerRadii: cornerRadii.length ? cornerRadii : design.templeSketch?.cornerRadii
+    };
+  }
+  return nextDesign;
 }
 
 function persistModels(options = {}) {

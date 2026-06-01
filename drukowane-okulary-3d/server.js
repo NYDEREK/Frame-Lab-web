@@ -845,6 +845,33 @@ function scadBooleanValue(source, key) {
   return match ? match[1] === "true" : undefined;
 }
 
+function scadArrayValue(source, key) {
+  return String(source || "").match(new RegExp(`(?:^|\\n)\\s*${key}\\s*=\\s*\\[([\\s\\S]*?)\\]\\s*;`))?.[1] || "";
+}
+
+function boundedScadNumber(value, min, max) {
+  const number = Number(value);
+  return Number.isFinite(number) ? Math.max(min, Math.min(max, number)) : null;
+}
+
+function scadPointListValue(source, key, bounds, limit) {
+  const [minX, maxX, minY, maxY] = bounds;
+  return [...scadArrayValue(source, key).matchAll(/\[\s*(-?\d*\.?\d+)\s*,\s*(-?\d*\.?\d+)\s*\]/g)]
+    .slice(0, limit)
+    .map((match) => [
+      boundedScadNumber(match[1], minX, maxX),
+      boundedScadNumber(match[2], minY, maxY)
+    ])
+    .filter(([x, y]) => x !== null && y !== null);
+}
+
+function scadNumberListValue(source, key, min, max, limit) {
+  return [...scadArrayValue(source, key).matchAll(/-?\d*\.?\d+/g)]
+    .slice(0, limit)
+    .map((match) => boundedScadNumber(match[0], min, max))
+    .filter((number) => number !== null);
+}
+
 function mergeScadConstructionHints(design = {}, scadSource = "") {
   const construction = { ...(design.construction || {}) };
   const numberFields = {
@@ -875,15 +902,31 @@ function mergeScadConstructionHints(design = {}, scadSource = "") {
     templeTextDepth: "temple_text_depth"
   };
   Object.entries(numberFields).forEach(([field, key]) => {
-    if (construction[field] !== undefined) return;
     const number = scadNumberValue(scadSource, key);
     if (number !== undefined) construction[field] = number;
   });
-  if (construction.templeChamferEnabled === undefined) {
-    const enabled = scadBooleanValue(scadSource, "temple_chamfer_enabled");
-    if (enabled !== undefined) construction.templeChamferEnabled = enabled;
+  const enabled = scadBooleanValue(scadSource, "temple_chamfer_enabled");
+  if (enabled !== undefined) construction.templeChamferEnabled = enabled;
+  const nextDesign = { ...design, construction };
+  const sketchPoints = scadPointListValue(scadSource, "profile_points", [-0.7, 0.7, -0.7, 0.7], 20);
+  if (sketchPoints.length >= 4) {
+    const cornerRadii = scadNumberListValue(scadSource, "profile_corner_radii", 0, 16, sketchPoints.length);
+    nextDesign.sketch = {
+      ...(design.sketch || {}),
+      points: sketchPoints,
+      cornerRadii: cornerRadii.length ? cornerRadii : design.sketch?.cornerRadii
+    };
   }
-  return { ...design, construction };
+  const templePoints = scadPointListValue(scadSource, "temple_profile_points", [0, 150, -80, 20], 24);
+  if (templePoints.length >= 4) {
+    const cornerRadii = scadNumberListValue(scadSource, "temple_profile_corner_radii", 0, 12, templePoints.length);
+    nextDesign.templeSketch = {
+      ...(design.templeSketch || {}),
+      points: templePoints,
+      cornerRadii: cornerRadii.length ? cornerRadii : design.templeSketch?.cornerRadii
+    };
+  }
+  return nextDesign;
 }
 
 function sanitizeCollection(model) {
@@ -975,6 +1018,66 @@ function sanitizeParametricDesign(style = {}) {
   const templeDetailMode = ["none", "text", "texture"].includes(style.templeDetailMode)
     ? style.templeDetailMode
     : inferredTempleDetailMode;
+  const construction = {
+    hingeStandard: "FL-H1",
+    lensThickness: 1,
+    lensSeatWidth: value(style.construction?.lensSeatWidth, 1, 2, 1.2),
+    lensSeatDepth: value(style.construction?.lensSeatDepth, 0.15, 1.2, 0.35),
+    lensClearance: value(style.construction?.lensClearance, 0, 0.6, 0.2),
+    lensChannelOffset: value(style.construction?.lensChannelOffset, -1, 1, 0),
+    hingeMountHeight: value(style.construction?.hingeMountHeight, -12, 12, 10),
+    hingeMountOffset: value(style.construction?.hingeMountOffset, -4, 0, 0),
+    bridgeThickness: value(style.construction?.bridgeThickness, 3, 12, 6),
+    bridgeTopJoinOffset: value(style.construction?.bridgeTopJoinOffset, -18, 18, 3),
+    bridgeBottomJoinOffset: value(style.construction?.bridgeBottomJoinOffset, -18, 18, -3),
+    templeStraight: value(style.construction?.templeStraight, 35, 120, 65),
+    templeHook: value(style.construction?.templeHook, 10, 60, 30),
+    templeHookAngle: value(style.construction?.templeHookAngle, 10, 75, 45),
+    templeBarHeight: value(style.construction?.templeBarHeight, 3, 10, 5.4),
+    templeDepth: value(style.construction?.templeDepth, 2.4, 6, 3.6),
+    templeCornerRadius: value(style.construction?.templeCornerRadius, 0, 4, 1.4),
+    templeChamferEnabled: boolean(style.construction?.templeChamferEnabled, false),
+    templeChamferAmount: value(style.construction?.templeChamferAmount, 0, 1.2, 0.35),
+    templeTextureDepth: value(style.construction?.templeTextureDepth, 0.2, 1.2, 0.45),
+    templePatternStart: value(style.construction?.templePatternStart, 0, 110, 14),
+    templePatternEnd: value(style.construction?.templePatternEnd, 8, 120, 76),
+    templePatternSpacing: value(style.construction?.templePatternSpacing, 4, 28, 9),
+    templePatternSize: value(style.construction?.templePatternSize, 0.5, 8, 4.2),
+    templeTextSize: value(style.construction?.templeTextSize, 2, 8, 4),
+    templeTextPosition: value(style.construction?.templeTextPosition, 0, 120, 36),
+    templeTextYOffset: value(style.construction?.templeTextYOffset, -5, 5, 0),
+    templeTextDepth: value(style.construction?.templeTextDepth, 0.15, 1.2, 0.45)
+  };
+  const templeFallback = (() => {
+    const height = construction.templeBarHeight;
+    const straight = construction.templeStraight;
+    const hook = construction.templeHook;
+    const angle = construction.templeHookAngle * Math.PI / 180;
+    const tipX = straight + hook * Math.cos(angle);
+    const tipY = -hook * Math.sin(angle);
+    return {
+      points: [
+        [0, height / 2],
+        [Math.max(2, straight - 3), height / 2],
+        [straight, height / 2 - 0.35],
+        [tipX, tipY + height / 2],
+        [tipX, tipY - height / 2],
+        [straight, -height / 2],
+        [0, -height / 2]
+      ],
+      cornerRadii: [0.5, 1.3, 2, Math.min(2.2, height / 2), Math.min(2.2, height / 2), 1.6, 0.5]
+    };
+  })();
+  const suppliedTemplePoints = Array.isArray(style.templeSketch?.points) ? style.templeSketch.points : templeFallback.points;
+  const templePoints = suppliedTemplePoints.slice(0, 24).map((point) => {
+    const x = value(Array.isArray(point) ? point[0] : point?.x, 0, 150, 0);
+    const y = value(Array.isArray(point) ? point[1] : point?.y, -80, 20, 0);
+    return [x, y];
+  });
+  const suppliedTempleRadii = Array.isArray(style.templeSketch?.cornerRadii)
+    ? style.templeSketch.cornerRadii
+    : templeFallback.cornerRadii;
+  const templeCornerRadii = templePoints.map((_, index) => value(suppliedTempleRadii[index], 0, 12, templeFallback.cornerRadii[index] || 0));
   return {
     type: "parametric-openscad",
     lensShape: ["soft-square", "round", "sharp"].includes(style.lensShape) ? style.lensShape : "soft-square",
@@ -996,6 +1099,9 @@ function sanitizeParametricDesign(style = {}) {
       ],
       cornerRadii
     },
+    templeSketch: templePoints.length >= 4
+      ? { points: templePoints, cornerRadii: templeCornerRadii }
+      : templeFallback,
     features: {
       extrude: {
         enabled: style.features?.extrude?.enabled !== false,
@@ -1014,36 +1120,7 @@ function sanitizeParametricDesign(style = {}) {
         depth: value(style.features?.lensRecess?.depth, 0.1, 3, 0.35)
       }
     },
-    construction: {
-      hingeStandard: "FL-H1",
-      lensThickness: 1,
-      lensSeatWidth: value(style.construction?.lensSeatWidth, 1, 2, 1.2),
-      lensSeatDepth: value(style.construction?.lensSeatDepth, 0.15, 1.2, 0.35),
-      lensClearance: value(style.construction?.lensClearance, 0, 0.6, 0.2),
-      lensChannelOffset: value(style.construction?.lensChannelOffset, -1, 1, 0),
-      hingeMountHeight: value(style.construction?.hingeMountHeight, -12, 12, 10),
-      hingeMountOffset: value(style.construction?.hingeMountOffset, -4, 0, 0),
-      bridgeThickness: value(style.construction?.bridgeThickness, 3, 12, 6),
-      bridgeTopJoinOffset: value(style.construction?.bridgeTopJoinOffset, -18, 18, 3),
-      bridgeBottomJoinOffset: value(style.construction?.bridgeBottomJoinOffset, -18, 18, -3),
-      templeStraight: value(style.construction?.templeStraight, 35, 120, 65),
-      templeHook: value(style.construction?.templeHook, 10, 60, 30),
-      templeHookAngle: value(style.construction?.templeHookAngle, 10, 75, 45),
-      templeBarHeight: value(style.construction?.templeBarHeight, 3, 10, 5.4),
-      templeDepth: value(style.construction?.templeDepth, 2.4, 6, 3.6),
-      templeCornerRadius: value(style.construction?.templeCornerRadius, 0, 4, 1.4),
-      templeChamferEnabled: boolean(style.construction?.templeChamferEnabled, false),
-      templeChamferAmount: value(style.construction?.templeChamferAmount, 0, 1.2, 0.35),
-      templeTextureDepth: value(style.construction?.templeTextureDepth, 0.2, 1.2, 0.45),
-      templePatternStart: value(style.construction?.templePatternStart, 0, 110, 14),
-      templePatternEnd: value(style.construction?.templePatternEnd, 8, 120, 76),
-      templePatternSpacing: value(style.construction?.templePatternSpacing, 4, 28, 9),
-      templePatternSize: value(style.construction?.templePatternSize, 0.5, 8, 4.2),
-      templeTextSize: value(style.construction?.templeTextSize, 2, 8, 4),
-      templeTextPosition: value(style.construction?.templeTextPosition, 0, 120, 36),
-      templeTextYOffset: value(style.construction?.templeTextYOffset, -5, 5, 0),
-      templeTextDepth: value(style.construction?.templeTextDepth, 0.15, 1.2, 0.45)
-    },
+    construction,
     publicParameters: [...new Set(Array.isArray(style.publicParameters)
       ? style.publicParameters.filter((key) => validParameterKeys.has(key))
       : ["head_width", "bridge_width", "temple_length"])],
@@ -1080,13 +1157,14 @@ function sanitizeDesignThumbnail(value) {
 }
 
 function publicDesignSubmission(item, includeOwner = false) {
+  const scadSource = String(item.scadSource || "").slice(0, 500_000);
   const result = {
     id: item.id,
     name: item.name,
     description: item.description,
     params: sanitizeDesignParams(item.params),
-    design: sanitizeParametricDesign(item.design),
-    scadSource: item.scadSource,
+    design: sanitizeParametricDesign(mergeScadConstructionHints(item.design || {}, scadSource)),
+    scadSource,
     thumbnail: item.thumbnail,
     status: ["pending", "approved", "rejected"].includes(item.status) ? item.status : "pending",
     collectionId: item.collectionId || "",
