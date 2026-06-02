@@ -1092,14 +1092,15 @@ button.nav-link {
 }
 
 .design-stage-tools {
+  --design-view-switch-space: clamp(18rem, 27vw, 29.5rem);
   position: absolute;
-  top: 4.25rem;
-  right: 1.15rem;
+  top: 1.15rem;
+  right: var(--design-view-switch-space);
   left: auto;
   display: flex;
   align-items: center;
   gap: 0.35rem;
-  max-width: min(920px, calc(100% - 2.3rem));
+  max-width: min(920px, calc(100% - 2.3rem - var(--design-view-switch-space)));
   padding: 0.28rem;
   border: 1px solid var(--line);
   border-radius: 8px;

@@ -217,12 +217,6 @@ const defaultDesignConstruction = {
   bridgeThickness: 6,
   bridgeTopJoinOffset: 3,
   bridgeBottomJoinOffset: -3,
-  noseWingEnabled: true,
-  noseWingHeight: 12,
-  noseWingAngle: 16,
-  noseWingDepth: 5.5,
-  noseWingWidth: 3.2,
-  noseWingOffset: 0,
   templeStraight: 70,
   templeHook: 30,
   templeHookAngle: 45,
@@ -887,12 +881,6 @@ const els = {
   designHingeMountHeight: document.querySelector("#designHingeMountHeight"),
   designHingeMountOffset: document.querySelector("#designHingeMountOffset"),
   designBridgeThickness: document.querySelector("#designBridgeThickness"),
-  designNoseWingEnabled: document.querySelector("#designNoseWingEnabled"),
-  designNoseWingHeight: document.querySelector("#designNoseWingHeight"),
-  designNoseWingAngle: document.querySelector("#designNoseWingAngle"),
-  designNoseWingDepth: document.querySelector("#designNoseWingDepth"),
-  designNoseWingWidth: document.querySelector("#designNoseWingWidth"),
-  designNoseWingOffset: document.querySelector("#designNoseWingOffset"),
   designTempleStraight: document.querySelector("#designTempleStraight"),
   designTempleHook: document.querySelector("#designTempleHook"),
   designTempleHookAngle: document.querySelector("#designTempleHookAngle"),
@@ -1365,12 +1353,6 @@ function normalizeDesignConstruction(construction = {}) {
     bridgeThickness,
     bridgeTopJoinOffset: bounded("bridgeTopJoinOffset", -18, 18, bridgeThickness / 2),
     bridgeBottomJoinOffset: bounded("bridgeBottomJoinOffset", -18, 18, -bridgeThickness / 2),
-    noseWingEnabled: parseDesignBoolean(construction.noseWingEnabled, defaultDesignConstruction.noseWingEnabled),
-    noseWingHeight: bounded("noseWingHeight", 4, 24),
-    noseWingAngle: bounded("noseWingAngle", 0, 38),
-    noseWingDepth: bounded("noseWingDepth", 2, 10),
-    noseWingWidth: bounded("noseWingWidth", 1.8, 6),
-    noseWingOffset: bounded("noseWingOffset", -8, 8),
     templeStraight,
     templeHook: bounded("templeHook", 10, 60),
     templeHookAngle: bounded("templeHookAngle", 10, 75),
@@ -2300,41 +2282,6 @@ function sketchDimension(ctx, x1, y1, x2, y2, label) {
   ctx.fillText(label, (x1 + x2) / 2, (y1 + y2) / 2 - 8);
 }
 
-function drawDesignNoseWingsSketch(ctx, metrics, colors, construction) {
-  if (!construction.noseWingEnabled) return;
-  const polygons = [-1, 1].flatMap((side) => designNoseWingFootprintPolygons(metrics.p, state.designDraft, side));
-  if (!polygons.length) return;
-  const toCanvas = ([x, y]) => ({
-    x: metrics.centerX + x * metrics.scale,
-    y: metrics.centerY - y * metrics.scale
-  });
-  ctx.save();
-  ctx.globalAlpha = 0.58;
-  ctx.fillStyle = colors.fill;
-  ctx.strokeStyle = colors.stroke;
-  ctx.lineWidth = Math.max(1.1, metrics.scale * 0.26);
-  ctx.beginPath();
-  polygons.forEach((polygon) => polygon.forEach((ring) => {
-    const points = designCleanRing(ring).map(toCanvas);
-    if (points.length < 3) return;
-    ctx.moveTo(points[0].x, points[0].y);
-    points.slice(1).forEach((point) => ctx.lineTo(point.x, point.y));
-    ctx.closePath();
-  }));
-  ctx.fill("evenodd");
-  ctx.globalAlpha = 0.9;
-  polygons.forEach((polygon) => polygon.forEach((ring) => {
-    const points = designCleanRing(ring).map(toCanvas);
-    if (points.length < 3) return;
-    ctx.beginPath();
-    ctx.moveTo(points[0].x, points[0].y);
-    points.slice(1).forEach((point) => ctx.lineTo(point.x, point.y));
-    ctx.closePath();
-    ctx.stroke();
-  }));
-  ctx.restore();
-}
-
 function designDrawingColors() {
   const styles = getComputedStyle(document.documentElement);
   const read = (key, fallback) => styles.getPropertyValue(key).trim() || fallback;
@@ -2600,7 +2547,6 @@ function drawDesignSketch() {
   ctx.stroke();
   const construction = normalizeDesignConstruction(state.designDraft.construction);
   drawDesignFrontPlanarProfile(ctx, metrics, colors);
-  drawDesignNoseWingsSketch(ctx, metrics, colors, construction);
   const hingeSize = designHingePadSize * scale;
   const hingeY = centerY - construction.hingeMountHeight * scale;
   const hingeLeftCenter = designHingePadCenter(-1, p, state.designDraft);
@@ -2723,7 +2669,6 @@ function renderDesignPreview(options = {}) {
   const outerLensWidth = p.lens_width + p.rim_thickness * 2;
   const center = p.bridge_width / 2 + outerLensWidth / 2;
   addDesignFrontBody(p, frontMaterial, definition);
-  addDesignNoseWings(p, frontMaterial, definition);
   [-1, 1].forEach((side) => {
     addDesignLens(side * center, p, lensMaterial, definition);
     addDesignTemple(side, p, outerLensWidth, templeMaterial, detailMaterial, style, definition);
@@ -3174,59 +3119,6 @@ function designShapesFromPolygons(polygons) {
     });
 }
 
-function designNoseWingPath(p, definition, side) {
-  const construction = normalizeDesignConstruction(definition?.construction);
-  const bridge = designBridgeMetrics(p, definition);
-  const height = Math.max(1, construction.noseWingHeight);
-  const width = Math.max(0.6, construction.noseWingWidth);
-  const dropX = Math.tan(THREE.MathUtils.degToRad(construction.noseWingAngle)) * height * 0.48;
-  const baseY = bridge.bottomJoinY + construction.noseWingOffset - width * 0.18;
-  const rootOverlap = Math.min(height * 0.16, width * 1.4);
-  const baseX = side * (p.bridge_width / 2 + p.rim_thickness * 0.48);
-  return {
-    width,
-    start: [
-      baseX - side * dropX / height * rootOverlap,
-      baseY + rootOverlap
-    ],
-    end: [
-      baseX + side * dropX,
-      baseY - height
-    ]
-  };
-}
-
-function designNoseWingRaisedBlockRing(p, definition, side) {
-  const path = designNoseWingPath(p, definition, side);
-  const dx = path.end[0] - path.start[0];
-  const dy = path.end[1] - path.start[1];
-  const length = Math.max(0.001, Math.hypot(dx, dy));
-  const nx = -dy / length;
-  const ny = dx / length;
-  const halfWidth = Math.max(0.42, path.width * 0.46);
-  return designCleanRing([
-    [path.start[0] + nx * halfWidth, path.start[1] + ny * halfWidth],
-    [path.start[0] - nx * halfWidth, path.start[1] - ny * halfWidth],
-    [path.end[0] - nx * halfWidth, path.end[1] - ny * halfWidth],
-    [path.end[0] + nx * halfWidth, path.end[1] + ny * halfWidth]
-  ]);
-}
-
-function designNoseWingFootprintPolygons(p, definition, side) {
-  const construction = normalizeDesignConstruction(definition?.construction);
-  if (!construction.noseWingEnabled) return [];
-  const footprint = designNoseWingRaisedBlockRing(p, definition, side);
-  if (footprint.length < 3) return [];
-  try {
-    return polygonClipping.intersection(
-      designFrontPlanarPolygons(p, definition, 0),
-      [footprint]
-    );
-  } catch {
-    return [];
-  }
-}
-
 function drawDesignFrontPlanarProfile(ctx, metrics, colors) {
   const { p, scale, centerX, centerY } = metrics;
   const polygons = designFrontPlanarPolygons(p, state.designDraft, 0);
@@ -3438,28 +3330,6 @@ function addDesignFrontBody(p, material, definition, target = designModelGroup) 
   } else {
     addLayer(0, features.extrude.depth, 0, true);
   }
-}
-
-function addDesignNoseWings(p, material, definition, target = designModelGroup) {
-  const construction = normalizeDesignConstruction(definition?.construction);
-  if (!construction.noseWingEnabled) return;
-  const features = normalizeDesignFeatures(definition?.features, p);
-  const depth = construction.noseWingDepth;
-  const bevel = Math.min(depth * 0.28, construction.noseWingWidth * 0.22, 0.9);
-  const overlap = Math.min(0.12, depth * 0.06);
-  [-1, 1].forEach((side) => {
-    const polygons = designNoseWingFootprintPolygons(p, definition, side);
-    designShapesFromPolygons(polygons).forEach((shape) => {
-      const extrusion = containedBevelExtrudeOptions(depth, bevel, 1);
-      const geometry = new THREE.ExtrudeGeometry(shape, extrusion.options);
-      geometry.translate(0, 0, -extrusion.centerOffset);
-      geometry.computeVertexNormals();
-      const wing = new THREE.Mesh(geometry, material);
-      wing.position.z = -features.extrude.depth / 2 - depth / 2 + overlap;
-      wing.name = `nose-wing-${side < 0 ? "left" : "right"}`;
-      target.add(wing);
-    });
-  });
 }
 
 function designLensInsertExpansion(construction) {
@@ -4268,12 +4138,6 @@ function syncDesignFields() {
   setDesignFieldValue(els.designHingeMountHeight, construction.hingeMountHeight);
   setDesignFieldValue(els.designHingeMountOffset, construction.hingeMountOffset);
   setDesignFieldValue(els.designBridgeThickness, construction.bridgeThickness);
-  if (els.designNoseWingEnabled) els.designNoseWingEnabled.checked = construction.noseWingEnabled;
-  setDesignSliderFieldValue(els.designNoseWingHeight, construction.noseWingHeight, "mm");
-  setDesignSliderFieldValue(els.designNoseWingAngle, construction.noseWingAngle, "deg");
-  setDesignSliderFieldValue(els.designNoseWingDepth, construction.noseWingDepth, "mm");
-  setDesignSliderFieldValue(els.designNoseWingWidth, construction.noseWingWidth, "mm");
-  setDesignSliderFieldValue(els.designNoseWingOffset, construction.noseWingOffset, "mm");
   setDesignSliderFieldValue(els.designTempleStraight, construction.templeStraight, "mm");
   setDesignSliderFieldValue(els.designTempleHook, construction.templeHook, "mm");
   setDesignSliderFieldValue(els.designTempleHookAngle, construction.templeHookAngle, "deg");
@@ -4411,10 +4275,6 @@ function designFitWarnings() {
       }
     }
   }
-  if (construction.noseWingEnabled && construction.noseWingAngle > 34) {
-    push("Nose wings are steep", `${formatNumber(construction.noseWingAngle)} deg may need a comfort test.`);
-  }
-
   return warnings;
 }
 
@@ -4513,12 +4373,6 @@ function syncDesignDraftFromControlValues(options = {}) {
     bridgeThickness: nextBridgeThickness,
     bridgeTopJoinOffset: state.designDraft.construction?.bridgeTopJoinOffset,
     bridgeBottomJoinOffset: state.designDraft.construction?.bridgeBottomJoinOffset,
-    noseWingEnabled: checkboxValue(els.designNoseWingEnabled, currentConstruction.noseWingEnabled),
-    noseWingHeight: numberValue(els.designNoseWingHeight, currentConstruction.noseWingHeight),
-    noseWingAngle: numberValue(els.designNoseWingAngle, currentConstruction.noseWingAngle),
-    noseWingDepth: numberValue(els.designNoseWingDepth, currentConstruction.noseWingDepth),
-    noseWingWidth: numberValue(els.designNoseWingWidth, currentConstruction.noseWingWidth),
-    noseWingOffset: numberValue(els.designNoseWingOffset, currentConstruction.noseWingOffset),
     templeStraight: numberValue(els.designTempleStraight, currentConstruction.templeStraight),
     templeHook: numberValue(els.designTempleHook, currentConstruction.templeHook),
     templeHookAngle: numberValue(els.designTempleHookAngle, currentConstruction.templeHookAngle),
@@ -4648,12 +4502,6 @@ function handleDesignOperationChange(event) {
     els.designHingeMountHeight,
     els.designHingeMountOffset,
     els.designBridgeThickness,
-    els.designNoseWingEnabled,
-    els.designNoseWingHeight,
-    els.designNoseWingAngle,
-    els.designNoseWingDepth,
-    els.designNoseWingWidth,
-    els.designNoseWingOffset,
     els.designTempleStraight,
     els.designTempleHook,
     els.designTempleHookAngle,
@@ -4697,12 +4545,6 @@ function handleDesignOperationChange(event) {
       bridgeThickness: nextBridgeThickness,
       bridgeTopJoinOffset: state.designDraft.construction?.bridgeTopJoinOffset,
       bridgeBottomJoinOffset: state.designDraft.construction?.bridgeBottomJoinOffset,
-      noseWingEnabled: els.designNoseWingEnabled?.checked,
-      noseWingHeight: els.designNoseWingHeight?.value,
-      noseWingAngle: els.designNoseWingAngle?.value,
-      noseWingDepth: els.designNoseWingDepth?.value,
-      noseWingWidth: els.designNoseWingWidth?.value,
-      noseWingOffset: els.designNoseWingOffset?.value,
       templeStraight: els.designTempleStraight?.value,
       templeHook: els.designTempleHook?.value,
       templeHookAngle: els.designTempleHookAngle?.value,
@@ -4932,12 +4774,6 @@ function parseDesignCode(source) {
       bridgeThickness: readNumber("bridge_thickness", state.designDraft.construction?.bridgeThickness),
       bridgeTopJoinOffset: readNumber("bridge_top_join_offset", state.designDraft.construction?.bridgeTopJoinOffset),
       bridgeBottomJoinOffset: readNumber("bridge_bottom_join_offset", state.designDraft.construction?.bridgeBottomJoinOffset),
-      noseWingEnabled: readBool("nose_wing_enabled", state.designDraft.construction?.noseWingEnabled),
-      noseWingHeight: readNumber("nose_wing_height", state.designDraft.construction?.noseWingHeight),
-      noseWingAngle: readNumber("nose_wing_angle", state.designDraft.construction?.noseWingAngle),
-      noseWingDepth: readNumber("nose_wing_depth", state.designDraft.construction?.noseWingDepth),
-      noseWingWidth: readNumber("nose_wing_width", state.designDraft.construction?.noseWingWidth),
-      noseWingOffset: readNumber("nose_wing_offset", state.designDraft.construction?.noseWingOffset),
       templeStraight: readNumber("temple_straight", state.designDraft.construction?.templeStraight),
       templeHook: readNumber("temple_hook", state.designDraft.construction?.templeHook),
       templeHookAngle: readNumber("temple_hook_angle", state.designDraft.construction?.templeHookAngle),
@@ -7152,7 +6988,6 @@ function renderPublishedDesignPreview() {
   const outerLensWidth = p.lens_width + p.rim_thickness * 2;
   const center = p.bridge_width / 2 + outerLensWidth / 2;
   addDesignFrontBody(p, frontMaterial, definition, modelGroup);
-  addDesignNoseWings(p, frontMaterial, definition, modelGroup);
   [-1, 1].forEach((side) => {
     addDesignLens(side * center, p, lensMaterial, definition, modelGroup);
     addDesignTemple(side, p, outerLensWidth, templeMaterial, detailMaterial, style, definition, modelGroup);
@@ -7487,11 +7322,6 @@ function mergeDesignConstructionFromScad(design, scadSource) {
     bridgeThickness: "bridge_thickness",
     bridgeTopJoinOffset: "bridge_top_join_offset",
     bridgeBottomJoinOffset: "bridge_bottom_join_offset",
-    noseWingHeight: "nose_wing_height",
-    noseWingAngle: "nose_wing_angle",
-    noseWingDepth: "nose_wing_depth",
-    noseWingWidth: "nose_wing_width",
-    noseWingOffset: "nose_wing_offset",
     templeStraight: "temple_straight",
     templeHook: "temple_hook",
     templeHookAngle: "temple_hook_angle",
@@ -7515,8 +7345,6 @@ function mergeDesignConstructionFromScad(design, scadSource) {
   });
   const enabled = readScadBooleanLiteral(scadSource, "temple_chamfer_enabled");
   if (enabled !== undefined) construction.templeChamferEnabled = enabled;
-  const noseWingEnabled = readScadBooleanLiteral(scadSource, "nose_wing_enabled");
-  if (noseWingEnabled !== undefined) construction.noseWingEnabled = noseWingEnabled;
   const nextDesign = { ...design, construction };
   const sketchPoints = readScadPointListLiteral(scadSource, "profile_points", [-0.7, 0.7, -0.7, 0.7], 20);
   if (sketchPoints.length >= 4) {
@@ -9711,12 +9539,6 @@ hinge_mount_offset = ${formatNumber(construction.hingeMountOffset)};
 bridge_thickness = ${formatNumber(construction.bridgeThickness)};
 bridge_top_join_offset = ${formatNumber(construction.bridgeTopJoinOffset)};
 bridge_bottom_join_offset = ${formatNumber(construction.bridgeBottomJoinOffset)};
-nose_wing_enabled = ${construction.noseWingEnabled ? "true" : "false"};
-nose_wing_height = ${formatNumber(construction.noseWingHeight)};
-nose_wing_angle = ${formatNumber(construction.noseWingAngle)};
-nose_wing_depth = ${formatNumber(construction.noseWingDepth)};
-nose_wing_width = ${formatNumber(construction.noseWingWidth)};
-nose_wing_offset = ${formatNumber(construction.noseWingOffset)};
 hinge_pad_size = ${formatNumber(designHingePadSize)};
 hinge_pad_overlap = ${formatNumber(designHingePadOverlap)};
 hinge_rear_overlap = ${formatNumber(designHingeRearOverlap)};
@@ -9843,49 +9665,6 @@ module hinge_connector_profile(side=1) {
   polygon(side < 0 ? hinge_connector_left_path : hinge_connector_right_path);
 }
 
-module nose_wing_footprint(side=1) {
-  bridge_center_y = lens_height * 0.18;
-  base_x = side * (bridge_width / 2 + rim_thickness * 0.48);
-  base_y = bridge_center_y + bridge_bottom_join_offset + nose_wing_offset - nose_wing_width * 0.18;
-  tip_dx = side * tan(nose_wing_angle) * nose_wing_height * 0.48;
-  root_overlap = min(nose_wing_height * 0.16, nose_wing_width * 1.4);
-  root_x = base_x - side * tip_dx / max(nose_wing_height, 1) * root_overlap;
-  root_y = base_y + root_overlap;
-  tip_x = base_x + tip_dx;
-  tip_y = base_y - nose_wing_height;
-  wing_dx = tip_x - root_x;
-  wing_dy = tip_y - root_y;
-  wing_len = max(0.01, sqrt(wing_dx * wing_dx + wing_dy * wing_dy));
-  normal_x = -wing_dy / wing_len;
-  normal_y = wing_dx / wing_len;
-  block_half_width = max(0.42, nose_wing_width * 0.46);
-  intersection() {
-    front_planar_profile();
-    polygon([
-      [root_x + normal_x * block_half_width, root_y + normal_y * block_half_width],
-      [root_x - normal_x * block_half_width, root_y - normal_y * block_half_width],
-      [tip_x - normal_x * block_half_width, tip_y - normal_y * block_half_width],
-      [tip_x + normal_x * block_half_width, tip_y + normal_y * block_half_width]
-    ]);
-  }
-}
-
-module nose_wing(side=1) {
-  if (nose_wing_enabled) {
-    bump_depth = max(0.4, nose_wing_depth);
-    bump_round = min(bump_depth * 0.28, nose_wing_width * 0.22, 0.9);
-    bump_overlap = min(0.12, bump_depth * 0.06);
-    translate([0, 0, -front_face_z - bump_depth / 2 + bump_overlap])
-      chamfered_profile_extrude(bump_depth, bump_round)
-        nose_wing_footprint(side);
-  }
-}
-
-module nose_wings() {
-  nose_wing(-1);
-  nose_wing(1);
-}
-
 module front_planar_profile() {
   // All front interfaces are joined before extrusion, matching the Creator preview.
   union() {
@@ -9942,7 +9721,6 @@ module front() {
       lens_seat_cut(-lens_center);
       lens_seat_cut(lens_center);
     }
-    nose_wings();
     front_hinge(-1);
     front_hinge(1);
   }
