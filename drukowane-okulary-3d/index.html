@@ -16,7 +16,7 @@
         document.documentElement.dataset.appError = event.reason?.message || String(event.reason || "promise");
       });
     </script>
-    <link rel="stylesheet" href="./styles.css?v=creator-entry-20260602-01" />
+    <link rel="stylesheet" href="./styles.css?v=creator-entry-20260602-03" />
     <script type="importmap">
       {
         "imports": {
@@ -486,11 +486,35 @@
             <button id="designViewSketch" type="button" class="active">Drawing</button>
             <button id="designView3d" type="button">Assembly 3D</button>
           </div>
-          <div class="design-stage-tools" role="group" aria-label="Creator tools">
-            <button id="designUndo" type="button" disabled>Undo</button>
-            <button id="designRedo" type="button" disabled>Redo</button>
-            <button id="designMeasureToggle" type="button">Measure</button>
-            <button id="designMeasureClear" type="button" disabled>Clear</button>
+          <div id="designStageTools" class="design-stage-tools" role="toolbar" aria-label="Creator tools">
+            <div class="design-toolbar-group" role="group" aria-label="History">
+              <button id="designUndo" type="button" disabled>Undo</button>
+              <button id="designRedo" type="button" disabled>Redo</button>
+            </div>
+            <div class="design-toolbar-group" role="group" aria-label="Measurement">
+              <button id="designMeasureToggle" type="button">Measure</button>
+              <button id="designMeasureClear" type="button" disabled>Clear</button>
+            </div>
+            <div id="designFrontPointTools" class="design-toolbar-group design-point-toolbar" role="group" aria-label="Front point tools">
+              <button id="addSketchPoint" type="button">+ Point</button>
+              <button id="removeSketchPoint" type="button">Remove</button>
+              <button id="designSharpCorner" type="button">Sharp</button>
+              <label>
+                <span id="designSelectedCornerLabel">Point 1 radius</span>
+                <input id="designSelectedCornerRadius" type="range" min="0" max="30" step="0.5" value="0" />
+                <small>0 mm</small>
+              </label>
+            </div>
+            <div id="designTemplePointTools" class="design-toolbar-group design-point-toolbar" role="group" aria-label="Temple point tools" hidden>
+              <button id="addTemplePoint" type="button">+ Point</button>
+              <button id="removeTemplePoint" type="button">Remove</button>
+              <button id="designTempleSharpCorner" type="button">Sharp</button>
+              <label>
+                <span id="designTempleSelectedCornerLabel">Point 1 radius</span>
+                <input id="designTempleSelectedCornerRadius" type="range" min="0" max="12" step="0.1" value="0" />
+                <small>0 mm</small>
+              </label>
+            </div>
           </div>
           <div class="design-stage-footer">
             <span id="designDimensions">150 mm frame / 18 mm bridge / 100 mm temple</span>
@@ -530,19 +554,6 @@
             <div id="designWarnings" class="design-warning-list"></div>
           </section>
           <section id="designOperationsPanel" class="design-operations" role="tabpanel">
-            <section class="design-control-section design-front-point-section">
-              <div class="design-section-heading">
-                <h3>Front points</h3>
-                <div class="design-sketch-actions">
-                  <button id="addSketchPoint" type="button" class="compact">+ Point</button>
-                  <button id="removeSketchPoint" type="button" class="compact">Remove</button>
-                  <button id="designSharpCorner" type="button" class="compact">Sharp</button>
-                </div>
-              </div>
-              <div class="design-construction-grid">
-                <label><span id="designSelectedCornerLabel">Point 1 radius</span><input id="designSelectedCornerRadius" type="range" min="0" max="30" step="0.5" value="0" /><small>0 mm</small></label>
-              </div>
-            </section>
             <section class="design-control-section">
               <h3>Front dimensions</h3>
               <div id="designFrontControls" class="design-controls"></div>
@@ -604,19 +615,6 @@
             </section>
           </section>
           <section id="designFeaturesPanel" class="design-operations" role="tabpanel" hidden>
-            <section class="design-control-section design-temple-point-section">
-              <div class="design-section-heading">
-                <h3>Temple points</h3>
-                <div class="design-sketch-actions">
-                  <button id="addTemplePoint" type="button" class="compact">+ Point</button>
-                  <button id="removeTemplePoint" type="button" class="compact">Remove</button>
-                  <button id="designTempleSharpCorner" type="button" class="compact">Sharp</button>
-                </div>
-              </div>
-              <div class="design-construction-grid">
-                <label><span id="designTempleSelectedCornerLabel">Point 1 radius</span><input id="designTempleSelectedCornerRadius" type="range" min="0" max="12" step="0.1" value="0" /><small>0 mm</small></label>
-              </div>
-            </section>
             <section class="design-control-section">
               <h3>Temple dimensions</h3>
               <div id="designTempleControls" class="design-controls"></div>
@@ -1028,6 +1026,6 @@
       document.querySelector("#heroEditor")?.addEventListener("click", (event) => queueDesignLabDuringBoot(event, true));
       document.querySelector("#startDesignLab")?.addEventListener("click", (event) => queueDesignLabDuringBoot(event, true));
     </script>
-    <script type="module" src="./src/app.js?v=creator-entry-20260602-01"></script>
+    <script type="module" src="./src/app.js?v=creator-entry-20260602-03"></script>
   </body>
 </html>

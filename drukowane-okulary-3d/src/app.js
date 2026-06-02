@@ -827,6 +827,9 @@ const els = {
   designAssemblyPanel: document.querySelector("#designAssemblyPanel"),
   designAppearancePanel: document.querySelector("#designAppearancePanel"),
   designCodePanel: document.querySelector("#designCodePanel"),
+  designStageTools: document.querySelector("#designStageTools"),
+  designFrontPointTools: document.querySelector("#designFrontPointTools"),
+  designTemplePointTools: document.querySelector("#designTemplePointTools"),
   designScadCode: document.querySelector("#designScadCode"),
   regenerateDesignCode: document.querySelector("#regenerateDesignCode"),
   applyDesignCode: document.querySelector("#applyDesignCode"),
@@ -2052,12 +2055,23 @@ function setDesignView(view) {
       els.designViewHint.textContent = "Drag profile points to define the lens opening";
     }
   }
+  syncDesignStageToolbar();
   if (sketch) drawDesignSketch();
   else {
     resizeDesignScene();
     renderDesignPreview({ fitView: false });
   }
   updateDesignMeasureUi();
+}
+
+function syncDesignStageToolbar() {
+  const mode = state.designDraft.step || "front";
+  const sketchMode = state.designDraft.view !== "3d";
+  const showFrontTools = sketchMode && mode === "front";
+  const showTempleTools = sketchMode && mode === "left-temple";
+  if (els.designFrontPointTools) els.designFrontPointTools.hidden = !showFrontTools;
+  if (els.designTemplePointTools) els.designTemplePointTools.hidden = !showTempleTools;
+  els.designStageTools?.classList.toggle("has-point-tools", showFrontTools || showTempleTools);
 }
 
 function designSketchMetrics() {
@@ -3182,27 +3196,26 @@ function designNoseWingPath(p, definition, side) {
   };
 }
 
-function designNoseWingTrapezoidRing(p, definition, side) {
+function designNoseWingRaisedBlockRing(p, definition, side) {
   const path = designNoseWingPath(p, definition, side);
   const dx = path.end[0] - path.start[0];
   const dy = path.end[1] - path.start[1];
   const length = Math.max(0.001, Math.hypot(dx, dy));
   const nx = -dy / length;
   const ny = dx / length;
-  const topHalf = Math.max(0.4, path.width * 0.56);
-  const bottomHalf = Math.max(0.32, path.width * 0.32);
+  const halfWidth = Math.max(0.42, path.width * 0.46);
   return designCleanRing([
-    [path.start[0] + nx * topHalf, path.start[1] + ny * topHalf],
-    [path.start[0] - nx * topHalf, path.start[1] - ny * topHalf],
-    [path.end[0] - nx * bottomHalf, path.end[1] - ny * bottomHalf],
-    [path.end[0] + nx * bottomHalf, path.end[1] + ny * bottomHalf]
+    [path.start[0] + nx * halfWidth, path.start[1] + ny * halfWidth],
+    [path.start[0] - nx * halfWidth, path.start[1] - ny * halfWidth],
+    [path.end[0] - nx * halfWidth, path.end[1] - ny * halfWidth],
+    [path.end[0] + nx * halfWidth, path.end[1] + ny * halfWidth]
   ]);
 }
 
 function designNoseWingFootprintPolygons(p, definition, side) {
   const construction = normalizeDesignConstruction(definition?.construction);
   if (!construction.noseWingEnabled) return [];
-  const footprint = designNoseWingTrapezoidRing(p, definition, side);
+  const footprint = designNoseWingRaisedBlockRing(p, definition, side);
   if (footprint.length < 3) return [];
   try {
     return polygonClipping.intersection(
@@ -3437,7 +3450,7 @@ function addDesignNoseWings(p, material, definition, target = designModelGroup) 
   [-1, 1].forEach((side) => {
     const polygons = designNoseWingFootprintPolygons(p, definition, side);
     designShapesFromPolygons(polygons).forEach((shape) => {
-      const extrusion = containedBevelExtrudeOptions(depth, bevel, 5);
+      const extrusion = containedBevelExtrudeOptions(depth, bevel, 1);
       const geometry = new THREE.ExtrudeGeometry(shape, extrusion.options);
       geometry.translate(0, 0, -extrusion.centerOffset);
       geometry.computeVertexNormals();
@@ -3945,6 +3958,7 @@ function bindUi() {
   els.exitDesignLab?.addEventListener("click", scrollGalleryIntoView);
   els.designTabs.forEach((button) => button.addEventListener("click", () => switchDesignTab(button.dataset.designTab)));
   [
+    els.designStageTools,
     els.designOperationsPanel,
     els.designFeaturesPanel,
     els.designRightTemplePanel,
@@ -9844,15 +9858,14 @@ module nose_wing_footprint(side=1) {
   wing_len = max(0.01, sqrt(wing_dx * wing_dx + wing_dy * wing_dy));
   normal_x = -wing_dy / wing_len;
   normal_y = wing_dx / wing_len;
-  top_half = max(0.4, nose_wing_width * 0.56);
-  bottom_half = max(0.32, nose_wing_width * 0.32);
+  block_half_width = max(0.42, nose_wing_width * 0.46);
   intersection() {
     front_planar_profile();
     polygon([
-      [root_x + normal_x * top_half, root_y + normal_y * top_half],
-      [root_x - normal_x * top_half, root_y - normal_y * top_half],
-      [tip_x - normal_x * bottom_half, tip_y - normal_y * bottom_half],
-      [tip_x + normal_x * bottom_half, tip_y + normal_y * bottom_half]
+      [root_x + normal_x * block_half_width, root_y + normal_y * block_half_width],
+      [root_x - normal_x * block_half_width, root_y - normal_y * block_half_width],
+      [tip_x - normal_x * block_half_width, tip_y - normal_y * block_half_width],
+      [tip_x + normal_x * block_half_width, tip_y + normal_y * block_half_width]
     ]);
   }
 }

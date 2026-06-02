@@ -1095,13 +1095,32 @@ button.nav-link {
   position: absolute;
   top: 4.25rem;
   right: 1.15rem;
+  left: auto;
   display: flex;
+  align-items: center;
   gap: 0.35rem;
+  max-width: min(920px, calc(100% - 2.3rem));
   padding: 0.28rem;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: color-mix(in srgb, var(--panel-bg) 92%, transparent);
   backdrop-filter: blur(12px);
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.design-toolbar-group {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 0.3rem;
+  padding-right: 0.35rem;
+  border-right: 1px solid var(--line);
+}
+
+.design-toolbar-group:last-child {
+  padding-right: 0;
+  border-right: 0;
 }
 
 .design-stage-tools button {
@@ -1121,6 +1140,46 @@ button.nav-link {
 
 .design-stage-tools button:disabled {
   opacity: 0.45;
+}
+
+.design-point-toolbar {
+  gap: 0.42rem;
+}
+
+.design-point-toolbar[hidden] {
+  display: none;
+}
+
+.design-point-toolbar label {
+  display: grid;
+  grid-template-columns: auto minmax(88px, 150px) auto;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 2rem;
+  padding: 0 0.55rem;
+  border: 1px solid color-mix(in srgb, var(--line) 70%, var(--accent) 30%);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--field-bg) 78%, transparent);
+}
+
+.design-point-toolbar span {
+  color: var(--muted);
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.design-point-toolbar input[type="range"] {
+  width: clamp(88px, 11vw, 150px);
+}
+
+.design-point-toolbar small {
+  min-width: 42px;
+  color: var(--text);
+  font-size: 0.68rem;
+  text-align: right;
 }
 
 .design-stage-footer {
@@ -3952,6 +4011,16 @@ input[type="password"] {
     width: 2.1rem;
     height: 4rem;
     font-size: 1.75rem;
+  }
+
+  .design-stage-tools {
+    left: 1rem;
+    right: 1rem;
+    max-width: calc(100% - 2rem);
+  }
+
+  .design-point-toolbar label {
+    grid-template-columns: 1fr minmax(86px, 1fr) auto;
   }
 
   .plan-code-activation {
