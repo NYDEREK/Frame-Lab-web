@@ -3182,12 +3182,27 @@ function designNoseWingPath(p, definition, side) {
   };
 }
 
+function designNoseWingTrapezoidRing(p, definition, side) {
+  const path = designNoseWingPath(p, definition, side);
+  const dx = path.end[0] - path.start[0];
+  const dy = path.end[1] - path.start[1];
+  const length = Math.max(0.001, Math.hypot(dx, dy));
+  const nx = -dy / length;
+  const ny = dx / length;
+  const topHalf = Math.max(0.4, path.width * 0.56);
+  const bottomHalf = Math.max(0.32, path.width * 0.32);
+  return designCleanRing([
+    [path.start[0] + nx * topHalf, path.start[1] + ny * topHalf],
+    [path.start[0] - nx * topHalf, path.start[1] - ny * topHalf],
+    [path.end[0] - nx * bottomHalf, path.end[1] - ny * bottomHalf],
+    [path.end[0] + nx * bottomHalf, path.end[1] + ny * bottomHalf]
+  ]);
+}
+
 function designNoseWingFootprintPolygons(p, definition, side) {
   const construction = normalizeDesignConstruction(definition?.construction);
   if (!construction.noseWingEnabled) return [];
-  const path = designNoseWingPath(p, definition, side);
-  const radius = Math.max(0.35, Math.min(path.width * 0.52, p.rim_thickness * 0.72));
-  const footprint = designSegmentCapsuleRing(path.start, path.end, radius, 10);
+  const footprint = designNoseWingTrapezoidRing(p, definition, side);
   if (footprint.length < 3) return [];
   try {
     return polygonClipping.intersection(
@@ -9824,15 +9839,21 @@ module nose_wing_footprint(side=1) {
   root_y = base_y + root_overlap;
   tip_x = base_x + tip_dx;
   tip_y = base_y - nose_wing_height;
-  footprint_radius = max(0.35, min(nose_wing_width * 0.52, rim_thickness * 0.72));
+  wing_dx = tip_x - root_x;
+  wing_dy = tip_y - root_y;
+  wing_len = max(0.01, sqrt(wing_dx * wing_dx + wing_dy * wing_dy));
+  normal_x = -wing_dy / wing_len;
+  normal_y = wing_dx / wing_len;
+  top_half = max(0.4, nose_wing_width * 0.56);
+  bottom_half = max(0.32, nose_wing_width * 0.32);
   intersection() {
     front_planar_profile();
-    hull() {
-      translate([root_x, root_y])
-        rounded_rect([footprint_radius * 2, footprint_radius * 2], footprint_radius);
-      translate([tip_x, tip_y])
-        rounded_rect([footprint_radius * 2, footprint_radius * 2], footprint_radius);
-    }
+    polygon([
+      [root_x + normal_x * top_half, root_y + normal_y * top_half],
+      [root_x - normal_x * top_half, root_y - normal_y * top_half],
+      [tip_x - normal_x * bottom_half, tip_y - normal_y * bottom_half],
+      [tip_x + normal_x * bottom_half, tip_y + normal_y * bottom_half]
+    ]);
   }
 }
 
