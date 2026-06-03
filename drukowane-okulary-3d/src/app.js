@@ -3592,56 +3592,63 @@ function containedBevelExtrudeOptions(depth, edgeAmount, bevelSegments = 1) {
   };
 }
 
-function designNoseWingTopEdgeIndex(ring) {
-  if (!ring.length) return 0;
-  let bestIndex = 0;
-  let bestScore = -Infinity;
-  ring.forEach((point, index) => {
-    const next = ring[(index + 1) % ring.length];
-    const length = Math.max(0.001, Math.hypot(next[0] - point[0], next[1] - point[1]));
-    const averageY = (point[1] + next[1]) / 2;
-    const score = averageY - length * 0.015;
-    if (score > bestScore) {
-      bestScore = score;
-      bestIndex = index;
-    }
-  });
-  return bestIndex;
-}
-
-function designMovePointToward(point, target, amount) {
-  const distance = Math.hypot(target[0] - point[0], target[1] - point[1]);
-  if (distance <= 0.001 || amount <= 0) return [...point];
-  const t = Math.min(1, amount / distance);
-  return [
-    point[0] + (target[0] - point[0]) * t,
-    point[1] + (target[1] - point[1]) * t
-  ];
-}
-
-function designNoseWingTopChamferRing(ring, topEdgeIndex, amount) {
-  if (amount <= 0.001 || ring.length < 4) return ring.map((point) => [...point]);
-  const nextIndex = (topEdgeIndex + 1) % ring.length;
-  const previousIndex = (topEdgeIndex - 1 + ring.length) % ring.length;
-  const afterNextIndex = (nextIndex + 1) % ring.length;
-  const next = ring[nextIndex];
-  const current = ring[topEdgeIndex];
-  const edgeLength = Math.hypot(next[0] - current[0], next[1] - current[1]);
-  const currentLimit = Math.hypot(ring[previousIndex][0] - current[0], ring[previousIndex][1] - current[1]) * 0.42;
-  const nextLimit = Math.hypot(ring[afterNextIndex][0] - next[0], ring[afterNextIndex][1] - next[1]) * 0.42;
-  const safeAmount = Math.min(amount, edgeLength * 0.32, currentLimit, nextLimit);
-  if (safeAmount <= 0.001) return ring.map((point) => [...point]);
-  const chamfered = ring.map((point) => [...point]);
-  chamfered[topEdgeIndex] = designMovePointToward(current, ring[previousIndex], safeAmount);
-  chamfered[nextIndex] = designMovePointToward(next, ring[afterNextIndex], safeAmount);
-  return chamfered;
-}
-
 function designInterpolateRing(a, b, t) {
   return a.map((point, index) => [
     point[0] + (b[index][0] - point[0]) * t,
     point[1] + (b[index][1] - point[1]) * t
   ]);
+}
+
+function designNoseWingBlendEdgeIndices(ring) {
+  if (ring.length === 4) return [1, 3];
+  const edges = ring.map((point, index) => {
+    const next = ring[(index + 1) % ring.length];
+    return {
+      index,
+      length: Math.hypot(next[0] - point[0], next[1] - point[1])
+    };
+  }).sort((a, b) => b.length - a.length);
+  const selected = [];
+  edges.forEach((edge) => {
+    const adjacent = selected.some((selectedIndex) => {
+      const difference = Math.abs(selectedIndex - edge.index);
+      return difference <= 1 || difference >= ring.length - 1;
+    });
+    if (!adjacent && selected.length < 2) selected.push(edge.index);
+  });
+  return selected.length ? selected : edges.slice(0, 2).map((edge) => edge.index);
+}
+
+function designNoseWingInsetBlendEdges(ring, amount) {
+  if (amount <= 0.001 || ring.length < 3) return ring.map((point) => [...point]);
+  const center = ring.reduce((sum, point) => [sum[0] + point[0], sum[1] + point[1]], [0, 0])
+    .map((value) => value / ring.length);
+  const offsets = ring.map(() => [0, 0]);
+  const counts = ring.map(() => 0);
+  designNoseWingBlendEdgeIndices(ring).forEach((edgeIndex) => {
+    const nextIndex = (edgeIndex + 1) % ring.length;
+    const point = ring[edgeIndex];
+    const next = ring[nextIndex];
+    const midpoint = [(point[0] + next[0]) / 2, (point[1] + next[1]) / 2];
+    const vector = [center[0] - midpoint[0], center[1] - midpoint[1]];
+    const vectorLength = Math.hypot(vector[0], vector[1]);
+    const edgeLength = Math.hypot(next[0] - point[0], next[1] - point[1]);
+    if (vectorLength <= 0.001 || edgeLength <= 0.001) return;
+    const move = Math.min(amount, vectorLength * 0.72, edgeLength * 0.28);
+    const offset = [vector[0] / vectorLength * move, vector[1] / vectorLength * move];
+    [edgeIndex, nextIndex].forEach((index) => {
+      offsets[index][0] += offset[0];
+      offsets[index][1] += offset[1];
+      counts[index] += 1;
+    });
+  });
+  return ring.map((point, index) => {
+    if (!counts[index]) return [...point];
+    return [
+      point[0] + offsets[index][0] / counts[index],
+      point[1] + offsets[index][1] / counts[index]
+    ];
+  });
 }
 
 function designNoseWingGeometryFromRing(ring, options) {
@@ -3652,28 +3659,21 @@ function designNoseWingGeometryFromRing(ring, options) {
   const round = THREE.MathUtils.clamp(parseDesignNumber(options?.round, 0), 0, Math.min(depth * 0.45, 1.4));
   const angle = THREE.MathUtils.clamp(parseDesignNumber(options?.angle, 0), -35, 35);
   const side = options?.side < 0 ? -1 : 1;
-  const topEdgeIndex = designNoseWingTopEdgeIndex(cleanRing);
-  const topEdgeNextIndex = (topEdgeIndex + 1) % cleanRing.length;
-  const topEdgeLength = Math.hypot(
-    cleanRing[topEdgeNextIndex][0] - cleanRing[topEdgeIndex][0],
-    cleanRing[topEdgeNextIndex][1] - cleanRing[topEdgeIndex][1]
-  );
-  const chamferAmount = Math.min(round, Math.max(0, topEdgeLength * 0.3));
-  const chamferDepth = Math.min(chamferAmount, depth * 0.42);
-  const bodyRing = chamferDepth > 0.001
-    ? designNoseWingTopChamferRing(cleanRing, topEdgeIndex, chamferAmount)
+  const blendAmount = Math.min(round, Math.max(0, depth * 0.42 - 0.01));
+  const blendDepth = Math.min(blendAmount, depth * 0.42);
+  const bodyRing = blendDepth > 0.001
+    ? designNoseWingInsetBlendEdges(cleanRing, blendAmount)
     : cleanRing.map((point) => [...point]);
   const tiltX = side * Math.tan(THREE.MathUtils.degToRad(angle)) * depth;
   const layerSpecs = [
     { ring: cleanRing, z: topZ, xOffset: 0 }
   ];
-  if (chamferDepth > 0.001) {
-    const roundSegments = 4;
+  if (blendDepth > 0.001) {
+    const roundSegments = 8;
     for (let segment = 1; segment <= roundSegments; segment += 1) {
       const theta = (segment / roundSegments) * Math.PI / 2;
-      const moveT = 1 - Math.cos(theta);
-      const depthT = Math.sin(theta);
-      const zDrop = chamferDepth * depthT;
+      const moveT = Math.sin(theta);
+      const zDrop = blendDepth * (1 - Math.cos(theta));
       layerSpecs.push({
         ring: designInterpolateRing(cleanRing, bodyRing, moveT),
         z: topZ - zDrop,
