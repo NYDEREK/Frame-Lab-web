@@ -1556,7 +1556,7 @@ function loadDesignTextFont() {
   if (designTextFont || designTextFontLoading) return;
   designTextFontLoading = true;
   new FontLoader().load(
-    "https://unpkg.com/three@0.164.1/examples/fonts/helvetiker_bold.typeface.json",
+    "./assets/vendor/three/examples/fonts/helvetiker_bold.typeface.json",
     (font) => {
       designTextFont = font;
       designTextFontLoading = false;

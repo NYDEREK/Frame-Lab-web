@@ -3,6 +3,7 @@ import { createReadStream, existsSync, mkdirSync, readFileSync, renameSync, stat
 import { createServer } from "node:http";
 import { extname, isAbsolute, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
+import { constants as zlibConstants, createBrotliCompress, createGzip } from "node:zlib";
 
 const root = fileURLToPath(new URL(".", import.meta.url));
 const railwayDataPath = "/data";
@@ -46,6 +47,7 @@ const mimeTypes = {
   ".step": "model/step",
   ".stp": "model/step"
 };
+const compressibleExtensions = new Set([".html", ".css", ".js", ".json", ".svg"]);
 
 function absoluteDataRoot(value) {
   const trimmed = String(value || "").trim();
@@ -1706,11 +1708,59 @@ function serveStatic(req, res, pathname) {
     res.end("Not found");
     return;
   }
-  res.writeHead(200, {
+  const compression = staticCompression(req, filePath);
+  const headers = {
     "Content-Type": mimeTypes[extname(filePath).toLowerCase()] || "application/octet-stream",
-    "Cache-Control": filePath.endsWith("index.html") ? "no-store" : "public, max-age=60"
+    "Cache-Control": staticCacheControl(req, filePath),
+    Vary: "Accept-Encoding"
+  };
+  if (compression) headers["Content-Encoding"] = compression.encoding;
+  res.writeHead(200, {
+    ...headers
   });
-  createReadStream(filePath).pipe(res);
+  const stream = createReadStream(filePath);
+  if (compression) {
+    stream.pipe(compression.stream).pipe(res);
+    return;
+  }
+  stream.pipe(res);
+}
+
+function staticCacheControl(req, filePath) {
+  if (filePath.endsWith("index.html")) return "no-store";
+  const requestUrl = req.url || "";
+  if (filePath.includes(`${root}assets/vendor/`) || requestUrl.includes("?v=")) {
+    return "public, max-age=31536000, immutable";
+  }
+  return "public, max-age=3600";
+}
+
+function staticCompression(req, filePath) {
+  const extension = extname(filePath).toLowerCase();
+  if (!compressibleExtensions.has(extension)) return null;
+  try {
+    if (statSync(filePath).size < 1024) return null;
+  } catch {
+    return null;
+  }
+  const acceptEncoding = String(req.headers["accept-encoding"] || "");
+  if (acceptEncoding.includes("br")) {
+    return {
+      encoding: "br",
+      stream: createBrotliCompress({
+        params: {
+          [zlibConstants.BROTLI_PARAM_QUALITY]: 4
+        }
+      })
+    };
+  }
+  if (acceptEncoding.includes("gzip")) {
+    return {
+      encoding: "gzip",
+      stream: createGzip({ level: 6 })
+    };
+  }
+  return null;
 }
 
 createServer(async (req, res) => {
