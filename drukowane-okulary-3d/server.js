@@ -886,9 +886,7 @@ function mergeScadConstructionHints(design = {}, scadSource = "") {
     bridgeBottomJoinOffset: "bridge_bottom_join_offset",
     noseWingHeight: "nose_wing_height",
     noseWingAngle: "nose_wing_angle",
-    noseWingDepth: "nose_wing_depth",
-    noseWingWidth: "nose_wing_width",
-    noseWingOffset: "nose_wing_offset",
+    noseWingRound: "nose_wing_round",
     templeStraight: "temple_straight",
     templeHook: "temple_hook",
     templeHookAngle: "temple_hook_angle",
@@ -912,8 +910,6 @@ function mergeScadConstructionHints(design = {}, scadSource = "") {
   });
   const enabled = scadBooleanValue(scadSource, "temple_chamfer_enabled");
   if (enabled !== undefined) construction.templeChamferEnabled = enabled;
-  const noseWingEnabled = scadBooleanValue(scadSource, "nose_wing_enabled");
-  if (noseWingEnabled !== undefined) construction.noseWingEnabled = noseWingEnabled;
   const nextDesign = { ...design, construction };
   const sketchPoints = scadPointListValue(scadSource, "profile_points", [-0.7, 0.7, -0.7, 0.7], 20);
   if (sketchPoints.length >= 4) {
@@ -1037,12 +1033,9 @@ function sanitizeParametricDesign(style = {}) {
     bridgeThickness: value(style.construction?.bridgeThickness, 3, 12, 6),
     bridgeTopJoinOffset: value(style.construction?.bridgeTopJoinOffset, -18, 18, 3),
     bridgeBottomJoinOffset: value(style.construction?.bridgeBottomJoinOffset, -18, 18, -3),
-    noseWingEnabled: boolean(style.construction?.noseWingEnabled, true),
-    noseWingHeight: value(style.construction?.noseWingHeight, 4, 24, 12),
-    noseWingAngle: value(style.construction?.noseWingAngle, 0, 38, 16),
-    noseWingDepth: value(style.construction?.noseWingDepth, 2, 10, 5.5),
-    noseWingWidth: value(style.construction?.noseWingWidth, 1.8, 6, 3.2),
-    noseWingOffset: value(style.construction?.noseWingOffset, -8, 8, 0),
+    noseWingHeight: value(style.construction?.noseWingHeight, 0, 6, 2.4),
+    noseWingAngle: value(style.construction?.noseWingAngle, 0, 28, 8),
+    noseWingRound: value(style.construction?.noseWingRound, 0, 1.5, 0.35),
     templeStraight: value(style.construction?.templeStraight, 35, 120, 65),
     templeHook: value(style.construction?.templeHook, 10, 60, 30),
     templeHookAngle: value(style.construction?.templeHookAngle, 10, 75, 45),
