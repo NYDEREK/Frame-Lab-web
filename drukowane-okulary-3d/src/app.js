@@ -2803,7 +2803,7 @@ function renderDesignPreview(options = {}) {
   const outerLensWidth = p.lens_width + p.rim_thickness * 2;
   const center = p.bridge_width / 2 + outerLensWidth / 2;
   addDesignFrontBody(p, frontMaterial, definition);
-  addDesignNoseWings(p, detailMaterial, definition);
+  addDesignNoseWings(p, frontMaterial, definition);
   [-1, 1].forEach((side) => {
     addDesignLens(side * center, p, lensMaterial, definition);
     addDesignTemple(side, p, outerLensWidth, templeMaterial, detailMaterial, style, definition);
@@ -3644,6 +3644,7 @@ function designNoseWingGeometryFromRing(ring, options) {
   const topZ = parseDesignNumber(options?.topZ, 0);
   const round = THREE.MathUtils.clamp(parseDesignNumber(options?.round, 0), 0, Math.min(depth * 0.45, 1.4));
   const angle = THREE.MathUtils.clamp(parseDesignNumber(options?.angle, 0), -35, 35);
+  const side = options?.side < 0 ? -1 : 1;
   const topEdgeIndex = designNoseWingTopEdgeIndex(cleanRing);
   const topEdgeNextIndex = (topEdgeIndex + 1) % cleanRing.length;
   const topEdgeLength = Math.hypot(
@@ -3655,28 +3656,28 @@ function designNoseWingGeometryFromRing(ring, options) {
   const bodyRing = chamferDepth > 0.001
     ? designNoseWingTopChamferRing(cleanRing, topEdgeIndex, chamferAmount)
     : cleanRing.map((point) => [...point]);
-  const tiltY = -Math.tan(THREE.MathUtils.degToRad(angle)) * depth;
+  const tiltX = side * Math.tan(THREE.MathUtils.degToRad(angle)) * depth;
   const layerSpecs = [
-    { ring: cleanRing, z: topZ, yOffset: 0 }
+    { ring: cleanRing, z: topZ, xOffset: 0 }
   ];
   if (chamferDepth > 0.001) {
     layerSpecs.push({
       ring: bodyRing,
       z: topZ - chamferDepth,
-      yOffset: tiltY * (chamferDepth / depth)
+      xOffset: tiltX * (chamferDepth / depth)
     });
   }
   layerSpecs.push({
     ring: bodyRing,
     z: topZ - depth,
-    yOffset: tiltY
+    xOffset: tiltX
   });
 
   const vertices = [];
   const layerSize = cleanRing.length;
   layerSpecs.forEach((layer) => {
     layer.ring.forEach(([x, y]) => {
-      vertices.push(x, y + layer.yOffset, layer.z);
+      vertices.push(x + layer.xOffset, y, layer.z);
     });
   });
 
@@ -3760,7 +3761,8 @@ function addDesignNoseWings(p, material, definition, target = designModelGroup) 
         depth,
         topZ,
         round,
-        angle: construction.noseWingAngle
+        angle: construction.noseWingAngle,
+        side
       });
       if (!geometry) return;
       const wingMaterial = material?.clone ? material.clone() : material;
@@ -5458,7 +5460,7 @@ function buildDesign3mfExportParts(projectRoot) {
   return [
     part("front", "front", `${projectRoot}-front.3mf`, `${state.designDraft.name || "Frame Lab Creator"} front`, (group) => {
       addDesignFrontBody(p, frontMaterial, definition, group);
-      addDesignNoseWings(p, detailMaterial, definition, group);
+      addDesignNoseWings(p, frontMaterial, definition, group);
       [-1, 1].forEach((side) => addDesignHingeAsset(
         side < 0 ? "frontRight" : "frontLeft",
         designHingeDatum(side, p, definition),
@@ -7488,7 +7490,7 @@ function renderPublishedDesignPreview() {
   const outerLensWidth = p.lens_width + p.rim_thickness * 2;
   const center = p.bridge_width / 2 + outerLensWidth / 2;
   addDesignFrontBody(p, frontMaterial, definition, modelGroup);
-  addDesignNoseWings(p, detailMaterial, definition, modelGroup);
+  addDesignNoseWings(p, frontMaterial, definition, modelGroup);
   [-1, 1].forEach((side) => {
     addDesignLens(side * center, p, lensMaterial, definition, modelGroup);
     addDesignTemple(side, p, outerLensWidth, templeMaterial, detailMaterial, style, definition, modelGroup);
