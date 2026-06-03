@@ -3600,14 +3600,14 @@ function designInterpolateRing(a, b, t) {
 }
 
 function designNoseWingBlendEdgeIndices(ring) {
-  if (ring.length === 4) return [1, 3];
+  if (ring.length === 4) return [0, 2];
   const edges = ring.map((point, index) => {
     const next = ring[(index + 1) % ring.length];
     return {
       index,
       length: Math.hypot(next[0] - point[0], next[1] - point[1])
     };
-  }).sort((a, b) => b.length - a.length);
+  }).sort((a, b) => a.length - b.length);
   const selected = [];
   edges.forEach((edge) => {
     const adjacent = selected.some((selectedIndex) => {
@@ -3664,7 +3664,12 @@ function designNoseWingGeometryFromRing(ring, options) {
   const bodyRing = blendDepth > 0.001
     ? designNoseWingInsetBlendEdges(cleanRing, blendAmount)
     : cleanRing.map((point) => [...point]);
+  const tipRoundDepth = Math.min(blendDepth, Math.max(0, depth - blendDepth - 0.02));
+  const tipRing = tipRoundDepth > 0.001
+    ? designNoseWingInsetBlendEdges(bodyRing, tipRoundDepth)
+    : bodyRing.map((point) => [...point]);
   const tiltX = side * Math.tan(THREE.MathUtils.degToRad(angle)) * depth;
+  const xOffsetAtZ = (z) => tiltX * THREE.MathUtils.clamp((topZ - z) / depth, 0, 1);
   const layerSpecs = [
     { ring: cleanRing, z: topZ, xOffset: 0 }
   ];
@@ -3677,15 +3682,38 @@ function designNoseWingGeometryFromRing(ring, options) {
       layerSpecs.push({
         ring: designInterpolateRing(cleanRing, bodyRing, moveT),
         z: topZ - zDrop,
-        xOffset: tiltX * (zDrop / depth)
+        xOffset: xOffsetAtZ(topZ - zDrop)
       });
     }
   }
-  layerSpecs.push({
-    ring: bodyRing,
-    z: topZ - depth,
-    xOffset: tiltX
-  });
+  const finalZ = topZ - depth;
+  if (tipRoundDepth > 0.001) {
+    const tipRoundStartZ = finalZ + tipRoundDepth;
+    if (tipRoundStartZ < layerSpecs[layerSpecs.length - 1].z - 0.001) {
+      layerSpecs.push({
+        ring: bodyRing,
+        z: tipRoundStartZ,
+        xOffset: xOffsetAtZ(tipRoundStartZ)
+      });
+    }
+    const roundSegments = 8;
+    for (let segment = 1; segment <= roundSegments; segment += 1) {
+      const theta = (segment / roundSegments) * Math.PI / 2;
+      const moveT = 1 - Math.cos(theta);
+      const z = tipRoundStartZ - tipRoundDepth * Math.sin(theta);
+      layerSpecs.push({
+        ring: designInterpolateRing(bodyRing, tipRing, moveT),
+        z,
+        xOffset: xOffsetAtZ(z)
+      });
+    }
+  } else {
+    layerSpecs.push({
+      ring: bodyRing,
+      z: finalZ,
+      xOffset: tiltX
+    });
+  }
 
   const vertices = [];
   const layerSize = cleanRing.length;
