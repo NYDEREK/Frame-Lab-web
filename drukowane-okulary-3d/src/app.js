@@ -1049,6 +1049,7 @@ const designCameraTarget = new THREE.Vector3();
 const designViewerRotation = { x: -0.54, y: 0.56, z: 0.02 };
 const designBridgeHandleSelectionOffset = 1000;
 const designNoseWingHandleSelectionOffset = 1100;
+const designNoseWingRoundMax = 4;
 const designHistoryLimit = 60;
 const designHistory = {
   past: [],
@@ -1372,7 +1373,7 @@ function normalizeDesignConstruction(construction = {}) {
     bridgeBottomJoinOffset: bounded("bridgeBottomJoinOffset", -18, 18, -bridgeThickness / 2),
     noseWingHeight: bounded("noseWingHeight", 0, 6),
     noseWingAngle: bounded("noseWingAngle", -28, 28),
-    noseWingRound: bounded("noseWingRound", 0, 1.5),
+    noseWingRound: bounded("noseWingRound", 0, designNoseWingRoundMax),
     noseWingTopOffset,
     noseWingBottomOffset,
     noseWingTopShift: bounded("noseWingTopShift", -12, 12),
@@ -3308,6 +3309,18 @@ function designNoseWingCornerPoint(p, definition, side, edge, y) {
   return [edge === "outer" ? boundary.outerX : boundary.innerX, y];
 }
 
+function designNoseWingBoundarySamples(p, definition, side, edge, fromY, toY) {
+  const distance = Math.abs(toY - fromY);
+  if (distance <= 0.001) return [];
+  const segments = Math.max(2, Math.min(32, Math.ceil(distance / 0.55)));
+  const points = [];
+  for (let index = 1; index < segments; index += 1) {
+    const y = fromY + (toY - fromY) * (index / segments);
+    points.push(designNoseWingCornerPoint(p, definition, side, edge, y));
+  }
+  return points;
+}
+
 function designNoseWingCornerPoints(p, definition, side) {
   const construction = normalizeDesignConstruction(definition?.construction);
   if (construction.noseWingHeight <= 0.02) return [];
@@ -3350,22 +3363,36 @@ function designNoseWingLineSegments(p, definition, side) {
 }
 
 function designNoseWingFootprintRing(p, definition, side) {
-  const [top, bottom] = designNoseWingLineSegments(p, definition, side);
-  if (!top || !bottom) return [];
-  return designCleanRing([top.outer, top.inner, bottom.inner, bottom.outer]);
+  const corners = designNoseWingCornerPoints(p, definition, side);
+  if (corners.length < 4) return [];
+  const [topOuter, topInner, bottomInner, bottomOuter] = corners.map((corner) => corner.point);
+  const innerBoundary = designNoseWingBoundarySamples(p, definition, side, "inner", topInner[1], bottomInner[1]);
+  const outerBoundary = designNoseWingBoundarySamples(p, definition, side, "outer", bottomOuter[1], topOuter[1]);
+  return designCleanRing([
+    topOuter,
+    topInner,
+    ...innerBoundary,
+    bottomInner,
+    bottomOuter,
+    ...outerBoundary
+  ]);
 }
 
 function designNoseWingFootprintPolygons(p, definition, side) {
   const ring = designNoseWingFootprintRing(p, definition, side);
   if (ring.length < 3) return [];
   try {
-    return polygonClipping.intersection(
+    const clipped = polygonClipping.intersection(
       designFrontPlanarPolygons(p, definition, 0),
       [ring]
     );
+    if (Array.isArray(clipped) && clipped.some((polygon) => Array.isArray(polygon?.[0]) && polygon[0].length >= 3)) {
+      return clipped;
+    }
   } catch {
-    return [];
+    return [[ring]];
   }
+  return [[ring]];
 }
 
 function drawDesignNoseWingsSketch(ctx, metrics, style) {
@@ -3603,11 +3630,13 @@ function designNoseWingBlendEdgeIndices(ring) {
   if (ring.length === 4) return [0, 2];
   const edges = ring.map((point, index) => {
     const next = ring[(index + 1) % ring.length];
+    const horizontal = Math.abs(next[0] - point[0]);
     return {
       index,
+      horizontal,
       length: Math.hypot(next[0] - point[0], next[1] - point[1])
     };
-  }).sort((a, b) => a.length - b.length);
+  }).sort((a, b) => b.horizontal - a.horizontal || b.length - a.length);
   const selected = [];
   edges.forEach((edge) => {
     const adjacent = selected.some((selectedIndex) => {
@@ -3656,15 +3685,15 @@ function designNoseWingGeometryFromRing(ring, options) {
   if (cleanRing.length < 3) return null;
   const depth = Math.max(0.02, parseDesignNumber(options?.depth, 0.02));
   const topZ = parseDesignNumber(options?.topZ, 0);
-  const round = THREE.MathUtils.clamp(parseDesignNumber(options?.round, 0), 0, Math.min(depth * 0.45, 1.4));
+  const round = THREE.MathUtils.clamp(parseDesignNumber(options?.round, 0), 0, Math.min(depth * 0.48, designNoseWingRoundMax));
   const angle = THREE.MathUtils.clamp(parseDesignNumber(options?.angle, 0), -35, 35);
   const side = options?.side < 0 ? -1 : 1;
-  const blendAmount = Math.min(round, Math.max(0, depth * 0.42 - 0.01));
-  const blendDepth = Math.min(blendAmount, depth * 0.42);
+  const safeRound = Math.min(round, Math.max(0, depth * 0.48 - 0.02));
+  const blendDepth = Math.min(safeRound, Math.max(0, depth * 0.42 - 0.01));
   const bodyRing = blendDepth > 0.001
-    ? designNoseWingInsetBlendEdges(cleanRing, blendAmount)
+    ? designNoseWingInsetBlendEdges(cleanRing, blendDepth)
     : cleanRing.map((point) => [...point]);
-  const tipRoundDepth = Math.min(blendDepth, Math.max(0, depth - blendDepth - 0.02));
+  const tipRoundDepth = Math.min(safeRound, Math.max(0, depth - blendDepth - 0.02));
   const tipRing = tipRoundDepth > 0.001
     ? designNoseWingInsetBlendEdges(bodyRing, tipRoundDepth)
     : bodyRing.map((point) => [...point]);
@@ -3792,9 +3821,8 @@ function addDesignNoseWings(p, material, definition, target = designModelGroup) 
   const features = normalizeDesignFeatures(definition?.features, p);
   const round = Math.min(
     construction.noseWingRound,
-    Math.max(0, depth * 0.42 - 0.01),
-    Math.max(0, p.rim_thickness * 0.28),
-    0.9
+    Math.max(0, depth * 0.48 - 0.02),
+    designNoseWingRoundMax
   );
   const overlap = Math.min(0.08, depth * 0.04);
   const topZ = -features.extrude.depth / 2 + overlap;
@@ -4688,7 +4716,7 @@ function syncDesignSelectedCornerField() {
 function updateSelectedDesignCorner(radius, options = {}) {
   if (isDesignNoseWingSelection(designSketchSelectedIndex)) {
     const construction = normalizeDesignConstruction(state.designDraft.construction);
-    const nextRadius = THREE.MathUtils.clamp(parseDesignNumber(radius, construction.noseWingRound), 0, 1.5);
+    const nextRadius = THREE.MathUtils.clamp(parseDesignNumber(radius, construction.noseWingRound), 0, designNoseWingRoundMax);
     if (Math.abs(construction.noseWingRound - nextRadius) < 0.0001) return;
     if (options.capture !== false) captureDesignHistory();
     state.designDraft.construction = normalizeDesignConstruction({
