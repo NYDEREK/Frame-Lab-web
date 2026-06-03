@@ -3637,6 +3637,13 @@ function designNoseWingTopChamferRing(ring, topEdgeIndex, amount) {
   return chamfered;
 }
 
+function designInterpolateRing(a, b, t) {
+  return a.map((point, index) => [
+    point[0] + (b[index][0] - point[0]) * t,
+    point[1] + (b[index][1] - point[1]) * t
+  ]);
+}
+
 function designNoseWingGeometryFromRing(ring, options) {
   const cleanRing = designCleanRing(ring);
   if (cleanRing.length < 3) return null;
@@ -3661,11 +3668,18 @@ function designNoseWingGeometryFromRing(ring, options) {
     { ring: cleanRing, z: topZ, xOffset: 0 }
   ];
   if (chamferDepth > 0.001) {
-    layerSpecs.push({
-      ring: bodyRing,
-      z: topZ - chamferDepth,
-      xOffset: tiltX * (chamferDepth / depth)
-    });
+    const roundSegments = 4;
+    for (let segment = 1; segment <= roundSegments; segment += 1) {
+      const theta = (segment / roundSegments) * Math.PI / 2;
+      const moveT = 1 - Math.cos(theta);
+      const depthT = Math.sin(theta);
+      const zDrop = chamferDepth * depthT;
+      layerSpecs.push({
+        ring: designInterpolateRing(cleanRing, bodyRing, moveT),
+        z: topZ - zDrop,
+        xOffset: tiltX * (zDrop / depth)
+      });
+    }
   }
   layerSpecs.push({
     ring: bodyRing,
@@ -3706,9 +3720,11 @@ function designNoseWingGeometryFromRing(ring, options) {
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute("position", new THREE.Float32BufferAttribute(vertices, 3));
   geometry.setIndex(indices);
-  geometry.computeVertexNormals();
-  geometry.computeBoundingSphere();
-  return geometry;
+  const flatGeometry = geometry.toNonIndexed();
+  geometry.dispose();
+  flatGeometry.computeVertexNormals();
+  flatGeometry.computeBoundingSphere();
+  return flatGeometry;
 }
 
 function addDesignFrontBody(p, material, definition, target = designModelGroup) {
