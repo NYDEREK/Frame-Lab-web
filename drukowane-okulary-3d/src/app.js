@@ -2,7 +2,7 @@ import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
 import polygonClipping from "polygon-clipping";
 import * as THREE from "three";
 import { STLLoader } from "three/addons/loaders/STLLoader.js";
-import { ThreeMFLoader } from "three/addons/loaders/3MFLoader.js";
+import { ThreeMFLoader } from "../assets/vendor/three/examples/jsm/loaders/3MFLoader.js?v=fflate-path-20260604";
 import { FontLoader } from "three/addons/loaders/FontLoader.js";
 import { TextGeometry } from "three/addons/geometries/TextGeometry.js";
 
@@ -1023,6 +1023,8 @@ let cameraBaseHeight = 0;
 let componentPreviewRenderers = [];
 let sharedComponentPreviewRenderer = null;
 let navigationScrollFrame = null;
+let uiBound = false;
+let navigationBound = false;
 let designScene;
 let designCamera;
 let designRenderer;
@@ -1063,14 +1065,20 @@ const bootState = window.frameLabBoot || {
   resetDesignDraftRequested: false
 };
 
-init();
+init().catch(handleBootError);
 
 async function init() {
   loadSettings();
   applyBrandSettings();
+  bindUi();
+  updateAccountUi();
+  renderPublicContent();
   await hydrateSystemStatus();
   await hydrateBrandSettings();
   await hydrateSessionFromBackend();
+  updateAccountUi();
+  renderPublicContent();
+  setupNavigation();
   state.uploadedComponents = [...await loadSeedComponentAssets(), ...await loadComponentRecords()]
     .filter((component) => !state.hiddenComponentIds.has(component.id));
   if (!state.uploadedComponents.some((component) => component.kind === "front") || !state.uploadedComponents.some((component) => component.kind === "temple")) {
@@ -1078,7 +1086,7 @@ async function init() {
     persistHiddenComponents();
     state.uploadedComponents = [...await loadSeedComponentAssets(), ...await loadComponentRecords()];
   }
-  await hydrateUploadedComponentMeshes();
+  await runOptionalBootStep("uploaded component previews", () => hydrateUploadedComponentMeshes());
   rebuildComponentLibrary();
   state.models = await loadStoredModels();
   selectModel(state.models[0]?.id || defaultModelId, { rebuildControls: false, renderScene: false, logSelection: false });
@@ -1086,25 +1094,22 @@ async function init() {
   buildBuilderControls();
   buildControls();
   buildDesignControls();
-  setupScene();
-  setupDesignScene();
-  await loadDesignHingeAssets();
-  setupDesignSketch();
+  await runOptionalBootStep("configurator 3D scene", () => setupScene());
+  await runOptionalBootStep("Creator 3D scene", () => setupDesignScene());
+  await runOptionalBootStep("Creator hinge assets", () => loadDesignHingeAssets());
+  await runOptionalBootStep("Creator drawing canvas", () => setupDesignSketch());
   bindUi();
   syncComponentSideInput();
   applyTranslations();
   updateAccountUi();
   updateGeneratedSource();
-  render();
-  renderDesignPreview();
+  if (renderer && scene && camera && modelGroup) render();
+  if (designRenderer && designScene && designCamera && designModelGroup) renderDesignPreview();
   renderGallery();
-  renderPlanCards();
-  renderMarketingContent();
-  renderFitRecommendation();
+  renderPublicContent();
   if (bootState.designLabRequested && bootState.resetDesignDraftRequested) {
     resetDesignDraft();
   }
-  setupNavigation();
   bootState.ready = true;
   if (bootState.editorRequested) {
     openHeroEditorTarget();
@@ -1113,6 +1118,35 @@ async function init() {
     showLoader(false);
   }
   animate();
+}
+
+function renderPublicContent() {
+  renderPlanCards();
+  renderMarketingContent();
+  renderFitRecommendation();
+}
+
+async function runOptionalBootStep(label, task) {
+  try {
+    return await task();
+  } catch (error) {
+    console.warn(`Could not initialize ${label}.`, error);
+    document.documentElement.dataset.appWarning = label;
+    return null;
+  }
+}
+
+function handleBootError(error) {
+  console.error("Frame Lab could not finish startup.", error);
+  document.documentElement.dataset.appError = error?.message || "startup";
+  renderPublicContent();
+  try {
+    bindUi();
+    updateAccountUi();
+    setupNavigation();
+  } catch (uiError) {
+    console.error("Frame Lab public UI fallback failed.", uiError);
+  }
 }
 
 function setupScene() {
@@ -4028,6 +4062,9 @@ function addDesignTextRelief(text, side, temple, material, construction) {
 }
 
 function bindUi() {
+  if (uiBound) return;
+  uiBound = true;
+
   els.controls.addEventListener("input", (event) => {
     const input = event.target;
     if (!input.dataset.param) return;
@@ -8295,6 +8332,11 @@ function restoreNavigationRoute() {
 }
 
 function setupNavigation() {
+  if (navigationBound) {
+    restoreNavigationRoute();
+    return;
+  }
+  navigationBound = true;
   const initialHash = window.location.hash || "#top";
   updateNavigationHistory(initialHash, { replace: true });
   window.addEventListener("popstate", restoreNavigationRoute);
@@ -10945,8 +10987,10 @@ function resize() {
 }
 
 function animate() {
-  resize();
-  renderer.render(scene, camera);
+  if (renderer && scene && camera) {
+    resize();
+    renderer.render(scene, camera);
+  }
   if (designRenderer && designScene && designCamera) {
     resizeDesignScene();
     designRenderer.render(designScene, designCamera);
