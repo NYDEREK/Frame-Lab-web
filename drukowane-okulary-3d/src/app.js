@@ -1098,6 +1098,9 @@ async function init() {
   render();
   renderDesignPreview();
   renderGallery();
+  renderPlanCards();
+  renderMarketingContent();
+  renderFitRecommendation();
   if (bootState.designLabRequested && bootState.resetDesignDraftRequested) {
     resetDesignDraft();
   }
@@ -6135,13 +6138,68 @@ function applyBrandSettings() {
     designScene.background = new THREE.Color(sceneBackgroundColor());
     renderDesignPreview({ fitView: false });
   }
-  localStorage.setItem(brandSettingsStorageKey, JSON.stringify(state.brandSettings));
-  syncBrandSettingsUi();
+  writeBrandSettingsToLocalCache(state.brandSettings);
   applyHeroSettings();
   renderPlanCards();
   renderMarketingContent();
   renderFitRecommendation();
   updateDesignPublishingAccess();
+  try {
+    syncBrandSettingsUi();
+  } catch (error) {
+    console.warn("Could not sync brand settings editor UI.", error);
+  }
+}
+
+function writeBrandSettingsToLocalCache(settings) {
+  const cacheableSettings = compactBrandSettingsForLocalCache(settings);
+  removeLocalStorageItem(brandSettingsStorageKey);
+  const result = setLocalStorageItem(brandSettingsStorageKey, JSON.stringify(cacheableSettings));
+  if (result.ok) {
+    return true;
+  }
+  removeLocalStorageItem(brandSettingsStorageKey);
+  return false;
+}
+
+function compactBrandSettingsForLocalCache(settings = {}) {
+  const compact = normalizeBrandSettings(settings);
+  compact.heroImage = "";
+  compact.content = {
+    ...compact.content,
+    printGuide: {
+      ...compact.content.printGuide,
+      image: ""
+    }
+  };
+  return compact;
+}
+
+function getLocalStorageItem(key, fallback = "") {
+  try {
+    return globalThis.localStorage?.getItem(key) ?? fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function setLocalStorageItem(key, value) {
+  try {
+    if (!globalThis.localStorage) return { ok: false, error: null };
+    globalThis.localStorage.setItem(key, value);
+    return { ok: true, error: null };
+  } catch (error) {
+    return { ok: false, error };
+  }
+}
+
+function removeLocalStorageItem(key) {
+  try {
+    globalThis.localStorage?.removeItem(key);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function syncBrandSettingsUi() {
@@ -7460,11 +7518,11 @@ function removeComponentFromModels(componentId) {
 }
 
 function persistHiddenComponents() {
-  localStorage.setItem(hiddenComponentsStorageKey, JSON.stringify([...state.hiddenComponentIds]));
+  setLocalStorageItem(hiddenComponentsStorageKey, JSON.stringify([...state.hiddenComponentIds]));
 }
 
 function persistColorSlots() {
-  localStorage.setItem(colorSlotsStorageKey, JSON.stringify(normalizeColorSlots(state.colorSlots)));
+  setLocalStorageItem(colorSlotsStorageKey, JSON.stringify(normalizeColorSlots(state.colorSlots)));
 }
 
 function render(options = {}) {
@@ -7748,7 +7806,7 @@ async function loadStoredModels() {
     return canonical;
   }
   try {
-    const parsed = JSON.parse(localStorage.getItem(modelStorageKey) || "[]");
+    const parsed = JSON.parse(getLocalStorageItem(modelStorageKey, "[]") || "[]");
     const stored = Array.isArray(parsed)
       ? parsed.map(normalizeStoredModel).filter((model) => model && !legacyModelIds.has(model.id))
       : [];
@@ -7966,15 +8024,17 @@ function writeModelsToLocalCache(models) {
   ];
   for (const variant of variants) {
     try {
-      localStorage.setItem(modelStorageKey, JSON.stringify(variant));
+      const result = setLocalStorageItem(modelStorageKey, JSON.stringify(variant));
+      if (!result.ok) {
+        if (result.error && isStorageQuotaError(result.error)) continue;
+        return false;
+      }
       return true;
     } catch (error) {
       if (!isStorageQuotaError(error)) return false;
     }
   }
-  try {
-    localStorage.removeItem(modelStorageKey);
-  } catch {}
+  removeLocalStorageItem(modelStorageKey);
   return false;
 }
 
@@ -8293,7 +8353,7 @@ async function handlePrintGuideImageSelect(file) {
 }
 
 function sessionToken() {
-  return localStorage.getItem(sessionStorageKey) || "";
+  return getLocalStorageItem(sessionStorageKey, "") || "";
 }
 
 async function apiRequest(path, options = {}) {
@@ -8345,8 +8405,8 @@ async function hydrateSessionFromBackend() {
     persistActiveAccount({ skipProfile: true });
     return true;
   } catch {
-    localStorage.removeItem(sessionStorageKey);
-    localStorage.removeItem(accountStorageKey);
+    removeLocalStorageItem(sessionStorageKey);
+    removeLocalStorageItem(accountStorageKey);
     state.account = accountFromUser(null);
     state.downloadQuota = null;
     return false;
@@ -8911,7 +8971,7 @@ async function signInAccount() {
       method: "POST",
       body: JSON.stringify({ email, password, mode: state.authMode, firstName, lastName })
     });
-    localStorage.setItem(sessionStorageKey, payload.token);
+    setLocalStorageItem(sessionStorageKey, payload.token);
     state.account = accountFromUser(payload.user);
     await Promise.all([loadDownloadQuota({ silent: true }), loadDownloadFolder({ silent: true })]);
     if (isDeveloper()) await loadLicenseCodes({ silent: true });
@@ -8934,7 +8994,7 @@ async function signOutAccount() {
   } catch {
     // Local logout should still complete if the session expired server-side.
   }
-  localStorage.removeItem(sessionStorageKey);
+  removeLocalStorageItem(sessionStorageKey);
   state.account = accountFromUser(null);
   state.downloads = [];
   state.downloadQuota = null;
@@ -8980,7 +9040,7 @@ function accountProfile(email) {
 
 function accountProfiles() {
   try {
-    const parsed = JSON.parse(localStorage.getItem(accountProfilesStorageKey) || "{}");
+    const parsed = JSON.parse(getLocalStorageItem(accountProfilesStorageKey, "{}") || "{}");
     return parsed && typeof parsed === "object" ? parsed : {};
   } catch {
     return {};
@@ -9005,7 +9065,7 @@ function upsertAccountProfile(account) {
     updatedAt: Date.now()
   };
   profiles[email] = profile;
-  localStorage.setItem(accountProfilesStorageKey, JSON.stringify(profiles));
+  setLocalStorageItem(accountProfilesStorageKey, JSON.stringify(profiles));
   return {
     email: profile.email,
     firstName: profile.firstName,
@@ -9020,7 +9080,7 @@ function upsertAccountProfile(account) {
 }
 
 function persistActiveAccount(options = {}) {
-  localStorage.setItem(accountStorageKey, JSON.stringify(state.account));
+  setLocalStorageItem(accountStorageKey, JSON.stringify(state.account));
   if (state.account.email && !options.skipProfile) upsertAccountProfile(state.account);
 }
 
@@ -10461,7 +10521,7 @@ lenses();
 }
 
 async function renderWithOpenScadEndpoint() {
-  const endpoint = localStorage.getItem("framelab.openscadEndpoint") || "";
+  const endpoint = getLocalStorageItem("framelab.openscadEndpoint", "") || "";
   if (!endpoint) {
     throw new Error("Brak endpointu OpenSCAD.");
   }
@@ -10787,32 +10847,32 @@ async function copyScad() {
 }
 
 function saveEndpoint() {
-  localStorage.setItem("framelab.openscadEndpoint", els.renderEndpoint.value.trim());
+  setLocalStorageItem("framelab.openscadEndpoint", els.renderEndpoint.value.trim());
   log("Saved OpenSCAD endpoint.");
 }
 
 function loadSettings() {
-  els.renderEndpoint.value = localStorage.getItem("framelab.openscadEndpoint") || "";
+  els.renderEndpoint.value = getLocalStorageItem("framelab.openscadEndpoint", "") || "";
   state.lang = "en";
   try {
-    const storedBrand = JSON.parse(localStorage.getItem(brandSettingsStorageKey) || "null");
+    const storedBrand = JSON.parse(getLocalStorageItem(brandSettingsStorageKey, "null") || "null");
     if (storedBrand) state.brandSettings = normalizeBrandSettings(storedBrand);
   } catch {
     state.brandSettings = structuredClone(defaultBrandSettings);
   }
   try {
-    const hidden = JSON.parse(localStorage.getItem(hiddenComponentsStorageKey) || "[]");
+    const hidden = JSON.parse(getLocalStorageItem(hiddenComponentsStorageKey, "[]") || "[]");
     state.hiddenComponentIds = new Set(Array.isArray(hidden) ? hidden.map(String) : []);
   } catch {
     state.hiddenComponentIds = new Set();
   }
   try {
-    state.colorSlots = normalizeColorSlots(JSON.parse(localStorage.getItem(colorSlotsStorageKey) || "null"));
+    state.colorSlots = normalizeColorSlots(JSON.parse(getLocalStorageItem(colorSlotsStorageKey, "null") || "null"));
   } catch {
     state.colorSlots = [...defaultColorSlots];
   }
   try {
-    const storedAccount = JSON.parse(localStorage.getItem(accountStorageKey) || "null");
+    const storedAccount = JSON.parse(getLocalStorageItem(accountStorageKey, "null") || "null");
     if (storedAccount && typeof storedAccount === "object") {
       const email = String(storedAccount.email || "").toLowerCase();
       const profile = accountProfile(email);

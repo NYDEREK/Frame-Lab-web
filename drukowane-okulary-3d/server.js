@@ -1728,6 +1728,7 @@ function serveStatic(req, res, pathname) {
 
 function staticCacheControl(req, filePath) {
   if (filePath.endsWith("index.html")) return "no-store";
+  if (filePath.endsWith("styles.css") || filePath.endsWith(`${root}src/app.js`)) return "no-cache";
   const requestUrl = req.url || "";
   if (filePath.includes(`${root}assets/vendor/`) || requestUrl.includes("?v=")) {
     return "public, max-age=31536000, immutable";
