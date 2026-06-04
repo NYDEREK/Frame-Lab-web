@@ -1062,13 +1062,16 @@ const bootState = window.frameLabBoot || {
   ready: false,
   editorRequested: false,
   designLabRequested: false,
-  resetDesignDraftRequested: false
+  resetDesignDraftRequested: false,
+  pendingCollectionId: ""
 };
 
 init().catch(handleBootError);
 
 async function init() {
   loadSettings();
+  const publicBootSettings = publicBootBrandSettings();
+  if (publicBootSettings) state.brandSettings = normalizeBrandSettings(publicBootSettings);
   applyBrandSettings();
   bindUi();
   updateAccountUi();
@@ -1113,7 +1116,14 @@ async function init() {
     resetDesignDraft();
   }
   bootState.ready = true;
-  if (bootState.editorRequested) {
+  if (bootState.pendingCollectionId) {
+    const pendingModel = state.models.find((model) => model.id === bootState.pendingCollectionId);
+    bootState.pendingCollectionId = "";
+    if (pendingModel) {
+      await openCollectionForConfiguration(pendingModel);
+    }
+    showLoader(false);
+  } else if (bootState.editorRequested) {
     openHeroEditorTarget();
     showLoader(false);
   } else if (bootState.designLabRequested) {
@@ -5988,7 +5998,29 @@ function sanitizeContentImage(value, fallback = "") {
   if (value === undefined || value === null) return fallback;
   const image = String(value || "").trim();
   if (!image) return "";
-  if (image.startsWith("data:image/") || image.startsWith("./assets/")) return image;
+  if (
+    image.startsWith("data:image/") ||
+    image.startsWith("./assets/") ||
+    image.startsWith("./api/settings/print-guide-image") ||
+    image.startsWith("/api/settings/print-guide-image")
+  ) {
+    return image;
+  }
+  return fallback;
+}
+
+function sanitizeHeroImage(value, fallback = "") {
+  if (value === undefined || value === null) return fallback;
+  const image = String(value || "").trim();
+  if (!image) return "";
+  if (
+    image.startsWith("data:image/") ||
+    image.startsWith("./assets/") ||
+    image.startsWith("./api/settings/hero-image") ||
+    image.startsWith("/api/settings/hero-image")
+  ) {
+    return image;
+  }
   return fallback;
 }
 
@@ -6086,9 +6118,7 @@ function normalizeContentSettings(content = {}) {
 }
 
 function normalizeBrandSettings(settings = {}) {
-  const heroImage = typeof settings.heroImage === "string" && settings.heroImage.startsWith("data:image/")
-    ? settings.heroImage
-    : "";
+  const heroImage = sanitizeHeroImage(settings.heroImage, "");
   return {
     accentColor: sanitizeAccentColor(settings.accentColor),
     backgroundColor: sanitizeHexColor(settings.backgroundColor, defaultBrandSettings.backgroundColor),
@@ -6636,7 +6666,7 @@ async function loadStorageDebug(options = {}) {
 
 async function hydrateBrandSettings() {
   try {
-    const payload = await apiRequest("/api/settings");
+    const payload = await apiRequest("/api/public-settings");
     if (payload.settings) {
       state.brandSettings = normalizeBrandSettings(payload.settings);
       applyBrandSettings();
@@ -7839,7 +7869,25 @@ function createDefaultModel() {
   };
 }
 
+function publicBootBrandSettings() {
+  const settings = window.frameLabPublicBoot?.settings;
+  return settings && typeof settings === "object" ? settings : null;
+}
+
+function publicBootCollections() {
+  const collections = window.frameLabPublicBoot?.collections;
+  return Array.isArray(collections)
+    ? collections.map(normalizeStoredModel).filter(Boolean)
+    : [];
+}
+
 async function loadStoredModels() {
+  const bootCollections = publicBootCollections();
+  if (bootCollections.length) {
+    const canonical = mergeSeedCollections(bootCollections);
+    writeModelsToLocalCache(canonical);
+    return canonical;
+  }
   const remote = await fetchBackendCollections();
   if (remote.length) {
     const canonical = mergeSeedCollections(remote);

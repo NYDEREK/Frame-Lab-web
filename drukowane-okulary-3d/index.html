@@ -1000,7 +1000,13 @@
         ready: false,
         editorRequested: false,
         designLabRequested: false,
-        resetDesignDraftRequested: false
+        resetDesignDraftRequested: false,
+        pendingCollectionId: ""
+      };
+      window.frameLabPublicBoot = {
+        settings: null,
+        collections: null,
+        ready: false
       };
       const showBootLoader = (title, text) => {
         const overlay = document.querySelector("#loaderOverlay");
@@ -1019,9 +1025,91 @@
         }
         showBootLoader("Loading Creator", "Preparing drawing tools and 3D previews...");
       };
+      const escapePublicHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        "\"": "&quot;",
+        "'": "&#039;"
+      }[char]));
+      const renderPublicHeroPreview = (settings = {}) => {
+        const heroTitle = document.querySelector("#heroTitle");
+        const heroText = document.querySelector("#heroText");
+        const heroImage = document.querySelector("#heroImage");
+        if (heroTitle && settings.heroTitle) heroTitle.textContent = settings.heroTitle;
+        if (heroText && settings.heroText) heroText.textContent = settings.heroText;
+        if (heroImage && typeof settings.heroImage === "string" && settings.heroImage) {
+          heroImage.src = settings.heroImage;
+        }
+      };
+      const renderPublicGalleryPreview = (collections = []) => {
+        const grid = document.querySelector("#sunGalleryGrid");
+        if (!grid || !collections.length) return;
+        const visible = collections
+          .filter((model) => model && (model.category || "sun") !== "optical")
+          .sort((a, b) => (Number(a.order || 0) - Number(b.order || 0)) || (Number(a.createdAt || 0) - Number(b.createdAt || 0)));
+        if (!visible.length) return;
+        grid.classList.remove("gallery-grid-loading");
+        grid.removeAttribute("aria-busy");
+        grid.removeAttribute("aria-label");
+        grid.innerHTML = visible.map((model, index) => {
+          const name = String(model.name || "Frame Lab model");
+          const description = String(model.description || "").trim();
+          const thumbnail = typeof model.thumbnail === "string" && model.thumbnail
+            ? `<img src="${model.thumbnail}" alt="Miniatura modelu ${escapePublicHtml(name)}" />`
+            : `<span class="gallery-placeholder gallery-placeholder-${(index % 5) + 1}" aria-hidden="true"></span>`;
+          return `
+            <article class="gallery-card" data-model-id="${escapePublicHtml(model.id || "")}">
+              <div class="gallery-thumb">${thumbnail}</div>
+              <div class="gallery-body">
+                <div class="gallery-title-row">
+                  <div>
+                    <h3>${escapePublicHtml(name)}</h3>
+                    ${description ? `<div class="gallery-meta">${escapePublicHtml(description)}</div>` : ""}
+                  </div>
+                </div>
+                <div class="gallery-actions">
+                  <button type="button" class="accent" data-action="open">Configure</button>
+                </div>
+              </div>
+            </article>
+          `;
+        }).join("");
+      };
+      const hydratePublicHomePreview = async () => {
+        const [settingsResult, collectionsResult] = await Promise.allSettled([
+          fetch("./api/public-settings", { cache: "no-store" }).then((response) => response.ok ? response.json() : null),
+          fetch("./api/collections", { cache: "no-store" }).then((response) => response.ok ? response.json() : null)
+        ]);
+        const settings = settingsResult.status === "fulfilled" ? settingsResult.value?.settings : null;
+        const collections = collectionsResult.status === "fulfilled" && Array.isArray(collectionsResult.value?.collections)
+          ? collectionsResult.value.collections
+          : [];
+        if (settings) {
+          window.frameLabPublicBoot.settings = settings;
+          renderPublicHeroPreview(settings);
+        }
+        if (collections.length) {
+          window.frameLabPublicBoot.collections = collections;
+          renderPublicGalleryPreview(collections);
+        }
+        window.frameLabPublicBoot.ready = true;
+      };
+      document.querySelector("#sunGalleryGrid")?.addEventListener("click", (event) => {
+        if (window.frameLabBoot.ready) return;
+        const button = event.target.closest("button[data-action='open']");
+        const card = button?.closest(".gallery-card[data-model-id]");
+        if (!button || !card) return;
+        event.preventDefault();
+        window.frameLabBoot.pendingCollectionId = card.dataset.modelId || "";
+        showBootLoader("Loading collection", "Preparing Creator controls for this frame...");
+      });
       document.querySelector("#heroEditor")?.addEventListener("click", (event) => queueDesignLabDuringBoot(event, true));
       document.querySelector("#startDesignLab")?.addEventListener("click", (event) => queueDesignLabDuringBoot(event, true));
+      hydratePublicHomePreview().catch(() => {
+        window.frameLabPublicBoot.ready = true;
+      });
     </script>
-    <script type="module" src="./src/app.js?v=creator-entry-20260604-07"></script>
+    <script type="module" src="./src/app.js?v=creator-entry-20260604-08"></script>
   </body>
 </html>

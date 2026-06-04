@@ -373,6 +373,20 @@ function sanitizeSettings(settings = {}) {
   };
 }
 
+function publicSettings(settings = {}) {
+  const sanitized = sanitizeSettings(settings);
+  const printGuideImage = sanitized.content?.printGuide?.image || "";
+  const publicContent = cloneJson(sanitized.content);
+  if (printGuideImage.startsWith("data:image/")) {
+    publicContent.printGuide.image = `./api/settings/print-guide-image?v=${createHash("sha1").update(printGuideImage).digest("hex").slice(0, 16)}`;
+  }
+  return {
+    ...sanitized,
+    heroImage: sanitized.heroImage ? `./api/settings/hero-image?v=${createHash("sha1").update(sanitized.heroImage).digest("hex").slice(0, 16)}` : "",
+    content: publicContent
+  };
+}
+
 function sanitizeMeasurements(measurements = {}) {
   const numeric = (value, min, max) => {
     const number = Number(value);
@@ -462,6 +476,23 @@ function sendJson(res, status, payload) {
     "Content-Type": "application/json; charset=utf-8",
     "Content-Length": Buffer.byteLength(body),
     "Cache-Control": "no-store"
+  });
+  res.end(body);
+}
+
+function sendDataImage(res, dataUrl) {
+  const match = String(dataUrl || "").match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,([a-zA-Z0-9+/=\s]+)$/);
+  if (!match) {
+    res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" });
+    res.end("Not found");
+    return;
+  }
+  const body = Buffer.from(match[2].replace(/\s+/g, ""), "base64");
+  res.writeHead(200, {
+    "Content-Type": match[1],
+    "Content-Length": body.length,
+    "Cache-Control": "public, max-age=3600",
+    ETag: `"${createHash("sha1").update(body).digest("hex")}"`
   });
   res.end(body);
 }
@@ -1368,6 +1399,18 @@ async function handleApi(req, res, url) {
     return sendJson(res, 200, { user: publicUser(user) });
   }
 
+  if (req.method === "GET" && pathname === "/api/public-settings") {
+    return sendJson(res, 200, { settings: publicSettings(db.settings) });
+  }
+
+  if (req.method === "GET" && pathname === "/api/settings/hero-image") {
+    return sendDataImage(res, sanitizeSettings(db.settings).heroImage);
+  }
+
+  if (req.method === "GET" && pathname === "/api/settings/print-guide-image") {
+    return sendDataImage(res, sanitizeSettings(db.settings).content?.printGuide?.image);
+  }
+
   if (req.method === "GET" && pathname === "/api/settings") {
     return sendJson(res, 200, { settings: sanitizeSettings(db.settings) });
   }
@@ -1376,7 +1419,22 @@ async function handleApi(req, res, url) {
     const user = currentUser(req, db);
     if (!user || user.role !== "developer") return sendJson(res, 403, { error: "Developer access is required." });
     const body = await readBody(req);
-    db.settings = sanitizeSettings(body.settings || body);
+    const incoming = body.settings || body;
+    if (incoming && typeof incoming === "object" && !String(incoming.heroImage || "").startsWith("data:image/")) {
+      incoming.heroImage = db.settings?.heroImage || "";
+    }
+    const incomingPrintGuideImage = incoming?.content?.printGuide?.image;
+    if (
+      incoming &&
+      typeof incoming === "object" &&
+      incoming.content?.printGuide &&
+      incomingPrintGuideImage &&
+      !String(incomingPrintGuideImage).startsWith("data:image/") &&
+      !String(incomingPrintGuideImage).startsWith("./assets/")
+    ) {
+      incoming.content.printGuide.image = db.settings?.content?.printGuide?.image || "";
+    }
+    db.settings = sanitizeSettings(incoming);
     writeDb(db);
     return sendJson(res, 200, { settings: db.settings, savedAt: new Date().toISOString() });
   }
