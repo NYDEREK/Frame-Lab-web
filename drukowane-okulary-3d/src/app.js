@@ -565,6 +565,7 @@ const componentStoreName = "components";
 const saveDesignCollectionDefaultLabel = "Save collection";
 const collectionEditorAddLabel = "Add to gallery";
 const collectionEditorSaveLabel = "Save changes";
+const designNoseWingRoundMax = 4;
 const seedComponentAssets = [
   {
     id: "frame001-front",
@@ -1051,7 +1052,6 @@ const designCameraTarget = new THREE.Vector3();
 const designViewerRotation = { x: -0.54, y: 0.56, z: 0.02 };
 const designBridgeHandleSelectionOffset = 1000;
 const designNoseWingHandleSelectionOffset = 1100;
-const designNoseWingRoundMax = 4;
 const designHistoryLimit = 60;
 const designHistory = {
   past: [],
