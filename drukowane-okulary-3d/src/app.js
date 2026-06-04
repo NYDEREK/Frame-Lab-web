@@ -1079,6 +1079,9 @@ async function init() {
   updateAccountUi();
   renderPublicContent();
   setupNavigation();
+  state.models = await loadStoredModels();
+  selectModel(state.models[0]?.id || defaultModelId, { rebuildControls: false, renderScene: false, logSelection: false });
+  renderGallery();
   state.uploadedComponents = [...await loadSeedComponentAssets(), ...await loadComponentRecords()]
     .filter((component) => !state.hiddenComponentIds.has(component.id));
   if (!state.uploadedComponents.some((component) => component.kind === "front") || !state.uploadedComponents.some((component) => component.kind === "temple")) {
@@ -1086,10 +1089,9 @@ async function init() {
     persistHiddenComponents();
     state.uploadedComponents = [...await loadSeedComponentAssets(), ...await loadComponentRecords()];
   }
-  await runOptionalBootStep("uploaded component previews", () => hydrateUploadedComponentMeshes());
+  await runOptionalBootStep("uploaded component previews", () => hydrateModelComponentMeshes(currentModelRecord()));
   rebuildComponentLibrary();
-  state.models = await loadStoredModels();
-  selectModel(state.models[0]?.id || defaultModelId, { rebuildControls: false, renderScene: false, logSelection: false });
+  repairAssemblyForActiveModel();
   applyAssemblyToParams();
   buildBuilderControls();
   buildControls();
@@ -1139,7 +1141,9 @@ async function runOptionalBootStep(label, task) {
 function handleBootError(error) {
   console.error("Frame Lab could not finish startup.", error);
   document.documentElement.dataset.appError = error?.message || "startup";
+  showLoader(false);
   renderPublicContent();
+  renderGallery();
   try {
     bindUi();
     updateAccountUi();
@@ -9250,7 +9254,7 @@ async function handleGalleryClick(event) {
       scrollHomeSection("#plansPublicPanel");
       return;
     }
-    openCollectionForConfiguration(model);
+    await openCollectionForConfiguration(model);
     return;
   }
   if (button.dataset.action === "export") {
@@ -9288,7 +9292,7 @@ async function handleGalleryClick(event) {
   }
 }
 
-function openCollectionForConfiguration(model) {
+async function openCollectionForConfiguration(model) {
   if (!model) return;
   if (model.design) {
     loadPublishedDesignIntoLab(model);
@@ -9296,6 +9300,14 @@ function openCollectionForConfiguration(model) {
   }
   selectModel(model.id);
   navigateToView("configurator");
+  await runOptionalBootStep("selected collection component previews", () => hydrateModelComponentMeshes(model));
+  rebuildComponentLibrary();
+  repairAssemblyForActiveModel(model);
+  applyAssemblyToParams();
+  buildBuilderControls();
+  buildControls();
+  updateGeneratedSource();
+  if (renderer && scene && camera && modelGroup) render();
 }
 
 async function handleDeveloperCollectionListClick(event) {
@@ -9917,6 +9929,22 @@ async function hydrateUploadedComponentMeshes() {
       };
     }
   }));
+}
+
+async function hydrateModelComponentMeshes(model = currentModelRecord()) {
+  const neededIds = new Set(modelComponentsInOrder(model).map((component) => component.id));
+  if (!neededIds.size) return hydrateUploadedComponentMeshes();
+  await Promise.all(state.uploadedComponents.map(async (component) => {
+    if (!neededIds.has(component.id) || component.fileBlob || component.source === "asset") return;
+    const fullRecord = await getComponentRecord(component.id).catch(() => null);
+    if (!fullRecord?.fileBlob) return;
+    Object.assign(component, {
+      ...fullRecord,
+      source: component.source || fullRecord.source || "uploaded",
+      meshObject: component.meshObject || fullRecord.meshObject || null
+    });
+  }));
+  await hydrateUploadedComponentMeshes();
 }
 
 async function loadSeedComponentAssets() {
@@ -11283,6 +11311,12 @@ async function loadBackendComponentRecords() {
   return components.map(componentRecordFromBackend).filter(Boolean);
 }
 
+async function loadBackendComponentRecord(id) {
+  if (!id) return null;
+  const payload = await apiRequest(`/api/components/${encodeURIComponent(id)}`);
+  return componentRecordFromBackend(payload.component);
+}
+
 function componentRecordFromBackend(record) {
   if (!record || typeof record !== "object") return null;
   const component = { ...record, source: "uploaded" };
@@ -11295,9 +11329,9 @@ function componentRecordFromBackend(record) {
 
 async function getComponentRecord(id) {
   const local = await getLocalComponentRecord(id).catch(() => null);
-  if (local) return local;
-  const remote = await loadBackendComponentRecords().catch(() => []);
-  return remote.find((component) => component.id === id) || null;
+  if (local?.fileBlob) return local;
+  const remote = await loadBackendComponentRecord(id).catch(() => null);
+  return remote || local || null;
 }
 
 async function getLocalComponentRecord(id) {

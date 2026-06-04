@@ -1228,7 +1228,8 @@ function sanitizeComponentRecord(component, options = {}) {
   const kind = ["front", "temple", "lens"].includes(component.kind) ? component.kind : "front";
   const formatRaw = String(component.format || "").toLowerCase();
   const format = formatRaw === "stp" ? "step" : (["3mf", "step"].includes(formatRaw) ? formatRaw : "3mf");
-  const fileData = typeof component.fileData === "string" && component.fileData.startsWith("data:")
+  const includeFileData = options.includeFileData !== false;
+  const fileData = includeFileData && typeof component.fileData === "string" && component.fileData.startsWith("data:")
     ? component.fileData.slice(0, maxComponentFileDataSize)
     : "";
   const sanitized = {
@@ -1247,7 +1248,7 @@ function sanitizeComponentRecord(component, options = {}) {
     materialColor: sanitizeAccentColor(component.materialColor || component.analysis?.materialColor || "", ""),
     createdAt: Number(component.createdAt) || Date.now()
   };
-  if (options.includeFileData !== false) sanitized.fileData = fileData;
+  if (includeFileData) sanitized.fileData = fileData;
   return sanitized;
 }
 
@@ -1481,9 +1482,16 @@ async function handleApi(req, res, url) {
 
   if (req.method === "GET" && pathname === "/api/components") {
     const components = (db.components || [])
-      .map((component) => sanitizeComponentRecord(component))
+      .map((component) => sanitizeComponentRecord(component, { includeFileData: false }))
       .filter(Boolean);
     return sendJson(res, 200, { components });
+  }
+
+  if (req.method === "GET" && pathname.startsWith("/api/components/")) {
+    const id = decodeURIComponent(pathname.split("/").pop() || "");
+    const component = (db.components || []).find((item) => String(item.id) === id);
+    if (!component) return sendJson(res, 404, { error: "Component not found." });
+    return sendJson(res, 200, { component: sanitizeComponentRecord(component, { includeFileData: true }) });
   }
 
   if (req.method === "PUT" && pathname === "/api/components") {
