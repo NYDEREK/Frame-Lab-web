@@ -920,6 +920,8 @@ function mergeScadConstructionHints(design = {}, scadSource = "") {
     noseWingHeight: "nose_wing_height",
     noseWingAngle: "nose_wing_angle",
     noseWingRound: "nose_wing_round",
+    noseWingTopRound: "nose_wing_top_round",
+    noseWingBaseRound: "nose_wing_base_round",
     noseWingTopOffset: "nose_wing_top_offset",
     noseWingBottomOffset: "nose_wing_bottom_offset",
     noseWingTopShift: "nose_wing_top_shift",
@@ -949,6 +951,15 @@ function mergeScadConstructionHints(design = {}, scadSource = "") {
     const number = scadNumberValue(scadSource, key);
     if (number !== undefined) construction[field] = number;
   });
+  const legacyNoseWingRound = scadNumberValue(scadSource, "nose_wing_round");
+  if (legacyNoseWingRound !== undefined) {
+    if (scadNumberValue(scadSource, "nose_wing_top_round") === undefined) {
+      construction.noseWingTopRound = legacyNoseWingRound;
+    }
+    if (scadNumberValue(scadSource, "nose_wing_base_round") === undefined) {
+      construction.noseWingBaseRound = legacyNoseWingRound;
+    }
+  }
   const enabled = scadBooleanValue(scadSource, "temple_chamfer_enabled");
   if (enabled !== undefined) construction.templeChamferEnabled = enabled;
   const nextDesign = { ...design, construction };
@@ -1062,6 +1073,7 @@ function sanitizeParametricDesign(style = {}) {
   const templeDetailMode = ["none", "text", "texture"].includes(style.templeDetailMode)
     ? style.templeDetailMode
     : inferredTempleDetailMode;
+  const legacyNoseWingRoundValue = value(style.construction?.noseWingRound, 0, 8, 0.35);
   const construction = {
     hingeStandard: "FL-H1",
     lensThickness: 1,
@@ -1076,7 +1088,9 @@ function sanitizeParametricDesign(style = {}) {
     bridgeBottomJoinOffset: value(style.construction?.bridgeBottomJoinOffset, -18, 18, -3),
     noseWingHeight: value(style.construction?.noseWingHeight, 0, 6, 2.4),
     noseWingAngle: value(style.construction?.noseWingAngle, -28, 28, 8),
-    noseWingRound: value(style.construction?.noseWingRound, 0, 1.5, 0.35),
+    noseWingRound: value(style.construction?.noseWingTopRound, 0, 8, legacyNoseWingRoundValue),
+    noseWingTopRound: value(style.construction?.noseWingTopRound, 0, 8, legacyNoseWingRoundValue),
+    noseWingBaseRound: value(style.construction?.noseWingBaseRound, 0, 8, legacyNoseWingRoundValue),
     noseWingTopOffset: value(style.construction?.noseWingTopOffset, -34, 8, -1.4),
     noseWingBottomOffset: value(style.construction?.noseWingBottomOffset, -34, 8, -10.4),
     noseWingTopShift: value(style.construction?.noseWingTopShift, -12, 12, 0),

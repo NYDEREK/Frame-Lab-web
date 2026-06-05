@@ -220,6 +220,8 @@ const defaultDesignConstruction = {
   noseWingHeight: 2.4,
   noseWingAngle: 8,
   noseWingRound: 0.35,
+  noseWingTopRound: 0.35,
+  noseWingBaseRound: 0.35,
   noseWingTopOffset: -1.4,
   noseWingBottomOffset: -10.4,
   noseWingTopShift: 0,
@@ -565,7 +567,7 @@ const componentStoreName = "components";
 const saveDesignCollectionDefaultLabel = "Save collection";
 const collectionEditorAddLabel = "Add to gallery";
 const collectionEditorSaveLabel = "Save changes";
-const designNoseWingRoundMax = 4;
+const designNoseWingRoundMax = 8;
 const seedComponentAssets = [
   {
     id: "frame001-front",
@@ -896,6 +898,7 @@ const els = {
   designNoseWingHeight: document.querySelector("#designNoseWingHeight"),
   designNoseWingAngle: document.querySelector("#designNoseWingAngle"),
   designNoseWingRound: document.querySelector("#designNoseWingRound"),
+  designNoseWingBaseRound: document.querySelector("#designNoseWingBaseRound"),
   designTempleStraight: document.querySelector("#designTempleStraight"),
   designTempleHook: document.querySelector("#designTempleHook"),
   designTempleHookAngle: document.querySelector("#designTempleHookAngle"),
@@ -1410,6 +1413,9 @@ function normalizeDesignConstruction(construction = {}) {
   );
   const noseWingTopOffset = bounded("noseWingTopOffset", -34, 8);
   const noseWingBottomOffset = bounded("noseWingBottomOffset", -34, 8);
+  const legacyNoseWingRound = bounded("noseWingRound", 0, designNoseWingRoundMax);
+  const noseWingTopRound = bounded("noseWingTopRound", 0, designNoseWingRoundMax, legacyNoseWingRound);
+  const noseWingBaseRound = bounded("noseWingBaseRound", 0, designNoseWingRoundMax, legacyNoseWingRound);
   return {
     hingeStandard: "FL-H1",
     lensThickness: 1,
@@ -1424,7 +1430,9 @@ function normalizeDesignConstruction(construction = {}) {
     bridgeBottomJoinOffset: bounded("bridgeBottomJoinOffset", -18, 18, -bridgeThickness / 2),
     noseWingHeight: bounded("noseWingHeight", 0, 6),
     noseWingAngle: bounded("noseWingAngle", -28, 28),
-    noseWingRound: bounded("noseWingRound", 0, designNoseWingRoundMax),
+    noseWingRound: noseWingTopRound,
+    noseWingTopRound,
+    noseWingBaseRound,
     noseWingTopOffset,
     noseWingBottomOffset,
     noseWingTopShift: bounded("noseWingTopShift", -12, 12),
@@ -3699,13 +3707,71 @@ function designNoseWingBlendEdgeIndices(ring) {
   return selected.length ? selected : edges.slice(0, 2).map((edge) => edge.index);
 }
 
-function designNoseWingInsetBlendEdges(ring, amount) {
+function designPointDistance2D(a, b) {
+  if (!Array.isArray(a) || !Array.isArray(b)) return Infinity;
+  return Math.hypot(a[0] - b[0], a[1] - b[1]);
+}
+
+function designNoseWingTargetEdgeIndex(ring, target, usedIndices = new Set()) {
+  const targetA = Array.isArray(target?.a) ? target.a : null;
+  const targetB = Array.isArray(target?.b) ? target.b : null;
+  const targetY = Number.isFinite(target?.y) ? target.y : (
+    targetA && targetB ? (targetA[1] + targetB[1]) / 2 : Number(target)
+  );
+  if (!Number.isFinite(targetY) || ring.length < 3) return null;
+  const targetLength = targetA && targetB ? designPointDistance2D(targetA, targetB) : null;
+  let best = null;
+  ring.forEach((point, index) => {
+    if (usedIndices.has(index)) return;
+    const next = ring[(index + 1) % ring.length];
+    const dx = Math.abs(next[0] - point[0]);
+    const dy = Math.abs(next[1] - point[1]);
+    const length = Math.hypot(dx, dy);
+    if (length <= 0.08) return;
+    const midpointY = (point[1] + next[1]) / 2;
+    const yError = Math.abs(midpointY - targetY);
+    const endpointError = targetA && targetB
+      ? Math.min(
+        designPointDistance2D(point, targetA) + designPointDistance2D(next, targetB),
+        designPointDistance2D(point, targetB) + designPointDistance2D(next, targetA)
+      )
+      : 0;
+    const lengthError = Number.isFinite(targetLength) ? Math.abs(length - targetLength) : 0;
+    const horizontalReward = Math.min(dx, 8) * 0.16;
+    const score = endpointError * 1.7 + yError * 2.4 + lengthError * 0.35 - horizontalReward;
+    if (!best || score < best.score) best = { index, score };
+  });
+  return best?.index ?? null;
+}
+
+function designNoseWingRoundEdgeIndices(ring, options = {}) {
+  const selected = [];
+  const used = new Set();
+  [
+    options.topEdgeTarget || { y: options.topEdgeY },
+    options.bottomEdgeTarget || { y: options.bottomEdgeY }
+  ].forEach((target) => {
+    const edgeIndex = designNoseWingTargetEdgeIndex(ring, target, used);
+    if (edgeIndex === null) return;
+    selected.push(edgeIndex);
+    used.add(edgeIndex);
+  });
+  if (selected.length >= 2) return selected;
+  const fallback = designNoseWingBlendEdgeIndices(ring);
+  fallback.forEach((edgeIndex) => {
+    if (!used.has(edgeIndex) && selected.length < 2) selected.push(edgeIndex);
+  });
+  return selected;
+}
+
+function designNoseWingInsetBlendEdges(ring, amount, edgeIndices = designNoseWingBlendEdgeIndices(ring)) {
   if (amount <= 0.001 || ring.length < 3) return ring.map((point) => [...point]);
   const center = ring.reduce((sum, point) => [sum[0] + point[0], sum[1] + point[1]], [0, 0])
     .map((value) => value / ring.length);
   const offsets = ring.map(() => [0, 0]);
   const counts = ring.map(() => 0);
-  designNoseWingBlendEdgeIndices(ring).forEach((edgeIndex) => {
+  edgeIndices.forEach((rawEdgeIndex) => {
+    const edgeIndex = Math.max(0, Math.min(ring.length - 1, Math.round(rawEdgeIndex)));
     const nextIndex = (edgeIndex + 1) % ring.length;
     const point = ring[edgeIndex];
     const next = ring[nextIndex];
@@ -3736,17 +3802,19 @@ function designNoseWingGeometryFromRing(ring, options) {
   if (cleanRing.length < 3) return null;
   const depth = Math.max(0.02, parseDesignNumber(options?.depth, 0.02));
   const topZ = parseDesignNumber(options?.topZ, 0);
-  const round = THREE.MathUtils.clamp(parseDesignNumber(options?.round, 0), 0, Math.min(depth * 0.48, designNoseWingRoundMax));
+  const legacyRound = parseDesignNumber(options?.round, 0);
+  const topRound = THREE.MathUtils.clamp(parseDesignNumber(options?.topRound, legacyRound), 0, designNoseWingRoundMax);
+  const baseRound = THREE.MathUtils.clamp(parseDesignNumber(options?.baseRound, legacyRound), 0, designNoseWingRoundMax);
   const angle = THREE.MathUtils.clamp(parseDesignNumber(options?.angle, 0), -35, 35);
   const side = options?.side < 0 ? -1 : 1;
-  const safeRound = Math.min(round, Math.max(0, depth * 0.48 - 0.02));
-  const blendDepth = Math.min(safeRound, Math.max(0, depth * 0.42 - 0.01));
+  const roundEdgeIndices = designNoseWingRoundEdgeIndices(cleanRing, options);
+  const blendDepth = Math.min(baseRound, Math.max(0, depth * 0.52 - 0.01));
   const bodyRing = blendDepth > 0.001
-    ? designNoseWingInsetBlendEdges(cleanRing, blendDepth)
+    ? designNoseWingInsetBlendEdges(cleanRing, blendDepth, roundEdgeIndices)
     : cleanRing.map((point) => [...point]);
-  const tipRoundDepth = Math.min(safeRound, Math.max(0, depth - blendDepth - 0.02));
+  const tipRoundDepth = Math.min(topRound, Math.max(0, depth - blendDepth - 0.02));
   const tipRing = tipRoundDepth > 0.001
-    ? designNoseWingInsetBlendEdges(bodyRing, tipRoundDepth)
+    ? designNoseWingInsetBlendEdges(bodyRing, tipRoundDepth, roundEdgeIndices)
     : bodyRing.map((point) => [...point]);
   const tiltX = side * Math.tan(THREE.MathUtils.degToRad(angle)) * depth;
   const xOffsetAtZ = (z) => tiltX * THREE.MathUtils.clamp((topZ - z) / depth, 0, 1);
@@ -3870,20 +3938,25 @@ function addDesignNoseWings(p, material, definition, target = designModelGroup) 
   const depth = construction.noseWingHeight;
   if (depth <= 0.02) return;
   const features = normalizeDesignFeatures(definition?.features, p);
-  const round = Math.min(
-    construction.noseWingRound,
-    Math.max(0, depth * 0.48 - 0.02),
-    designNoseWingRoundMax
-  );
+  const topRound = Math.min(construction.noseWingTopRound, designNoseWingRoundMax);
+  const baseRound = Math.min(construction.noseWingBaseRound, designNoseWingRoundMax);
   const overlap = Math.min(0.08, depth * 0.04);
   const topZ = -features.extrude.depth / 2 + overlap;
   [-1, 1].forEach((side) => {
+    const controls = designNoseWingControls(p, definition);
+    const corners = designNoseWingCornerPoints(p, definition, side).map((corner) => corner.point);
+    const [topOuter, topInner, bottomInner, bottomOuter] = corners;
     const polygons = designNoseWingFootprintPolygons(p, definition, side);
     polygons.forEach((polygon) => {
       const geometry = designNoseWingGeometryFromRing(polygon?.[0], {
         depth,
         topZ,
-        round,
+        topRound,
+        baseRound,
+        topEdgeTarget: { a: topOuter, b: topInner, y: (controls.topOuterY + controls.topInnerY) / 2 },
+        bottomEdgeTarget: { a: bottomInner, b: bottomOuter, y: (controls.bottomOuterY + controls.bottomInnerY) / 2 },
+        topEdgeY: (controls.topOuterY + controls.topInnerY) / 2,
+        bottomEdgeY: (controls.bottomOuterY + controls.bottomInnerY) / 2,
         angle: construction.noseWingAngle,
         side
       });
@@ -4708,7 +4781,8 @@ function syncDesignFields() {
   setDesignFieldValue(els.designBridgeThickness, construction.bridgeThickness);
   setDesignSliderFieldValue(els.designNoseWingHeight, construction.noseWingHeight, "mm");
   setDesignSliderFieldValue(els.designNoseWingAngle, construction.noseWingAngle, "deg");
-  setDesignSliderFieldValue(els.designNoseWingRound, construction.noseWingRound, "mm");
+  setDesignSliderFieldValue(els.designNoseWingRound, construction.noseWingTopRound, "mm");
+  setDesignSliderFieldValue(els.designNoseWingBaseRound, construction.noseWingBaseRound, "mm");
   setDesignSliderFieldValue(els.designTempleStraight, construction.templeStraight, "mm");
   setDesignSliderFieldValue(els.designTempleHook, construction.templeHook, "mm");
   setDesignSliderFieldValue(els.designTempleHookAngle, construction.templeHookAngle, "deg");
@@ -4741,7 +4815,9 @@ function syncDesignSelectedCornerField() {
     }
     if (els.designSelectedCornerRadius) {
       els.designSelectedCornerRadius.disabled = false;
-      setDesignSliderFieldValue(els.designSelectedCornerRadius, normalizeDesignConstruction(state.designDraft.construction).noseWingRound, "mm");
+      const construction = normalizeDesignConstruction(state.designDraft.construction);
+      const selectedRound = handleIndex <= 1 ? construction.noseWingTopRound : construction.noseWingBaseRound;
+      setDesignSliderFieldValue(els.designSelectedCornerRadius, selectedRound, "mm");
     }
     return;
   }
@@ -4770,12 +4846,15 @@ function syncDesignSelectedCornerField() {
 function updateSelectedDesignCorner(radius, options = {}) {
   if (isDesignNoseWingSelection(designSketchSelectedIndex)) {
     const construction = normalizeDesignConstruction(state.designDraft.construction);
-    const nextRadius = THREE.MathUtils.clamp(parseDesignNumber(radius, construction.noseWingRound), 0, designNoseWingRoundMax);
-    if (Math.abs(construction.noseWingRound - nextRadius) < 0.0001) return;
+    const handleIndex = THREE.MathUtils.clamp(designNoseWingSelectionHandleIndex(designSketchSelectedIndex), 0, 3);
+    const key = handleIndex <= 1 ? "noseWingTopRound" : "noseWingBaseRound";
+    const nextRadius = THREE.MathUtils.clamp(parseDesignNumber(radius, construction[key]), 0, designNoseWingRoundMax);
+    if (Math.abs(construction[key] - nextRadius) < 0.0001) return;
     if (options.capture !== false) captureDesignHistory();
     state.designDraft.construction = normalizeDesignConstruction({
       ...state.designDraft.construction,
-      noseWingRound: nextRadius
+      [key]: nextRadius,
+      noseWingRound: handleIndex <= 1 ? nextRadius : construction.noseWingTopRound
     });
     state.designDraft.manualCode = false;
     syncDesignSelectedCornerField();
@@ -4974,7 +5053,9 @@ function syncDesignDraftFromControlValues(options = {}) {
     bridgeBottomJoinOffset: state.designDraft.construction?.bridgeBottomJoinOffset,
     noseWingHeight: numberValue(els.designNoseWingHeight, currentConstruction.noseWingHeight),
     noseWingAngle: numberValue(els.designNoseWingAngle, currentConstruction.noseWingAngle),
-    noseWingRound: numberValue(els.designNoseWingRound, currentConstruction.noseWingRound),
+    noseWingRound: numberValue(els.designNoseWingRound, currentConstruction.noseWingTopRound),
+    noseWingTopRound: numberValue(els.designNoseWingRound, currentConstruction.noseWingTopRound),
+    noseWingBaseRound: numberValue(els.designNoseWingBaseRound, currentConstruction.noseWingBaseRound),
     templeStraight: numberValue(els.designTempleStraight, currentConstruction.templeStraight),
     templeHook: numberValue(els.designTempleHook, currentConstruction.templeHook),
     templeHookAngle: numberValue(els.designTempleHookAngle, currentConstruction.templeHookAngle),
@@ -5107,6 +5188,7 @@ function handleDesignOperationChange(event) {
     els.designNoseWingHeight,
     els.designNoseWingAngle,
     els.designNoseWingRound,
+    els.designNoseWingBaseRound,
     els.designTempleStraight,
     els.designTempleHook,
     els.designTempleHookAngle,
@@ -5153,6 +5235,8 @@ function handleDesignOperationChange(event) {
       noseWingHeight: els.designNoseWingHeight?.value,
       noseWingAngle: els.designNoseWingAngle?.value,
       noseWingRound: els.designNoseWingRound?.value,
+      noseWingTopRound: els.designNoseWingRound?.value,
+      noseWingBaseRound: els.designNoseWingBaseRound?.value,
       templeStraight: els.designTempleStraight?.value,
       templeHook: els.designTempleHook?.value,
       templeHookAngle: els.designTempleHookAngle?.value,
@@ -5367,6 +5451,7 @@ function parseDesignCode(source) {
     return value === undefined ? fallback : Number(value);
   };
   const currentFeatures = normalizeDesignFeatures(state.designDraft.features, state.designDraft.params);
+  const parsedNoseWingRound = readNumber("nose_wing_round", state.designDraft.construction?.noseWingRound);
   return {
     params: { ...state.designDraft.params, ...parseScadParameters(source) },
     sketch: normalizeDesignSketch({
@@ -5392,7 +5477,9 @@ function parseDesignCode(source) {
       bridgeBottomJoinOffset: readNumber("bridge_bottom_join_offset", state.designDraft.construction?.bridgeBottomJoinOffset),
       noseWingHeight: readNumber("nose_wing_height", state.designDraft.construction?.noseWingHeight),
       noseWingAngle: readNumber("nose_wing_angle", state.designDraft.construction?.noseWingAngle),
-      noseWingRound: readNumber("nose_wing_round", state.designDraft.construction?.noseWingRound),
+      noseWingRound: parsedNoseWingRound,
+      noseWingTopRound: readNumber("nose_wing_top_round", parsedNoseWingRound),
+      noseWingBaseRound: readNumber("nose_wing_base_round", parsedNoseWingRound),
       noseWingTopOffset: readNumber("nose_wing_top_offset", state.designDraft.construction?.noseWingTopOffset),
       noseWingBottomOffset: readNumber("nose_wing_bottom_offset", state.designDraft.construction?.noseWingBottomOffset),
       noseWingTopShift: readNumber("nose_wing_top_shift", state.designDraft.construction?.noseWingTopShift),
@@ -8047,6 +8134,8 @@ function mergeDesignConstructionFromScad(design, scadSource) {
     noseWingHeight: "nose_wing_height",
     noseWingAngle: "nose_wing_angle",
     noseWingRound: "nose_wing_round",
+    noseWingTopRound: "nose_wing_top_round",
+    noseWingBaseRound: "nose_wing_base_round",
     noseWingTopOffset: "nose_wing_top_offset",
     noseWingBottomOffset: "nose_wing_bottom_offset",
     noseWingTopShift: "nose_wing_top_shift",
@@ -8076,6 +8165,15 @@ function mergeDesignConstructionFromScad(design, scadSource) {
     const number = readScadNumberLiteral(scadSource, key);
     if (number !== undefined) construction[field] = number;
   });
+  const legacyNoseWingRound = readScadNumberLiteral(scadSource, "nose_wing_round");
+  if (legacyNoseWingRound !== undefined) {
+    if (readScadNumberLiteral(scadSource, "nose_wing_top_round") === undefined) {
+      construction.noseWingTopRound = legacyNoseWingRound;
+    }
+    if (readScadNumberLiteral(scadSource, "nose_wing_base_round") === undefined) {
+      construction.noseWingBaseRound = legacyNoseWingRound;
+    }
+  }
   const enabled = readScadBooleanLiteral(scadSource, "temple_chamfer_enabled");
   if (enabled !== undefined) construction.templeChamferEnabled = enabled;
   const nextDesign = { ...design, construction };
@@ -10315,6 +10413,8 @@ bridge_bottom_join_offset = ${formatNumber(construction.bridgeBottomJoinOffset)}
 nose_wing_height = ${formatNumber(construction.noseWingHeight)};
 nose_wing_angle = ${formatNumber(construction.noseWingAngle)};
 nose_wing_round = ${formatNumber(construction.noseWingRound)};
+nose_wing_top_round = ${formatNumber(construction.noseWingTopRound)};
+nose_wing_base_round = ${formatNumber(construction.noseWingBaseRound)};
 nose_wing_top_offset = ${formatNumber(construction.noseWingTopOffset)};
 nose_wing_bottom_offset = ${formatNumber(construction.noseWingBottomOffset)};
 nose_wing_top_shift = ${formatNumber(construction.noseWingTopShift)};
