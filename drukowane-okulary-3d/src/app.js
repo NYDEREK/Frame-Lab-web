@@ -3797,6 +3797,16 @@ function designNoseWingInsetBlendEdges(ring, amount, edgeIndices = designNoseWin
   });
 }
 
+function designNoseWingScaleRing(ring, scale) {
+  const center = ring.reduce((sum, point) => [sum[0] + point[0], sum[1] + point[1]], [0, 0])
+    .map((value) => value / ring.length);
+  const safeScale = THREE.MathUtils.clamp(scale, 0.04, 1);
+  return ring.map((point) => [
+    center[0] + (point[0] - center[0]) * safeScale,
+    center[1] + (point[1] - center[1]) * safeScale
+  ]);
+}
+
 function designNoseWingGeometryFromRing(ring, options) {
   const cleanRing = designCleanRing(ring);
   if (cleanRing.length < 3) return null;
@@ -3807,63 +3817,31 @@ function designNoseWingGeometryFromRing(ring, options) {
   const baseRound = THREE.MathUtils.clamp(parseDesignNumber(options?.baseRound, legacyRound), 0, designNoseWingRoundMax);
   const angle = THREE.MathUtils.clamp(parseDesignNumber(options?.angle, 0), -35, 35);
   const side = options?.side < 0 ? -1 : 1;
-  const roundEdgeIndices = designNoseWingRoundEdgeIndices(cleanRing, options);
   const bodyRing = cleanRing.map((point) => [...point]);
-  const baseRoundDepth = Math.min(baseRound, Math.max(0, depth * 0.45 - 0.01));
-  const baseRing = baseRoundDepth > 0.001
-    ? designNoseWingInsetBlendEdges(cleanRing, baseRoundDepth, roundEdgeIndices)
-    : bodyRing;
-  const tipRoundDepth = Math.min(topRound, Math.max(0, depth - baseRoundDepth - 0.02));
-  const tipRing = tipRoundDepth > 0.001
-    ? designNoseWingInsetBlendEdges(bodyRing, tipRoundDepth, roundEdgeIndices)
-    : bodyRing.map((point) => [...point]);
   const tiltX = side * Math.tan(THREE.MathUtils.degToRad(angle)) * depth;
   const xOffsetAtZ = (z) => {
     const t = THREE.MathUtils.clamp((topZ - z) / depth, 0, 1);
     return tiltX * (1 - Math.cos(t * Math.PI / 2));
   };
-  const layerSpecs = [
-    { ring: bodyRing, z: topZ, xOffset: 0 }
-  ];
-  if (baseRoundDepth > 0.001) {
-    const roundSegments = 8;
-    for (let segment = 1; segment <= roundSegments; segment += 1) {
-      const progress = segment / roundSegments;
-      const moveT = Math.sin(progress * Math.PI);
-      const zDrop = baseRoundDepth * progress;
-      layerSpecs.push({
-        ring: designInterpolateRing(bodyRing, baseRing, moveT),
-        z: topZ - zDrop,
-        xOffset: xOffsetAtZ(topZ - zDrop)
-      });
-    }
-  }
-  const finalZ = topZ - depth;
-  if (tipRoundDepth > 0.001) {
-    const tipRoundStartZ = finalZ + tipRoundDepth;
-    if (tipRoundStartZ < layerSpecs[layerSpecs.length - 1].z - 0.001) {
-      layerSpecs.push({
-        ring: bodyRing,
-        z: tipRoundStartZ,
-        xOffset: xOffsetAtZ(tipRoundStartZ)
-      });
-    }
-    const roundSegments = 8;
-    for (let segment = 1; segment <= roundSegments; segment += 1) {
-      const theta = (segment / roundSegments) * Math.PI / 2;
-      const moveT = 1 - Math.cos(theta);
-      const z = tipRoundStartZ - tipRoundDepth * Math.sin(theta);
-      layerSpecs.push({
-        ring: designInterpolateRing(bodyRing, tipRing, moveT),
-        z,
-        xOffset: xOffsetAtZ(z)
-      });
-    }
-  } else {
+  const topRoundRatio = THREE.MathUtils.clamp(topRound / Math.max(depth, 0.001), 0, 1);
+  const baseRoundRatio = THREE.MathUtils.clamp(baseRound / Math.max(depth, 0.001), 0, 1);
+  const capScale = THREE.MathUtils.lerp(0.34, 0.08, topRoundRatio);
+  const thetaMax = Math.acos(capScale);
+  const zScale = Math.max(0.001, Math.sin(thetaMax));
+  const basePower = THREE.MathUtils.lerp(0.72, 1.55, baseRoundRatio);
+  const layerSpecs = [];
+  const roundSegments = 18;
+  for (let segment = 0; segment <= roundSegments; segment += 1) {
+    const progress = segment / roundSegments;
+    const eased = Math.pow(progress, basePower);
+    const theta = thetaMax * eased;
+    const scale = Math.cos(theta);
+    const zDrop = depth * (Math.sin(theta) / zScale);
+    const z = topZ - zDrop;
     layerSpecs.push({
-      ring: bodyRing,
-      z: finalZ,
-      xOffset: tiltX
+      ring: segment === 0 ? bodyRing : designNoseWingScaleRing(bodyRing, scale),
+      z,
+      xOffset: xOffsetAtZ(z)
     });
   }
 
@@ -3900,11 +3878,9 @@ function designNoseWingGeometryFromRing(ring, options) {
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute("position", new THREE.Float32BufferAttribute(vertices, 3));
   geometry.setIndex(indices);
-  const flatGeometry = geometry.toNonIndexed();
-  geometry.dispose();
-  flatGeometry.computeVertexNormals();
-  flatGeometry.computeBoundingSphere();
-  return flatGeometry;
+  geometry.computeVertexNormals();
+  geometry.computeBoundingSphere();
+  return geometry;
 }
 
 function addDesignFrontBody(p, material, definition, target = designModelGroup) {
