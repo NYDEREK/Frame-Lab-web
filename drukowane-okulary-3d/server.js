@@ -1073,7 +1073,7 @@ function sanitizeParametricDesign(style = {}) {
   const templeDetailMode = ["none", "text", "texture"].includes(style.templeDetailMode)
     ? style.templeDetailMode
     : inferredTempleDetailMode;
-  const legacyNoseWingRoundValue = value(style.construction?.noseWingRound, 0, 8, 0.35);
+  const legacyNoseWingRoundValue = value(style.construction?.noseWingRound, 0, 12, 0.35);
   const construction = {
     hingeStandard: "FL-H1",
     lensThickness: 1,
@@ -1088,9 +1088,9 @@ function sanitizeParametricDesign(style = {}) {
     bridgeBottomJoinOffset: value(style.construction?.bridgeBottomJoinOffset, -18, 18, -3),
     noseWingHeight: value(style.construction?.noseWingHeight, 0, 6, 2.4),
     noseWingAngle: value(style.construction?.noseWingAngle, -28, 28, 8),
-    noseWingRound: value(style.construction?.noseWingTopRound, 0, 8, legacyNoseWingRoundValue),
-    noseWingTopRound: value(style.construction?.noseWingTopRound, 0, 8, legacyNoseWingRoundValue),
-    noseWingBaseRound: value(style.construction?.noseWingBaseRound, 0, 8, legacyNoseWingRoundValue),
+    noseWingRound: value(style.construction?.noseWingTopRound, 0, 12, legacyNoseWingRoundValue),
+    noseWingTopRound: value(style.construction?.noseWingTopRound, 0, 12, legacyNoseWingRoundValue),
+    noseWingBaseRound: value(style.construction?.noseWingBaseRound, 0, 12, legacyNoseWingRoundValue),
     noseWingTopOffset: value(style.construction?.noseWingTopOffset, -34, 8, -1.4),
     noseWingBottomOffset: value(style.construction?.noseWingBottomOffset, -34, 8, -10.4),
     noseWingTopShift: value(style.construction?.noseWingTopShift, -12, 12, 0),
