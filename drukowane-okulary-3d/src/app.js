@@ -232,8 +232,10 @@ const defaultDesignConstruction = {
   noseWingBottomOuterOffset: -10.4,
   topVisorEnabled: false,
   topVisorDepth: 3,
-  topVisorStartX: -42,
-  topVisorEndX: 42,
+  topVisorBandHeight: 4.8,
+  topVisorRadius: 0.55,
+  topVisorStartX: -60,
+  topVisorEndX: 60,
   templeStraight: 70,
   templeHook: 30,
   templeHookAngle: 45,
@@ -905,6 +907,8 @@ const els = {
   designNoseWingBaseRound: document.querySelector("#designNoseWingBaseRound"),
   designTopVisorEnabled: document.querySelector("#designTopVisorEnabled"),
   designTopVisorDepth: document.querySelector("#designTopVisorDepth"),
+  designTopVisorBandHeight: document.querySelector("#designTopVisorBandHeight"),
+  designTopVisorRadius: document.querySelector("#designTopVisorRadius"),
   designTempleStraight: document.querySelector("#designTempleStraight"),
   designTempleHook: document.querySelector("#designTempleHook"),
   designTempleHookAngle: document.querySelector("#designTempleHookAngle"),
@@ -1429,6 +1433,7 @@ function normalizeDesignConstruction(construction = {}) {
     topVisorStartX + 6,
     100
   );
+  const topVisorBandHeight = bounded("topVisorBandHeight", 2, 12);
   return {
     hingeStandard: "FL-H1",
     lensThickness: 1,
@@ -1456,6 +1461,8 @@ function normalizeDesignConstruction(construction = {}) {
     noseWingBottomOuterOffset: bounded("noseWingBottomOuterOffset", -34, 8, noseWingBottomOffset),
     topVisorEnabled: parseDesignBoolean(construction.topVisorEnabled, defaultDesignConstruction.topVisorEnabled),
     topVisorDepth: bounded("topVisorDepth", 0, 6),
+    topVisorBandHeight,
+    topVisorRadius: bounded("topVisorRadius", 0, 2.5),
     topVisorStartX,
     topVisorEndX,
     templeStraight,
@@ -3440,14 +3447,26 @@ function designFrontPlanarBounds(p, definition) {
 function designTopVisorControls(p, definition = state.designDraft) {
   const construction = normalizeDesignConstruction(definition?.construction);
   const bounds = designFrontPlanarBounds(p, definition);
-  const margin = Math.max(1.2, p.rim_thickness * 0.25);
-  const minGap = Math.max(8, p.rim_thickness * 2.2);
-  const minX = bounds.minX + margin;
-  const maxX = bounds.maxX - margin;
+  const rimPoints = [-1, 1].flatMap((side) => designOuterRimRing(side, p, definition));
+  const rimBounds = rimPoints.reduce((next, [x, y]) => ({
+    minX: Math.min(next.minX, x),
+    maxX: Math.max(next.maxX, x),
+    minY: Math.min(next.minY, y),
+    maxY: Math.max(next.maxY, y)
+  }), { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity });
+  const hasRimBounds = Number.isFinite(rimBounds.minX)
+    && Number.isFinite(rimBounds.maxX)
+    && Number.isFinite(rimBounds.minY)
+    && Number.isFinite(rimBounds.maxY);
+  const selectionBounds = hasRimBounds ? rimBounds : bounds;
+  const margin = Math.max(1.2, p.rim_thickness * 0.32);
+  const minGap = Math.max(10, p.rim_thickness * 2.8);
+  const minX = selectionBounds.minX + margin;
+  const maxX = selectionBounds.maxX - margin;
   const usableStart = Math.min(minX, maxX - minGap);
   const usableEnd = Math.max(maxX, usableStart + minGap);
-  const rawStart = parseDesignNumber(construction.topVisorStartX, -Math.min(42, p.head_width * 0.32));
-  const rawEnd = parseDesignNumber(construction.topVisorEndX, Math.min(42, p.head_width * 0.32));
+  const rawStart = parseDesignNumber(construction.topVisorStartX, -Math.min(60, p.head_width * 0.42));
+  const rawEnd = parseDesignNumber(construction.topVisorEndX, Math.min(60, p.head_width * 0.42));
   const sortedStart = Math.min(rawStart, rawEnd - minGap);
   let startX = THREE.MathUtils.clamp(sortedStart, usableStart, usableEnd - minGap);
   let endX = THREE.MathUtils.clamp(Math.max(rawEnd, startX + minGap), startX + minGap, usableEnd);
@@ -3455,12 +3474,20 @@ function designTopVisorControls(p, definition = state.designDraft) {
     startX = Math.max(usableStart, endX - minGap);
     endX = Math.min(usableEnd, startX + minGap);
   }
-  const bandHeight = THREE.MathUtils.clamp(p.rim_thickness + 1.2, 3.2, 9);
-  const topY = bounds.maxY + 0.15;
+  const maximumBandHeight = Math.max(2, Math.min(12, selectionBounds.maxY - bounds.minY));
+  const bandHeight = THREE.MathUtils.clamp(construction.topVisorBandHeight, 2, maximumBandHeight);
+  const topY = selectionBounds.maxY + 0.12;
   const bottomY = topY - bandHeight;
+  const radius = THREE.MathUtils.clamp(
+    construction.topVisorRadius,
+    0,
+    Math.min(2.5, bandHeight * 0.45, Math.max(0, (endX - startX) / 2 - 0.01))
+  );
   return {
     enabled: construction.topVisorEnabled,
     depth: construction.topVisorDepth,
+    bandHeight,
+    radius,
     startX,
     endX,
     minX: usableStart,
@@ -3475,12 +3502,15 @@ function designTopVisorControls(p, definition = state.designDraft) {
 function designTopVisorPlanarPolygons(p, definition = state.designDraft) {
   const controls = designTopVisorControls(p, definition);
   if (!controls.enabled || controls.depth <= 0.02) return [];
-  const rectangle = [
-    [controls.startX, controls.topY],
-    [controls.endX, controls.topY],
-    [controls.endX, controls.bottomY],
-    [controls.startX, controls.bottomY]
-  ];
+  const width = Math.max(0.1, controls.endX - controls.startX);
+  const height = Math.max(0.1, controls.topY - controls.bottomY);
+  const rectangle = designRoundedRectRing(
+    width,
+    height,
+    Math.min(controls.radius, width / 2 - 0.01, height / 2 - 0.01),
+    (controls.startX + controls.endX) / 2,
+    (controls.topY + controls.bottomY) / 2
+  );
   try {
     return polygonClipping.intersection(
       designFrontPlanarPolygons(p, definition, 0),
@@ -3720,6 +3750,14 @@ function drawDesignTopVisorSketch(ctx, metrics, style) {
     ctx.closePath();
   }));
   ctx.fill("evenodd");
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.lineWidth = Math.max(1.6, scale * 0.13);
+  const guideStart = toCanvas([controls.startX, controls.handleY]);
+  const guideEnd = toCanvas([controls.endX, controls.handleY]);
+  ctx.beginPath();
+  ctx.moveTo(guideStart.x, guideStart.y);
+  ctx.lineTo(guideEnd.x, guideEnd.y);
   ctx.stroke();
   ctx.setLineDash([6, 5]);
   ctx.lineWidth = 1.3;
@@ -4333,23 +4371,25 @@ function addDesignNoseWings(p, material, definition, target = designModelGroup, 
 function addDesignTopVisor(p, material, definition, target = designModelGroup) {
   const construction = normalizeDesignConstruction(definition?.construction);
   if (!construction.topVisorEnabled || construction.topVisorDepth <= 0.02) return;
+  const controls = designTopVisorControls(p, definition);
   const polygons = designTopVisorPlanarPolygons(p, definition);
   if (!polygons.length) return;
   const features = normalizeDesignFeatures(definition?.features, p);
   const rearFaceZ = -features.extrude.depth / 2;
-  const overlap = Math.min(0.08, construction.topVisorDepth * 0.04);
+  const overlap = Math.min(0.08, controls.depth * 0.04);
+  const edgeRound = Math.min(controls.radius, controls.depth * 0.42, controls.bandHeight * 0.24);
   designShapesFromPolygons(polygons).forEach((shape) => {
+    const extrusion = containedBevelExtrudeOptions(controls.depth, edgeRound, 3);
     const geometry = new THREE.ExtrudeGeometry(shape, {
-      depth: construction.topVisorDepth,
-      bevelEnabled: false,
+      ...extrusion.options,
       curveSegments: 8,
       steps: 1
     });
-    geometry.translate(0, 0, -construction.topVisorDepth);
-    geometry.translate(0, 0, rearFaceZ + overlap);
+    geometry.translate(0, 0, -extrusion.centerOffset);
     geometry.computeVertexNormals();
     const shield = new THREE.Mesh(geometry, material);
     shield.name = "top-light-shield";
+    shield.position.z = rearFaceZ - controls.depth / 2 + overlap;
     target.add(shield);
   });
 }
@@ -5169,6 +5209,8 @@ function syncDesignFields() {
   setDesignSliderFieldValue(els.designNoseWingBaseRound, construction.noseWingBaseRound, "mm");
   if (els.designTopVisorEnabled) els.designTopVisorEnabled.checked = construction.topVisorEnabled;
   setDesignSliderFieldValue(els.designTopVisorDepth, construction.topVisorDepth, "mm");
+  setDesignSliderFieldValue(els.designTopVisorBandHeight, construction.topVisorBandHeight, "mm");
+  setDesignSliderFieldValue(els.designTopVisorRadius, construction.topVisorRadius, "mm");
   setDesignSliderFieldValue(els.designTempleStraight, construction.templeStraight, "mm");
   setDesignSliderFieldValue(els.designTempleHook, construction.templeHook, "mm");
   setDesignSliderFieldValue(els.designTempleHookAngle, construction.templeHookAngle, "deg");
@@ -5462,6 +5504,8 @@ function syncDesignDraftFromControlValues(options = {}) {
     noseWingBaseRound: numberValue(els.designNoseWingBaseRound, currentConstruction.noseWingBaseRound),
     topVisorEnabled: checkboxValue(els.designTopVisorEnabled, currentConstruction.topVisorEnabled),
     topVisorDepth: numberValue(els.designTopVisorDepth, currentConstruction.topVisorDepth),
+    topVisorBandHeight: numberValue(els.designTopVisorBandHeight, currentConstruction.topVisorBandHeight),
+    topVisorRadius: numberValue(els.designTopVisorRadius, currentConstruction.topVisorRadius),
     topVisorStartX: currentConstruction.topVisorStartX,
     topVisorEndX: currentConstruction.topVisorEndX,
     templeStraight: numberValue(els.designTempleStraight, currentConstruction.templeStraight),
@@ -5599,6 +5643,8 @@ function handleDesignOperationChange(event) {
     els.designNoseWingBaseRound,
     els.designTopVisorEnabled,
     els.designTopVisorDepth,
+    els.designTopVisorBandHeight,
+    els.designTopVisorRadius,
     els.designTempleStraight,
     els.designTempleHook,
     els.designTempleHookAngle,
@@ -5649,6 +5695,8 @@ function handleDesignOperationChange(event) {
       noseWingBaseRound: els.designNoseWingBaseRound?.value,
       topVisorEnabled: els.designTopVisorEnabled?.checked,
       topVisorDepth: els.designTopVisorDepth?.value,
+      topVisorBandHeight: els.designTopVisorBandHeight?.value,
+      topVisorRadius: els.designTopVisorRadius?.value,
       topVisorStartX: currentConstruction.topVisorStartX,
       topVisorEndX: currentConstruction.topVisorEndX,
       templeStraight: els.designTempleStraight?.value,
@@ -5904,6 +5952,8 @@ function parseDesignCode(source) {
       noseWingBottomOuterOffset: readNumber("nose_wing_bottom_outer_offset", state.designDraft.construction?.noseWingBottomOuterOffset),
       topVisorEnabled: readBool("top_visor_enabled", state.designDraft.construction?.topVisorEnabled),
       topVisorDepth: readNumber("top_visor_depth", state.designDraft.construction?.topVisorDepth),
+      topVisorBandHeight: readNumber("top_visor_band_height", state.designDraft.construction?.topVisorBandHeight),
+      topVisorRadius: readNumber("top_visor_radius", state.designDraft.construction?.topVisorRadius),
       topVisorStartX: readNumber("top_visor_start_x", state.designDraft.construction?.topVisorStartX),
       topVisorEndX: readNumber("top_visor_end_x", state.designDraft.construction?.topVisorEndX),
       templeStraight: readNumber("temple_straight", state.designDraft.construction?.templeStraight),
@@ -8571,6 +8621,8 @@ function mergeDesignConstructionFromScad(design, scadSource) {
     noseWingBottomInnerOffset: "nose_wing_bottom_inner_offset",
     noseWingBottomOuterOffset: "nose_wing_bottom_outer_offset",
     topVisorDepth: "top_visor_depth",
+    topVisorBandHeight: "top_visor_band_height",
+    topVisorRadius: "top_visor_radius",
     topVisorStartX: "top_visor_start_x",
     topVisorEndX: "top_visor_end_x",
     templeStraight: "temple_straight",
@@ -10753,6 +10805,7 @@ function buildDesignScad(draft = state.designDraft) {
   const style = normalizeDesignStyle(definition);
   const features = normalizeDesignFeatures(definition.features, p);
   const construction = normalizeDesignConstruction(definition.construction);
+  const topVisorControls = designTopVisorControls(p, definition);
   const leftText = style.leftTempleText.replaceAll("\\", "\\\\").replaceAll("\"", "\\\"");
   const rightText = style.rightTempleText.replaceAll("\\", "\\\\").replaceAll("\"", "\\\"");
   const sketch = normalizeDesignSketch(definition.sketch);
@@ -10856,8 +10909,12 @@ nose_wing_bottom_inner_offset = ${formatNumber(construction.noseWingBottomInnerO
 nose_wing_bottom_outer_offset = ${formatNumber(construction.noseWingBottomOuterOffset)};
 top_visor_enabled = ${construction.topVisorEnabled ? "true" : "false"};
 top_visor_depth = ${formatNumber(construction.topVisorDepth)};
+top_visor_band_height = ${formatNumber(construction.topVisorBandHeight)};
+top_visor_radius = ${formatNumber(construction.topVisorRadius)};
 top_visor_start_x = ${formatNumber(construction.topVisorStartX)};
 top_visor_end_x = ${formatNumber(construction.topVisorEndX)};
+top_visor_top_y = ${formatNumber(topVisorControls.topY)};
+top_visor_bottom_y = top_visor_top_y - top_visor_band_height;
 hinge_pad_size = ${formatNumber(designHingePadSize)};
 hinge_pad_overlap = ${formatNumber(designHingePadOverlap)};
 hinge_rear_overlap = ${formatNumber(designHingeRearOverlap)};
@@ -11002,6 +11059,17 @@ module nose_wing_profile(side=1) {
       polygon(path);
 }
 
+module top_visor_profile() {
+  shield_width = max(0.1, top_visor_end_x - top_visor_start_x);
+  shield_height = max(0.1, top_visor_top_y - top_visor_bottom_y);
+  shield_radius = min(max(0, top_visor_radius), shield_width/2 - 0.01, shield_height/2 - 0.01);
+  intersection() {
+    front_planar_profile();
+    translate([(top_visor_start_x + top_visor_end_x)/2, (top_visor_top_y + top_visor_bottom_y)/2])
+      rounded_rect([shield_width, shield_height], shield_radius);
+  }
+}
+
 module nose_wing(side=1) {
   wing_depth = max(0, nose_wing_height);
   if (wing_depth > 0.01) {
@@ -11014,6 +11082,15 @@ module nose_wing(side=1) {
 module nose_wings() {
   nose_wing(-1);
   nose_wing(1);
+}
+
+module top_visor() {
+  shield_depth = max(0, top_visor_depth);
+  if (top_visor_enabled && shield_depth > 0.01) {
+    translate([0, 0, -front_face_z - shield_depth / 2 + min(0.08, shield_depth * 0.04)])
+      chamfered_profile_extrude(shield_depth, min(top_visor_radius, shield_depth*0.42))
+        top_visor_profile();
+  }
 }
 
 module chamfered_profile_extrude(height=1, chamfer=0) {
@@ -11066,6 +11143,7 @@ module front() {
       lens_seat_cut(lens_center);
     }
     nose_wings();
+    top_visor();
   }
 }
 

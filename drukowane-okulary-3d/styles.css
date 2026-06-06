@@ -1360,6 +1360,45 @@ button.nav-link {
   font-weight: 700;
 }
 
+.design-addon-card {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.design-addon-toggle {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.62rem 0.68rem;
+  border: 1px solid color-mix(in srgb, var(--accent) 38%, var(--line));
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--accent-soft) 34%, var(--surface));
+}
+
+.design-addon-toggle input {
+  width: 1rem;
+  min-width: 1rem;
+  height: 1rem;
+  accent-color: var(--accent);
+}
+
+.design-addon-toggle span {
+  display: grid;
+  gap: 0.08rem;
+}
+
+.design-addon-toggle strong {
+  color: var(--ink);
+  font-size: 0.8rem;
+}
+
+.design-addon-toggle small {
+  color: var(--muted);
+  font-size: 0.66rem;
+  font-weight: 700;
+}
+
 .design-construction-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

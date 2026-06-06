@@ -612,12 +612,19 @@
             </section>
             <section class="design-control-section">
               <h3>Dodatki</h3>
-              <div class="design-construction-grid">
-                <label class="design-slider-toggle">
-                  <span><input id="designTopVisorEnabled" type="checkbox" /> Daszek od góry</span>
-                  <input id="designTopVisorDepth" type="range" min="0" max="6" step="0.1" value="3" />
-                  <small>3 mm</small>
+              <div class="design-addon-card">
+                <label class="design-addon-toggle">
+                  <input id="designTopVisorEnabled" type="checkbox" />
+                  <span>
+                    <strong>Top shield</strong>
+                    <small>Górny daszek przeciw światłu</small>
+                  </span>
                 </label>
+                <div class="design-construction-grid">
+                  <label><span>Projection</span><input id="designTopVisorDepth" type="range" min="0" max="6" step="0.1" value="3" /><small>3 mm</small></label>
+                  <label><span>Band height</span><input id="designTopVisorBandHeight" type="range" min="2" max="12" step="0.1" value="4.8" /><small>4.8 mm</small></label>
+                  <label><span>Edge round</span><input id="designTopVisorRadius" type="range" min="0" max="2.5" step="0.05" value="0.55" /><small>0.55 mm</small></label>
+                </div>
               </div>
             </section>
           </section>
