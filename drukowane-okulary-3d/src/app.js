@@ -3487,6 +3487,15 @@ function designNoseWingSpan(p) {
   return THREE.MathUtils.clamp(p.lens_height * 0.27, 7, 12);
 }
 
+function designNoseWingEmbedDepth(visibleDepth, frontDepth) {
+  const safeVisibleDepth = Math.max(0, parseDesignNumber(visibleDepth, 0));
+  const safeFrontDepth = Math.max(0.02, parseDesignNumber(frontDepth, 0.02));
+  if (safeVisibleDepth <= 0.02) return 0;
+  const maxEmbed = Math.min(1.35, safeFrontDepth * 0.42, safeVisibleDepth * 0.85);
+  const targetEmbed = Math.max(0.45, safeVisibleDepth * 0.38);
+  return THREE.MathUtils.clamp(targetEmbed, 0.12, Math.max(0.12, maxEmbed));
+}
+
 function designNoseWingControls(p, definition = state.designDraft) {
   const construction = normalizeDesignConstruction(definition?.construction);
   const bridge = designBridgeMetrics(p, definition);
@@ -4118,13 +4127,14 @@ function addDesignFrontBody(p, material, definition, target = designModelGroup) 
 
 function addDesignNoseWings(p, material, definition, target = designModelGroup) {
   const construction = normalizeDesignConstruction(definition?.construction);
-  const depth = construction.noseWingHeight;
-  if (depth <= 0.02) return;
+  const visibleDepth = construction.noseWingHeight;
+  if (visibleDepth <= 0.02) return;
   const features = normalizeDesignFeatures(definition?.features, p);
+  const embedDepth = designNoseWingEmbedDepth(visibleDepth, features.extrude.depth);
+  const totalDepth = visibleDepth + embedDepth;
   const topRound = Math.min(construction.noseWingTopRound, designNoseWingRoundMax);
   const baseRound = Math.min(construction.noseWingBaseRound, designNoseWingRoundMax);
-  const overlap = Math.min(0.08, depth * 0.04);
-  const topZ = -features.extrude.depth / 2 + overlap;
+  const topZ = -features.extrude.depth / 2 + embedDepth;
   [-1, 1].forEach((side) => {
     const controls = designNoseWingControls(p, definition);
     const corners = designNoseWingCornerPoints(p, definition, side).map((corner) => corner.point);
@@ -4132,7 +4142,7 @@ function addDesignNoseWings(p, material, definition, target = designModelGroup) 
     const polygons = designNoseWingFootprintPolygons(p, definition, side);
     polygons.forEach((polygon) => {
       const geometry = designNoseWingGeometryFromRing(polygon?.[0], {
-        depth,
+        depth: totalDepth,
         topZ,
         topRound,
         baseRound,
@@ -10680,6 +10690,7 @@ hinge_pad_overlap = ${formatNumber(designHingePadOverlap)};
 hinge_rear_overlap = ${formatNumber(designHingeRearOverlap)};
 front_depth = extrude_depth;
 front_face_z = front_depth / 2;
+nose_wing_embed = nose_wing_height > 0.01 ? min(max(0.45, nose_wing_height * 0.38), min(1.35, front_depth * 0.42, nose_wing_height * 0.85)) : 0;
 hinge_rear_z = -front_face_z + hinge_rear_overlap; // Mechanical hinge is bonded behind the planar pad.
 temple_straight = ${formatNumber(construction.templeStraight)};
 temple_hook = ${formatNumber(construction.templeHook)};
@@ -10820,9 +10831,9 @@ module nose_wing_profile(side=1) {
 }
 
 module nose_wing(side=1) {
-  wing_depth = max(0, nose_wing_height);
+  wing_depth = max(0, nose_wing_height) + nose_wing_embed;
   if (wing_depth > 0.01) {
-    translate([0, 0, -front_face_z - wing_depth / 2 + min(0.08, wing_depth * 0.04)])
+    translate([0, 0, -front_face_z - wing_depth / 2 + nose_wing_embed])
       linear_extrude(height=wing_depth, convexity=6, center=true)
         nose_wing_profile(side);
   }
