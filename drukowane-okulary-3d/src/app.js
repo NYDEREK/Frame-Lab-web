@@ -2957,9 +2957,12 @@ function renderDesignPreview(options = {}) {
   }, style.lensOpacity);
   const outerLensWidth = p.lens_width + p.rim_thickness * 2;
   const center = p.bridge_width / 2 + outerLensWidth / 2;
-  addDesignFrontBody(p, frontMaterial, definition);
+  addDesignFrontBodyWithRearNoseWingCutouts(p, frontMaterial, definition);
   addDesignTopVisor(p, frontMaterial, definition);
-  addDesignNoseWings(p, frontMaterial, definition);
+  addDesignNoseWings(p, frontMaterial, definition, designModelGroup, {
+    openTop: true,
+    topZ: -normalizeDesignFeatures(definition?.features, p).extrude.depth / 2
+  });
   [-1, 1].forEach((side) => {
     addDesignLens(side * center, p, lensMaterial, definition);
     addDesignTemple(side, p, outerLensWidth, templeMaterial, detailMaterial, style, definition);
@@ -3485,15 +3488,6 @@ function designShapesFromPolygons(polygons) {
 
 function designNoseWingSpan(p) {
   return THREE.MathUtils.clamp(p.lens_height * 0.27, 7, 12);
-}
-
-function designNoseWingEmbedDepth(visibleDepth, frontDepth) {
-  const safeVisibleDepth = Math.max(0, parseDesignNumber(visibleDepth, 0));
-  const safeFrontDepth = Math.max(0.02, parseDesignNumber(frontDepth, 0.02));
-  if (safeVisibleDepth <= 0.02) return 0;
-  const maxEmbed = Math.min(1.35, safeFrontDepth * 0.42, safeVisibleDepth * 0.85);
-  const targetEmbed = Math.max(0.45, safeVisibleDepth * 0.38);
-  return THREE.MathUtils.clamp(targetEmbed, 0.12, Math.max(0.12, maxEmbed));
 }
 
 function designNoseWingControls(p, definition = state.designDraft) {
@@ -4067,8 +4061,10 @@ function designNoseWingGeometryFromRing(ring, options) {
 
   const indices = [];
   const addFace = (a, b, c) => indices.push(a, b, c);
-  const topContour = layerSpecs[0].ring.map(([x, y]) => new THREE.Vector2(x, y));
-  THREE.ShapeUtils.triangulateShape(topContour, []).forEach(([a, b, c]) => addFace(a, b, c));
+  if (!options?.openTop) {
+    const topContour = layerSpecs[0].ring.map(([x, y]) => new THREE.Vector2(x, y));
+    THREE.ShapeUtils.triangulateShape(topContour, []).forEach(([a, b, c]) => addFace(a, b, c));
+  }
   const bottomStart = (layerSpecs.length - 1) * layerSize;
   THREE.ShapeUtils.triangulateShape(layerSpecs[layerSpecs.length - 1].ring.map(([x, y]) => new THREE.Vector2(x, y)), [])
     .forEach(([a, b, c]) => addFace(bottomStart + c, bottomStart + b, bottomStart + a));
@@ -4093,6 +4089,98 @@ function designNoseWingGeometryFromRing(ring, options) {
   geometry.computeVertexNormals();
   geometry.computeBoundingSphere();
   return geometry;
+}
+
+function appendDesignCapPolygons(vertices, indices, polygons, z, flip = false) {
+  (Array.isArray(polygons) ? polygons : []).forEach((polygon) => {
+    const rings = (Array.isArray(polygon) ? polygon : [])
+      .map((ring) => designCleanRing(ring))
+      .filter((ring) => ring.length >= 3);
+    if (!rings.length) return;
+    const contours = rings.map((ring) => ring.map(([x, y]) => new THREE.Vector2(x, y)));
+    const flatIndices = [];
+    contours.forEach((contour) => {
+      contour.forEach((point) => {
+        flatIndices.push(vertices.length / 3);
+        vertices.push(point.x, point.y, z);
+      });
+    });
+    THREE.ShapeUtils.triangulateShape(contours[0], contours.slice(1)).forEach(([a, b, c]) => {
+      if (flip) {
+        indices.push(flatIndices[c], flatIndices[b], flatIndices[a]);
+      } else {
+        indices.push(flatIndices[a], flatIndices[b], flatIndices[c]);
+      }
+    });
+  });
+}
+
+function appendDesignRingWall(vertices, indices, ring, frontZ, rearZ, isHole = false) {
+  const cleanRing = designCleanRing(ring);
+  if (cleanRing.length < 3) return;
+  const baseIndex = vertices.length / 3;
+  cleanRing.forEach(([x, y]) => {
+    vertices.push(x, y, frontZ);
+    vertices.push(x, y, rearZ);
+  });
+  const counterClockwise = designRingArea(cleanRing) > 0;
+  const reverse = isHole ? !counterClockwise : counterClockwise;
+  for (let index = 0; index < cleanRing.length; index += 1) {
+    const next = (index + 1) % cleanRing.length;
+    const frontA = baseIndex + index * 2;
+    const rearA = frontA + 1;
+    const frontB = baseIndex + next * 2;
+    const rearB = frontB + 1;
+    if (reverse) {
+      indices.push(frontA, rearB, frontB, frontA, rearA, rearB);
+    } else {
+      indices.push(frontA, frontB, rearB, frontA, rearB, rearA);
+    }
+  }
+}
+
+function appendDesignExtrudeWalls(vertices, indices, polygons, frontZ, rearZ) {
+  (Array.isArray(polygons) ? polygons : []).forEach((polygon) => {
+    if (!Array.isArray(polygon?.[0])) return;
+    appendDesignRingWall(vertices, indices, polygon[0], frontZ, rearZ, false);
+    polygon.slice(1).forEach((ring) => appendDesignRingWall(vertices, indices, ring, frontZ, rearZ, true));
+  });
+}
+
+function designRearCutoutLayerGeometry(basePolygons, rearPolygons, depth, z) {
+  const safeDepth = Math.max(0.02, depth);
+  const frontZ = z + safeDepth / 2;
+  const rearZ = z - safeDepth / 2;
+  const vertices = [];
+  const indices = [];
+  appendDesignCapPolygons(vertices, indices, basePolygons, frontZ, false);
+  appendDesignCapPolygons(vertices, indices, rearPolygons, rearZ, true);
+  appendDesignExtrudeWalls(vertices, indices, basePolygons, frontZ, rearZ);
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(vertices, 3));
+  geometry.setIndex(indices);
+  geometry.computeVertexNormals();
+  geometry.computeBoundingSphere();
+  return geometry;
+}
+
+function designFrontRearNoseWingCutouts(p, definition, innerExpansion = 0) {
+  const construction = normalizeDesignConstruction(definition?.construction);
+  if (construction.noseWingHeight <= 0.02) return null;
+  const basePolygons = designFrontPlanarPolygons(p, definition, innerExpansion);
+  const cutoutPolygons = [-1, 1]
+    .flatMap((side) => designNoseWingFootprintPolygons(p, definition, side))
+    .filter((polygon) => Array.isArray(polygon?.[0]) && polygon[0].length >= 3);
+  if (!basePolygons.length || !cutoutPolygons.length) return null;
+  try {
+    const rearPolygons = polygonClipping.difference(basePolygons, ...cutoutPolygons);
+    if (Array.isArray(rearPolygons) && rearPolygons.length) {
+      return { basePolygons, rearPolygons };
+    }
+  } catch {
+    return null;
+  }
+  return null;
 }
 
 function addDesignFrontBody(p, material, definition, target = designModelGroup) {
@@ -4125,16 +4213,55 @@ function addDesignFrontBody(p, material, definition, target = designModelGroup) 
   }
 }
 
-function addDesignNoseWings(p, material, definition, target = designModelGroup) {
-  const construction = normalizeDesignConstruction(definition?.construction);
-  const visibleDepth = construction.noseWingHeight;
-  if (visibleDepth <= 0.02) return;
+function addDesignFrontBodyWithRearNoseWingCutouts(p, material, definition, target = designModelGroup) {
   const features = normalizeDesignFeatures(definition?.features, p);
-  const embedDepth = designNoseWingEmbedDepth(visibleDepth, features.extrude.depth);
-  const totalDepth = visibleDepth + embedDepth;
+  const construction = normalizeDesignConstruction(definition?.construction);
+  const edge = designEdgeOperation(p, definition);
+  const addStandardLayer = (innerExpansion, depth, z, edgeEnabled) => {
+    designFrontShapes(p, definition, innerExpansion).forEach((shape) => {
+      const edgeAmount = edgeEnabled ? designSafeFrontEdgeAmount(edge, p, construction, depth) : 0;
+      const extrusion = containedBevelExtrudeOptions(depth, edgeAmount, edge.segments);
+      const geometry = new THREE.ExtrudeGeometry(shape, extrusion.options);
+      geometry.translate(0, 0, -extrusion.centerOffset);
+      const layer = new THREE.Mesh(geometry, material);
+      layer.position.z = z;
+      target.add(layer);
+    });
+  };
+  const addRearCutoutLayer = (innerExpansion, depth, z) => {
+    const cutouts = designFrontRearNoseWingCutouts(p, definition, innerExpansion);
+    if (!cutouts) {
+      addStandardLayer(innerExpansion, depth, z, true);
+      return;
+    }
+    const geometry = designRearCutoutLayerGeometry(cutouts.basePolygons, cutouts.rearPolygons, depth, z);
+    const layer = new THREE.Mesh(geometry, material);
+    target.add(layer);
+  };
+  if (features.lensRecess.enabled) {
+    const depth = features.extrude.depth;
+    const slotWidth = Math.min(construction.lensSeatWidth, depth - 0.9);
+    const maximumOffset = Math.max(0, (depth - slotWidth) / 2 - 0.45);
+    const slotOffset = THREE.MathUtils.clamp(construction.lensChannelOffset, -maximumOffset, maximumOffset);
+    const rearLip = (depth - slotWidth) / 2 + slotOffset;
+    const frontLip = (depth - slotWidth) / 2 - slotOffset;
+    if (rearLip > 0) addRearCutoutLayer(0, rearLip, -depth / 2 + rearLip / 2);
+    addStandardLayer(construction.lensSeatDepth, slotWidth, slotOffset, false);
+    if (frontLip > 0) addStandardLayer(0, frontLip, depth / 2 - frontLip / 2, true);
+  } else {
+    addRearCutoutLayer(0, features.extrude.depth, 0);
+  }
+}
+
+function addDesignNoseWings(p, material, definition, target = designModelGroup, options = {}) {
+  const construction = normalizeDesignConstruction(definition?.construction);
+  const depth = construction.noseWingHeight;
+  if (depth <= 0.02) return;
+  const features = normalizeDesignFeatures(definition?.features, p);
   const topRound = Math.min(construction.noseWingTopRound, designNoseWingRoundMax);
   const baseRound = Math.min(construction.noseWingBaseRound, designNoseWingRoundMax);
-  const topZ = -features.extrude.depth / 2 + embedDepth;
+  const overlap = Math.min(0.08, depth * 0.04);
+  const topZ = Number.isFinite(options?.topZ) ? options.topZ : -features.extrude.depth / 2 + overlap;
   [-1, 1].forEach((side) => {
     const controls = designNoseWingControls(p, definition);
     const corners = designNoseWingCornerPoints(p, definition, side).map((corner) => corner.point);
@@ -4142,7 +4269,7 @@ function addDesignNoseWings(p, material, definition, target = designModelGroup) 
     const polygons = designNoseWingFootprintPolygons(p, definition, side);
     polygons.forEach((polygon) => {
       const geometry = designNoseWingGeometryFromRing(polygon?.[0], {
-        depth: totalDepth,
+        depth,
         topZ,
         topRound,
         baseRound,
@@ -4151,6 +4278,7 @@ function addDesignNoseWings(p, material, definition, target = designModelGroup) 
         topEdgeY: (controls.topOuterY + controls.topInnerY) / 2,
         bottomEdgeY: (controls.bottomOuterY + controls.bottomInnerY) / 2,
         angle: construction.noseWingAngle,
+        openTop: options?.openTop === true,
         side
       });
       if (!geometry) return;
@@ -5923,9 +6051,12 @@ function buildDesign3mfExportParts(projectRoot) {
   };
   return [
     part("front", "front", `${projectRoot}-front.3mf`, `${state.designDraft.name || "Frame Lab Creator"} front`, (group) => {
-      addDesignFrontBody(p, frontMaterial, definition, group);
+      addDesignFrontBodyWithRearNoseWingCutouts(p, frontMaterial, definition, group);
       addDesignTopVisor(p, frontMaterial, definition, group);
-      addDesignNoseWings(p, frontMaterial, definition, group);
+      addDesignNoseWings(p, frontMaterial, definition, group, {
+        openTop: true,
+        topZ: -normalizeDesignFeatures(definition?.features, p).extrude.depth / 2
+      });
       [-1, 1].forEach((side) => addDesignHingeAsset(
         side < 0 ? "frontRight" : "frontLeft",
         designHingeDatum(side, p, definition),
@@ -8029,9 +8160,12 @@ function renderPublishedDesignPreview() {
   }, style.lensOpacity);
   const outerLensWidth = p.lens_width + p.rim_thickness * 2;
   const center = p.bridge_width / 2 + outerLensWidth / 2;
-  addDesignFrontBody(p, frontMaterial, definition, modelGroup);
+  addDesignFrontBodyWithRearNoseWingCutouts(p, frontMaterial, definition, modelGroup);
   addDesignTopVisor(p, frontMaterial, definition, modelGroup);
-  addDesignNoseWings(p, frontMaterial, definition, modelGroup);
+  addDesignNoseWings(p, frontMaterial, definition, modelGroup, {
+    openTop: true,
+    topZ: -normalizeDesignFeatures(definition?.features, p).extrude.depth / 2
+  });
   [-1, 1].forEach((side) => {
     addDesignLens(side * center, p, lensMaterial, definition, modelGroup);
     addDesignTemple(side, p, outerLensWidth, templeMaterial, detailMaterial, style, definition, modelGroup);
@@ -10690,7 +10824,6 @@ hinge_pad_overlap = ${formatNumber(designHingePadOverlap)};
 hinge_rear_overlap = ${formatNumber(designHingeRearOverlap)};
 front_depth = extrude_depth;
 front_face_z = front_depth / 2;
-nose_wing_embed = nose_wing_height > 0.01 ? min(max(0.45, nose_wing_height * 0.38), min(1.35, front_depth * 0.42, nose_wing_height * 0.85)) : 0;
 hinge_rear_z = -front_face_z + hinge_rear_overlap; // Mechanical hinge is bonded behind the planar pad.
 temple_straight = ${formatNumber(construction.templeStraight)};
 temple_hook = ${formatNumber(construction.templeHook)};
@@ -10831,9 +10964,9 @@ module nose_wing_profile(side=1) {
 }
 
 module nose_wing(side=1) {
-  wing_depth = max(0, nose_wing_height) + nose_wing_embed;
+  wing_depth = max(0, nose_wing_height);
   if (wing_depth > 0.01) {
-    translate([0, 0, -front_face_z - wing_depth / 2 + nose_wing_embed])
+    translate([0, 0, -front_face_z - wing_depth / 2 + min(0.08, wing_depth * 0.04)])
       linear_extrude(height=wing_depth, convexity=6, center=true)
         nose_wing_profile(side);
   }
