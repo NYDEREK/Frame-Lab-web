@@ -3385,6 +3385,39 @@ function designFrontPlanarPolygons(p, definition, innerExpansion = 0) {
   return polygonClipping.union(...solids);
 }
 
+function designLensSeatCutPolygons(p, definition) {
+  const construction = normalizeDesignConstruction(definition?.construction);
+  const seatDepth = THREE.MathUtils.clamp(construction.lensSeatDepth, 0, Math.max(0, p.rim_thickness - 0.05));
+  if (seatDepth <= 0.001) return [];
+  const center = designLensCenter(p);
+  const cuts = [-1, 1].flatMap((side) => {
+    const mirror = side < 0;
+    const cx = side * center;
+    try {
+      return polygonClipping.difference(
+        [designOutlineRing(cx, p, definition, seatDepth, mirror)],
+        [designOutlineRing(cx, p, definition, 0, mirror)]
+      );
+    } catch {
+      return [];
+    }
+  });
+  return cuts.filter((polygon) => Array.isArray(polygon?.[0]) && polygon[0].length >= 3);
+}
+
+function designFrontLensChannelPolygons(p, definition) {
+  const basePolygons = designFrontPlanarPolygons(p, definition, 0);
+  const seatCuts = designLensSeatCutPolygons(p, definition);
+  if (!basePolygons.length || !seatCuts.length) return designFrontPlanarPolygons(p, definition, normalizeDesignConstruction(definition?.construction).lensSeatDepth);
+  try {
+    const channelPolygons = polygonClipping.difference(basePolygons, ...seatCuts);
+    if (Array.isArray(channelPolygons) && channelPolygons.length) return channelPolygons;
+  } catch {
+    return designFrontPlanarPolygons(p, definition, normalizeDesignConstruction(definition?.construction).lensSeatDepth);
+  }
+  return [];
+}
+
 function designFrontPlanarBounds(p, definition) {
   const polygons = designFrontPlanarPolygons(p, definition, 0);
   const points = polygons.flatMap((polygon) => polygon.flatMap((ring) => ring));
@@ -4187,8 +4220,8 @@ function addDesignFrontBody(p, material, definition, target = designModelGroup) 
   const features = normalizeDesignFeatures(definition?.features, p);
   const construction = normalizeDesignConstruction(definition?.construction);
   const edge = designEdgeOperation(p, definition);
-  const addLayer = (innerExpansion, depth, z, edgeEnabled) => {
-    designFrontShapes(p, definition, innerExpansion).forEach((shape) => {
+  const addPolygonLayer = (polygons, depth, z, edgeEnabled) => {
+    designShapesFromPolygons(polygons).forEach((shape) => {
       const edgeAmount = edgeEnabled ? designSafeFrontEdgeAmount(edge, p, construction, depth) : 0;
       const extrusion = containedBevelExtrudeOptions(depth, edgeAmount, edge.segments);
       const geometry = new THREE.ExtrudeGeometry(shape, extrusion.options);
@@ -4198,6 +4231,9 @@ function addDesignFrontBody(p, material, definition, target = designModelGroup) 
       target.add(layer);
     });
   };
+  const addLayer = (innerExpansion, depth, z, edgeEnabled) => {
+    addPolygonLayer(designFrontPlanarPolygons(p, definition, innerExpansion), depth, z, edgeEnabled);
+  };
   if (features.lensRecess.enabled) {
     const depth = features.extrude.depth;
     const slotWidth = Math.min(construction.lensSeatWidth, depth - 0.9);
@@ -4206,7 +4242,7 @@ function addDesignFrontBody(p, material, definition, target = designModelGroup) 
     const rearLip = (depth - slotWidth) / 2 + slotOffset;
     const frontLip = (depth - slotWidth) / 2 - slotOffset;
     if (rearLip > 0) addLayer(0, rearLip, -depth / 2 + rearLip / 2, true);
-    addLayer(construction.lensSeatDepth, slotWidth, slotOffset, false);
+    addPolygonLayer(designFrontLensChannelPolygons(p, definition), slotWidth, slotOffset, false);
     if (frontLip > 0) addLayer(0, frontLip, depth / 2 - frontLip / 2, true);
   } else {
     addLayer(0, features.extrude.depth, 0, true);
@@ -4217,8 +4253,8 @@ function addDesignFrontBodyWithRearNoseWingCutouts(p, material, definition, targ
   const features = normalizeDesignFeatures(definition?.features, p);
   const construction = normalizeDesignConstruction(definition?.construction);
   const edge = designEdgeOperation(p, definition);
-  const addStandardLayer = (innerExpansion, depth, z, edgeEnabled) => {
-    designFrontShapes(p, definition, innerExpansion).forEach((shape) => {
+  const addStandardPolygonLayer = (polygons, depth, z, edgeEnabled) => {
+    designShapesFromPolygons(polygons).forEach((shape) => {
       const edgeAmount = edgeEnabled ? designSafeFrontEdgeAmount(edge, p, construction, depth) : 0;
       const extrusion = containedBevelExtrudeOptions(depth, edgeAmount, edge.segments);
       const geometry = new THREE.ExtrudeGeometry(shape, extrusion.options);
@@ -4227,6 +4263,9 @@ function addDesignFrontBodyWithRearNoseWingCutouts(p, material, definition, targ
       layer.position.z = z;
       target.add(layer);
     });
+  };
+  const addStandardLayer = (innerExpansion, depth, z, edgeEnabled) => {
+    addStandardPolygonLayer(designFrontPlanarPolygons(p, definition, innerExpansion), depth, z, edgeEnabled);
   };
   const addRearCutoutLayer = (innerExpansion, depth, z) => {
     const cutouts = designFrontRearNoseWingCutouts(p, definition, innerExpansion);
@@ -4246,7 +4285,7 @@ function addDesignFrontBodyWithRearNoseWingCutouts(p, material, definition, targ
     const rearLip = (depth - slotWidth) / 2 + slotOffset;
     const frontLip = (depth - slotWidth) / 2 - slotOffset;
     if (rearLip > 0) addRearCutoutLayer(0, rearLip, -depth / 2 + rearLip / 2);
-    addStandardLayer(construction.lensSeatDepth, slotWidth, slotOffset, false);
+    addStandardPolygonLayer(designFrontLensChannelPolygons(p, definition), slotWidth, slotOffset, false);
     if (frontLip > 0) addStandardLayer(0, frontLip, depth / 2 - frontLip / 2, true);
   } else {
     addRearCutoutLayer(0, features.extrude.depth, 0);
@@ -11018,13 +11057,15 @@ module front_body() {
 module front() {
   union() {
     difference() {
-      front_body();
+      union() {
+        front_body();
+        front_hinge(-1);
+        front_hinge(1);
+      }
       lens_seat_cut(-lens_center);
       lens_seat_cut(lens_center);
     }
     nose_wings();
-    front_hinge(-1);
-    front_hinge(1);
   }
 }
 
