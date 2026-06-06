@@ -930,6 +930,9 @@ function mergeScadConstructionHints(design = {}, scadSource = "") {
     noseWingTopInnerOffset: "nose_wing_top_inner_offset",
     noseWingBottomInnerOffset: "nose_wing_bottom_inner_offset",
     noseWingBottomOuterOffset: "nose_wing_bottom_outer_offset",
+    topVisorDepth: "top_visor_depth",
+    topVisorStartX: "top_visor_start_x",
+    topVisorEndX: "top_visor_end_x",
     templeStraight: "temple_straight",
     templeHook: "temple_hook",
     templeHookAngle: "temple_hook_angle",
@@ -962,6 +965,8 @@ function mergeScadConstructionHints(design = {}, scadSource = "") {
   }
   const enabled = scadBooleanValue(scadSource, "temple_chamfer_enabled");
   if (enabled !== undefined) construction.templeChamferEnabled = enabled;
+  const topVisorEnabled = scadBooleanValue(scadSource, "top_visor_enabled");
+  if (topVisorEnabled !== undefined) construction.topVisorEnabled = topVisorEnabled;
   const nextDesign = { ...design, construction };
   const sketchPoints = scadPointListValue(scadSource, "profile_points", [-0.7, 0.7, -0.7, 0.7], 20);
   if (sketchPoints.length >= 4) {
@@ -1099,6 +1104,10 @@ function sanitizeParametricDesign(style = {}) {
     noseWingTopInnerOffset: value(style.construction?.noseWingTopInnerOffset, -34, 8, style.construction?.noseWingTopOffset ?? -1.4),
     noseWingBottomInnerOffset: value(style.construction?.noseWingBottomInnerOffset, -34, 8, style.construction?.noseWingBottomOffset ?? -10.4),
     noseWingBottomOuterOffset: value(style.construction?.noseWingBottomOuterOffset, -34, 8, style.construction?.noseWingBottomOffset ?? -10.4),
+    topVisorEnabled: boolean(style.construction?.topVisorEnabled, false),
+    topVisorDepth: value(style.construction?.topVisorDepth, 0, 6, 3),
+    topVisorStartX: value(style.construction?.topVisorStartX, -100, 94, -42),
+    topVisorEndX: value(style.construction?.topVisorEndX, -94, 100, 42),
     templeStraight: value(style.construction?.templeStraight, 35, 120, 65),
     templeHook: value(style.construction?.templeHook, 10, 60, 30),
     templeHookAngle: value(style.construction?.templeHookAngle, 10, 75, 45),
@@ -1117,6 +1126,10 @@ function sanitizeParametricDesign(style = {}) {
     templeTextYOffset: value(style.construction?.templeTextYOffset, -5, 5, 0),
     templeTextDepth: value(style.construction?.templeTextDepth, 0.15, 1.2, 0.45)
   };
+  construction.topVisorEndX = Math.max(
+    construction.topVisorStartX + 6,
+    Math.min(100, construction.topVisorEndX)
+  );
   const templeFallback = (() => {
     const height = construction.templeBarHeight;
     const straight = construction.templeStraight;

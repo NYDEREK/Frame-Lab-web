@@ -230,6 +230,10 @@ const defaultDesignConstruction = {
   noseWingTopInnerOffset: -1.4,
   noseWingBottomInnerOffset: -10.4,
   noseWingBottomOuterOffset: -10.4,
+  topVisorEnabled: false,
+  topVisorDepth: 3,
+  topVisorStartX: -42,
+  topVisorEndX: 42,
   templeStraight: 70,
   templeHook: 30,
   templeHookAngle: 45,
@@ -899,6 +903,8 @@ const els = {
   designNoseWingAngle: document.querySelector("#designNoseWingAngle"),
   designNoseWingRound: document.querySelector("#designNoseWingRound"),
   designNoseWingBaseRound: document.querySelector("#designNoseWingBaseRound"),
+  designTopVisorEnabled: document.querySelector("#designTopVisorEnabled"),
+  designTopVisorDepth: document.querySelector("#designTopVisorDepth"),
   designTempleStraight: document.querySelector("#designTempleStraight"),
   designTempleHook: document.querySelector("#designTempleHook"),
   designTempleHookAngle: document.querySelector("#designTempleHookAngle"),
@@ -1055,6 +1061,7 @@ const designCameraTarget = new THREE.Vector3();
 const designViewerRotation = { x: -0.54, y: 0.56, z: 0.02 };
 const designBridgeHandleSelectionOffset = 1000;
 const designNoseWingHandleSelectionOffset = 1100;
+const designTopVisorHandleSelectionOffset = 1200;
 const designHistoryLimit = 60;
 const designHistory = {
   past: [],
@@ -1416,6 +1423,12 @@ function normalizeDesignConstruction(construction = {}) {
   const legacyNoseWingRound = bounded("noseWingRound", 0, designNoseWingRoundMax);
   const noseWingTopRound = bounded("noseWingTopRound", 0, designNoseWingRoundMax, legacyNoseWingRound);
   const noseWingBaseRound = bounded("noseWingBaseRound", 0, designNoseWingRoundMax, legacyNoseWingRound);
+  const topVisorStartX = bounded("topVisorStartX", -100, 94);
+  const topVisorEndX = THREE.MathUtils.clamp(
+    bounded("topVisorEndX", -100, 100),
+    topVisorStartX + 6,
+    100
+  );
   return {
     hingeStandard: "FL-H1",
     lensThickness: 1,
@@ -1441,6 +1454,10 @@ function normalizeDesignConstruction(construction = {}) {
     noseWingTopInnerOffset: bounded("noseWingTopInnerOffset", -34, 8, noseWingTopOffset),
     noseWingBottomInnerOffset: bounded("noseWingBottomInnerOffset", -34, 8, noseWingBottomOffset),
     noseWingBottomOuterOffset: bounded("noseWingBottomOuterOffset", -34, 8, noseWingBottomOffset),
+    topVisorEnabled: parseDesignBoolean(construction.topVisorEnabled, defaultDesignConstruction.topVisorEnabled),
+    topVisorDepth: bounded("topVisorDepth", 0, 6),
+    topVisorStartX,
+    topVisorEndX,
     templeStraight,
     templeHook: bounded("templeHook", 10, 60),
     templeHookAngle: bounded("templeHookAngle", 10, 75),
@@ -1801,6 +1818,13 @@ function setupDesignSketch() {
         distance = nextDistance;
       }
     });
+    designTopVisorHandleScreenPoints(metrics).forEach((point, index) => {
+      const nextDistance = Math.hypot(point.x - x, point.y - y);
+      if (nextDistance < distance) {
+        closest = designTopVisorHandleSelectionOffset + index;
+        distance = nextDistance;
+      }
+    });
     return closest;
   };
   els.designSketchCanvas.addEventListener("pointerdown", (event) => {
@@ -1861,6 +1885,14 @@ function setupDesignSketch() {
       drawDesignSketch();
       return;
     }
+    if (isDesignTopVisorSelection(index)) {
+      designSketchDragIndex = index;
+      designSketchSelectedIndex = index;
+      els.designSketchCanvas.setPointerCapture(event.pointerId);
+      syncDesignSelectedCornerField();
+      drawDesignSketch();
+      return;
+    }
     designSketchDragIndex = index;
     designSketchSelectedIndex = index;
     els.designSketchCanvas.setPointerCapture(event.pointerId);
@@ -1907,6 +1939,10 @@ function setupDesignSketch() {
     }
     if (isDesignNoseWingSelection(designSketchDragIndex)) {
       updateDraggedDesignNoseWingHandle(event, metrics);
+      return;
+    }
+    if (isDesignTopVisorSelection(designSketchDragIndex)) {
+      updateDraggedDesignTopVisorHandle(event, metrics);
       return;
     }
     if (designSketchDragIndex < 0) return;
@@ -2308,6 +2344,14 @@ function designNoseWingSelectionHandleIndex(index) {
   return index - designNoseWingHandleSelectionOffset;
 }
 
+function isDesignTopVisorSelection(index) {
+  return index >= designTopVisorHandleSelectionOffset && index < designTopVisorHandleSelectionOffset + 2;
+}
+
+function designTopVisorSelectionHandleIndex(index) {
+  return index - designTopVisorHandleSelectionOffset;
+}
+
 function designNoseWingHandleLabel(index) {
   return [
     "Top outer nose wing radius",
@@ -2347,6 +2391,19 @@ function designNoseWingHandleScreenPoints(metrics) {
       };
     })
   ));
+}
+
+function designTopVisorHandleScreenPoints(metrics) {
+  if (!metrics) return [];
+  const controls = designTopVisorControls(metrics.p, state.designDraft);
+  if (!controls.enabled || controls.depth <= 0.02) return [];
+  return [
+    { x: controls.startX, y: controls.handleY },
+    { x: controls.endX, y: controls.handleY }
+  ].map((point) => ({
+    x: metrics.centerX + point.x * metrics.scale,
+    y: metrics.centerY - point.y * metrics.scale
+  }));
 }
 
 function updateDraggedDesignBridgeHandle(event, metrics) {
@@ -2414,6 +2471,32 @@ function updateDraggedDesignNoseWingHandle(event, metrics) {
     noseWingTopInnerOffset: nextTopInnerOffset,
     noseWingBottomInnerOffset: nextBottomInnerOffset,
     noseWingBottomOuterOffset: nextBottomOuterOffset
+  });
+  state.designDraft.manualCode = false;
+  syncDesignFields();
+  syncDesignCode();
+  renderDesignPreview({ fitView: false });
+}
+
+function updateDraggedDesignTopVisorHandle(event, metrics) {
+  if (!metrics || !els.designSketchCanvas) return;
+  const rect = els.designSketchCanvas.getBoundingClientRect();
+  const handleIndex = THREE.MathUtils.clamp(designTopVisorSelectionHandleIndex(designSketchDragIndex), 0, 1);
+  const construction = normalizeDesignConstruction(state.designDraft.construction);
+  const controls = designTopVisorControls(metrics.p, state.designDraft);
+  const pointerX = (event.clientX - rect.left - metrics.centerX) / metrics.scale;
+  const minGap = controls.minGap;
+  let startX = controls.startX;
+  let endX = controls.endX;
+  if (handleIndex === 0) {
+    startX = THREE.MathUtils.clamp(pointerX, controls.minX, endX - minGap);
+  } else {
+    endX = THREE.MathUtils.clamp(pointerX, startX + minGap, controls.maxX);
+  }
+  state.designDraft.construction = normalizeDesignConstruction({
+    ...construction,
+    topVisorStartX: startX,
+    topVisorEndX: endX
   });
   state.designDraft.manualCode = false;
   syncDesignFields();
@@ -2729,6 +2812,7 @@ function drawDesignSketch() {
   ctx.stroke();
   const construction = normalizeDesignConstruction(state.designDraft.construction);
   drawDesignFrontPlanarProfile(ctx, metrics, colors);
+  drawDesignTopVisorSketch(ctx, metrics, state.designDraft.style);
   drawDesignNoseWingsSketch(ctx, metrics, state.designDraft.style);
   const hingeSize = designHingePadSize * scale;
   const hingeY = centerY - construction.hingeMountHeight * scale;
@@ -2764,6 +2848,17 @@ function drawDesignSketch() {
   });
   designNoseWingHandleScreenPoints(metrics).forEach((point) => {
     const selectionIndex = designNoseWingHandleSelectionOffset + point.handleIndex;
+    const selected = designSketchSelectedIndex === selectionIndex;
+    ctx.beginPath();
+    ctx.arc(point.x, point.y, selected ? 6.5 : 4.8, 0, Math.PI * 2);
+    ctx.fillStyle = selected ? colors.accent : normalizeDesignStyle(state.designDraft.style).detailColor;
+    ctx.fill();
+    ctx.strokeStyle = colors.background;
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+  });
+  designTopVisorHandleScreenPoints(metrics).forEach((point, index) => {
+    const selectionIndex = designTopVisorHandleSelectionOffset + index;
     const selected = designSketchSelectedIndex === selectionIndex;
     ctx.beginPath();
     ctx.arc(point.x, point.y, selected ? 6.5 : 4.8, 0, Math.PI * 2);
@@ -2863,6 +2958,7 @@ function renderDesignPreview(options = {}) {
   const outerLensWidth = p.lens_width + p.rim_thickness * 2;
   const center = p.bridge_width / 2 + outerLensWidth / 2;
   addDesignFrontBody(p, frontMaterial, definition);
+  addDesignTopVisor(p, frontMaterial, definition);
   addDesignNoseWings(p, frontMaterial, definition);
   [-1, 1].forEach((side) => {
     addDesignLens(side * center, p, lensMaterial, definition);
@@ -3286,6 +3382,79 @@ function designFrontPlanarPolygons(p, definition, innerExpansion = 0) {
   return polygonClipping.union(...solids);
 }
 
+function designFrontPlanarBounds(p, definition) {
+  const polygons = designFrontPlanarPolygons(p, definition, 0);
+  const points = polygons.flatMap((polygon) => polygon.flatMap((ring) => ring));
+  if (!points.length) {
+    return {
+      minX: -p.head_width / 2,
+      maxX: p.head_width / 2,
+      minY: -p.lens_height / 2 - p.rim_thickness,
+      maxY: p.lens_height / 2 + p.rim_thickness
+    };
+  }
+  return points.reduce((bounds, [x, y]) => ({
+    minX: Math.min(bounds.minX, x),
+    maxX: Math.max(bounds.maxX, x),
+    minY: Math.min(bounds.minY, y),
+    maxY: Math.max(bounds.maxY, y)
+  }), { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity });
+}
+
+function designTopVisorControls(p, definition = state.designDraft) {
+  const construction = normalizeDesignConstruction(definition?.construction);
+  const bounds = designFrontPlanarBounds(p, definition);
+  const margin = Math.max(1.2, p.rim_thickness * 0.25);
+  const minGap = Math.max(8, p.rim_thickness * 2.2);
+  const minX = bounds.minX + margin;
+  const maxX = bounds.maxX - margin;
+  const usableStart = Math.min(minX, maxX - minGap);
+  const usableEnd = Math.max(maxX, usableStart + minGap);
+  const rawStart = parseDesignNumber(construction.topVisorStartX, -Math.min(42, p.head_width * 0.32));
+  const rawEnd = parseDesignNumber(construction.topVisorEndX, Math.min(42, p.head_width * 0.32));
+  const sortedStart = Math.min(rawStart, rawEnd - minGap);
+  let startX = THREE.MathUtils.clamp(sortedStart, usableStart, usableEnd - minGap);
+  let endX = THREE.MathUtils.clamp(Math.max(rawEnd, startX + minGap), startX + minGap, usableEnd);
+  if (endX - startX < minGap) {
+    startX = Math.max(usableStart, endX - minGap);
+    endX = Math.min(usableEnd, startX + minGap);
+  }
+  const bandHeight = THREE.MathUtils.clamp(p.rim_thickness + 1.2, 3.2, 9);
+  const topY = bounds.maxY + 0.15;
+  const bottomY = topY - bandHeight;
+  return {
+    enabled: construction.topVisorEnabled,
+    depth: construction.topVisorDepth,
+    startX,
+    endX,
+    minX: usableStart,
+    maxX: usableEnd,
+    minGap,
+    topY,
+    bottomY,
+    handleY: bottomY + bandHeight * 0.5
+  };
+}
+
+function designTopVisorPlanarPolygons(p, definition = state.designDraft) {
+  const controls = designTopVisorControls(p, definition);
+  if (!controls.enabled || controls.depth <= 0.02) return [];
+  const rectangle = [
+    [controls.startX, controls.topY],
+    [controls.endX, controls.topY],
+    [controls.endX, controls.bottomY],
+    [controls.startX, controls.bottomY]
+  ];
+  try {
+    return polygonClipping.intersection(
+      designFrontPlanarPolygons(p, definition, 0),
+      [[rectangle]]
+    );
+  } catch {
+    return [];
+  }
+}
+
 function ringPath(ring, path = new THREE.Shape()) {
   path.moveTo(ring[0][0], ring[0][1]);
   ring.slice(1).forEach(([x, y]) => path.lineTo(x, y));
@@ -3491,6 +3660,40 @@ function drawDesignNoseWingsSketch(ctx, metrics, style) {
       ctx.lineTo(inner.x, inner.y);
       ctx.stroke();
     });
+  });
+  ctx.restore();
+}
+
+function drawDesignTopVisorSketch(ctx, metrics, style) {
+  const { p, scale, centerX, centerY } = metrics;
+  const controls = designTopVisorControls(p, state.designDraft);
+  if (!controls.enabled || controls.depth <= 0.02) return;
+  const polygons = designTopVisorPlanarPolygons(p, state.designDraft);
+  const toCanvas = ([x, y]) => ({ x: centerX + x * scale, y: centerY - y * scale });
+  const detailColor = normalizeDesignStyle(style).detailColor;
+  ctx.save();
+  ctx.fillStyle = rgbaFromHex(detailColor, 0.36);
+  ctx.strokeStyle = detailColor;
+  ctx.lineWidth = Math.max(1.4, scale * 0.11);
+  ctx.beginPath();
+  polygons.forEach((polygon) => polygon.forEach((ring) => {
+    const points = designCleanRing(ring).map(toCanvas);
+    if (points.length < 3) return;
+    ctx.moveTo(points[0].x, points[0].y);
+    points.slice(1).forEach((point) => ctx.lineTo(point.x, point.y));
+    ctx.closePath();
+  }));
+  ctx.fill("evenodd");
+  ctx.stroke();
+  ctx.setLineDash([6, 5]);
+  ctx.lineWidth = 1.3;
+  [controls.startX, controls.endX].forEach((x) => {
+    const top = toCanvas([x, controls.topY]);
+    const bottom = toCanvas([x, controls.bottomY]);
+    ctx.beginPath();
+    ctx.moveTo(top.x, top.y);
+    ctx.lineTo(bottom.x, bottom.y);
+    ctx.stroke();
   });
   ctx.restore();
 }
@@ -3947,6 +4150,30 @@ function addDesignNoseWings(p, material, definition, target = designModelGroup) 
       wing.name = `nose-wing-${side < 0 ? "left" : "right"}`;
       target.add(wing);
     });
+  });
+}
+
+function addDesignTopVisor(p, material, definition, target = designModelGroup) {
+  const construction = normalizeDesignConstruction(definition?.construction);
+  if (!construction.topVisorEnabled || construction.topVisorDepth <= 0.02) return;
+  const polygons = designTopVisorPlanarPolygons(p, definition);
+  if (!polygons.length) return;
+  const features = normalizeDesignFeatures(definition?.features, p);
+  const rearFaceZ = -features.extrude.depth / 2;
+  const overlap = Math.min(0.08, construction.topVisorDepth * 0.04);
+  designShapesFromPolygons(polygons).forEach((shape) => {
+    const geometry = new THREE.ExtrudeGeometry(shape, {
+      depth: construction.topVisorDepth,
+      bevelEnabled: false,
+      curveSegments: 8,
+      steps: 1
+    });
+    geometry.translate(0, 0, -construction.topVisorDepth);
+    geometry.translate(0, 0, rearFaceZ + overlap);
+    geometry.computeVertexNormals();
+    const shield = new THREE.Mesh(geometry, material);
+    shield.name = "top-light-shield";
+    target.add(shield);
   });
 }
 
@@ -4763,6 +4990,8 @@ function syncDesignFields() {
   setDesignSliderFieldValue(els.designNoseWingAngle, construction.noseWingAngle, "deg");
   setDesignSliderFieldValue(els.designNoseWingRound, construction.noseWingTopRound, "mm");
   setDesignSliderFieldValue(els.designNoseWingBaseRound, construction.noseWingBaseRound, "mm");
+  if (els.designTopVisorEnabled) els.designTopVisorEnabled.checked = construction.topVisorEnabled;
+  setDesignSliderFieldValue(els.designTopVisorDepth, construction.topVisorDepth, "mm");
   setDesignSliderFieldValue(els.designTempleStraight, construction.templeStraight, "mm");
   setDesignSliderFieldValue(els.designTempleHook, construction.templeHook, "mm");
   setDesignSliderFieldValue(els.designTempleHookAngle, construction.templeHookAngle, "deg");
@@ -4815,6 +5044,20 @@ function syncDesignSelectedCornerField() {
     }
     return;
   }
+  if (isDesignTopVisorSelection(designSketchSelectedIndex)) {
+    const handleIndex = THREE.MathUtils.clamp(designTopVisorSelectionHandleIndex(designSketchSelectedIndex), 0, 1);
+    designSketchSelectedIndex = designTopVisorHandleSelectionOffset + handleIndex;
+    if (els.designSelectedCornerLabel) {
+      els.designSelectedCornerLabel.textContent = handleIndex === 0 ? "Top shield start" : "Top shield end";
+    }
+    if (els.designSelectedCornerRadius) {
+      els.designSelectedCornerRadius.value = "";
+      els.designSelectedCornerRadius.disabled = true;
+      const unitLabel = els.designSelectedCornerRadius.nextElementSibling;
+      if (unitLabel?.tagName === "SMALL") unitLabel.textContent = "";
+    }
+    return;
+  }
   designSketchSelectedIndex = Math.max(0, Math.min(designSketchSelectedIndex, sketch.points.length - 1));
   if (els.designSelectedCornerLabel) els.designSelectedCornerLabel.textContent = `Point ${designSketchSelectedIndex + 1} radius`;
   if (els.designSelectedCornerRadius) {
@@ -4844,6 +5087,10 @@ function updateSelectedDesignCorner(radius, options = {}) {
     return;
   }
   if (isDesignBridgeSelection(designSketchSelectedIndex)) {
+    syncDesignSelectedCornerField();
+    return;
+  }
+  if (isDesignTopVisorSelection(designSketchSelectedIndex)) {
     syncDesignSelectedCornerField();
     return;
   }
@@ -5036,6 +5283,10 @@ function syncDesignDraftFromControlValues(options = {}) {
     noseWingRound: numberValue(els.designNoseWingRound, currentConstruction.noseWingTopRound),
     noseWingTopRound: numberValue(els.designNoseWingRound, currentConstruction.noseWingTopRound),
     noseWingBaseRound: numberValue(els.designNoseWingBaseRound, currentConstruction.noseWingBaseRound),
+    topVisorEnabled: checkboxValue(els.designTopVisorEnabled, currentConstruction.topVisorEnabled),
+    topVisorDepth: numberValue(els.designTopVisorDepth, currentConstruction.topVisorDepth),
+    topVisorStartX: currentConstruction.topVisorStartX,
+    topVisorEndX: currentConstruction.topVisorEndX,
     templeStraight: numberValue(els.designTempleStraight, currentConstruction.templeStraight),
     templeHook: numberValue(els.designTempleHook, currentConstruction.templeHook),
     templeHookAngle: numberValue(els.designTempleHookAngle, currentConstruction.templeHookAngle),
@@ -5169,6 +5420,8 @@ function handleDesignOperationChange(event) {
     els.designNoseWingAngle,
     els.designNoseWingRound,
     els.designNoseWingBaseRound,
+    els.designTopVisorEnabled,
+    els.designTopVisorDepth,
     els.designTempleStraight,
     els.designTempleHook,
     els.designTempleHookAngle,
@@ -5217,6 +5470,10 @@ function handleDesignOperationChange(event) {
       noseWingRound: els.designNoseWingRound?.value,
       noseWingTopRound: els.designNoseWingRound?.value,
       noseWingBaseRound: els.designNoseWingBaseRound?.value,
+      topVisorEnabled: els.designTopVisorEnabled?.checked,
+      topVisorDepth: els.designTopVisorDepth?.value,
+      topVisorStartX: currentConstruction.topVisorStartX,
+      topVisorEndX: currentConstruction.topVisorEndX,
       templeStraight: els.designTempleStraight?.value,
       templeHook: els.designTempleHook?.value,
       templeHookAngle: els.designTempleHookAngle?.value,
@@ -5468,6 +5725,10 @@ function parseDesignCode(source) {
       noseWingTopInnerOffset: readNumber("nose_wing_top_inner_offset", state.designDraft.construction?.noseWingTopInnerOffset),
       noseWingBottomInnerOffset: readNumber("nose_wing_bottom_inner_offset", state.designDraft.construction?.noseWingBottomInnerOffset),
       noseWingBottomOuterOffset: readNumber("nose_wing_bottom_outer_offset", state.designDraft.construction?.noseWingBottomOuterOffset),
+      topVisorEnabled: readBool("top_visor_enabled", state.designDraft.construction?.topVisorEnabled),
+      topVisorDepth: readNumber("top_visor_depth", state.designDraft.construction?.topVisorDepth),
+      topVisorStartX: readNumber("top_visor_start_x", state.designDraft.construction?.topVisorStartX),
+      topVisorEndX: readNumber("top_visor_end_x", state.designDraft.construction?.topVisorEndX),
       templeStraight: readNumber("temple_straight", state.designDraft.construction?.templeStraight),
       templeHook: readNumber("temple_hook", state.designDraft.construction?.templeHook),
       templeHookAngle: readNumber("temple_hook_angle", state.designDraft.construction?.templeHookAngle),
@@ -5653,6 +5914,7 @@ function buildDesign3mfExportParts(projectRoot) {
   return [
     part("front", "front", `${projectRoot}-front.3mf`, `${state.designDraft.name || "Frame Lab Creator"} front`, (group) => {
       addDesignFrontBody(p, frontMaterial, definition, group);
+      addDesignTopVisor(p, frontMaterial, definition, group);
       addDesignNoseWings(p, frontMaterial, definition, group);
       [-1, 1].forEach((side) => addDesignHingeAsset(
         side < 0 ? "frontRight" : "frontLeft",
@@ -7758,6 +8020,7 @@ function renderPublishedDesignPreview() {
   const outerLensWidth = p.lens_width + p.rim_thickness * 2;
   const center = p.bridge_width / 2 + outerLensWidth / 2;
   addDesignFrontBody(p, frontMaterial, definition, modelGroup);
+  addDesignTopVisor(p, frontMaterial, definition, modelGroup);
   addDesignNoseWings(p, frontMaterial, definition, modelGroup);
   [-1, 1].forEach((side) => {
     addDesignLens(side * center, p, lensMaterial, definition, modelGroup);
@@ -8124,6 +8387,9 @@ function mergeDesignConstructionFromScad(design, scadSource) {
     noseWingTopInnerOffset: "nose_wing_top_inner_offset",
     noseWingBottomInnerOffset: "nose_wing_bottom_inner_offset",
     noseWingBottomOuterOffset: "nose_wing_bottom_outer_offset",
+    topVisorDepth: "top_visor_depth",
+    topVisorStartX: "top_visor_start_x",
+    topVisorEndX: "top_visor_end_x",
     templeStraight: "temple_straight",
     templeHook: "temple_hook",
     templeHookAngle: "temple_hook_angle",
@@ -8156,6 +8422,8 @@ function mergeDesignConstructionFromScad(design, scadSource) {
   }
   const enabled = readScadBooleanLiteral(scadSource, "temple_chamfer_enabled");
   if (enabled !== undefined) construction.templeChamferEnabled = enabled;
+  const topVisorEnabled = readScadBooleanLiteral(scadSource, "top_visor_enabled");
+  if (topVisorEnabled !== undefined) construction.topVisorEnabled = topVisorEnabled;
   const nextDesign = { ...design, construction };
   const sketchPoints = readScadPointListLiteral(scadSource, "profile_points", [-0.7, 0.7, -0.7, 0.7], 20);
   if (sketchPoints.length >= 4) {
@@ -10403,6 +10671,10 @@ nose_wing_top_outer_offset = ${formatNumber(construction.noseWingTopOuterOffset)
 nose_wing_top_inner_offset = ${formatNumber(construction.noseWingTopInnerOffset)};
 nose_wing_bottom_inner_offset = ${formatNumber(construction.noseWingBottomInnerOffset)};
 nose_wing_bottom_outer_offset = ${formatNumber(construction.noseWingBottomOuterOffset)};
+top_visor_enabled = ${construction.topVisorEnabled ? "true" : "false"};
+top_visor_depth = ${formatNumber(construction.topVisorDepth)};
+top_visor_start_x = ${formatNumber(construction.topVisorStartX)};
+top_visor_end_x = ${formatNumber(construction.topVisorEndX)};
 hinge_pad_size = ${formatNumber(designHingePadSize)};
 hinge_pad_overlap = ${formatNumber(designHingePadOverlap)};
 hinge_rear_overlap = ${formatNumber(designHingeRearOverlap)};
