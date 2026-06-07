@@ -2966,7 +2966,7 @@ function renderDesignPreview(options = {}) {
   const center = p.bridge_width / 2 + outerLensWidth / 2;
   addDesignFrontBody(p, frontMaterial, definition);
   addDesignTopVisor(p, frontMaterial, definition);
-  addDesignNoseWings(p, frontMaterial, definition);
+  addDesignNoseWings(p, frontMaterial, definition, designModelGroup, { includeMountFace: false });
   [-1, 1].forEach((side) => {
     addDesignLens(side * center, p, lensMaterial, definition);
     addDesignTemple(side, p, outerLensWidth, templeMaterial, detailMaterial, style, definition);
@@ -4063,6 +4063,7 @@ function designNoseWingGeometryFromRows(rows, options) {
   const angle = THREE.MathUtils.clamp(parseDesignNumber(options?.angle, 0), -35, 35);
   const side = options?.side < 0 ? -1 : 1;
   const tiltX = side * Math.tan(THREE.MathUtils.degToRad(angle)) * depth;
+  const includeMountFace = options?.includeMountFace !== false;
   const distances = designNoseWingRowDistances(cleanRows);
   const totalLength = Math.max(0.001, distances[distances.length - 1]);
   const columns = 24;
@@ -4113,14 +4114,16 @@ function designNoseWingGeometryFromRows(rows, options) {
     }
   }
 
-  for (let rowIndex = 0; rowIndex < cleanRows.length - 1; rowIndex += 1) {
-    for (let colIndex = 0; colIndex < columns; colIndex += 1) {
-      const a = baseVertex(rowIndex, colIndex);
-      const b = baseVertex(rowIndex + 1, colIndex);
-      const c = baseVertex(rowIndex + 1, colIndex + 1);
-      const d = baseVertex(rowIndex, colIndex + 1);
-      addFace(a, c, b);
-      addFace(a, d, c);
+  if (includeMountFace) {
+    for (let rowIndex = 0; rowIndex < cleanRows.length - 1; rowIndex += 1) {
+      for (let colIndex = 0; colIndex < columns; colIndex += 1) {
+        const a = baseVertex(rowIndex, colIndex);
+        const b = baseVertex(rowIndex + 1, colIndex);
+        const c = baseVertex(rowIndex + 1, colIndex + 1);
+        const d = baseVertex(rowIndex, colIndex + 1);
+        addFace(a, c, b);
+        addFace(a, d, c);
+      }
     }
   }
 
@@ -4208,7 +4211,8 @@ function addDesignNoseWings(p, material, definition, target = designModelGroup, 
       depth,
       topZ,
       angle: construction.noseWingAngle,
-      side
+      side,
+      includeMountFace: options.includeMountFace
     });
     if (!geometry) return;
     const wing = new THREE.Mesh(geometry, material);
@@ -8082,7 +8086,7 @@ function renderPublishedDesignPreview() {
   const center = p.bridge_width / 2 + outerLensWidth / 2;
   addDesignFrontBody(p, frontMaterial, definition, modelGroup);
   addDesignTopVisor(p, frontMaterial, definition, modelGroup);
-  addDesignNoseWings(p, frontMaterial, definition, modelGroup);
+  addDesignNoseWings(p, frontMaterial, definition, modelGroup, { includeMountFace: false });
   [-1, 1].forEach((side) => {
     addDesignLens(side * center, p, lensMaterial, definition, modelGroup);
     addDesignTemple(side, p, outerLensWidth, templeMaterial, detailMaterial, style, definition, modelGroup);
