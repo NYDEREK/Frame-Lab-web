@@ -3611,18 +3611,6 @@ function designNoseWingCornerPoint(p, definition, side, edge, y) {
   return [edge === "outer" ? boundary.outerX : boundary.innerX, y];
 }
 
-function designNoseWingBoundarySamples(p, definition, side, edge, fromY, toY) {
-  const distance = Math.abs(toY - fromY);
-  if (distance <= 0.001) return [];
-  const segments = Math.max(2, Math.min(32, Math.ceil(distance / 0.55)));
-  const points = [];
-  for (let index = 1; index < segments; index += 1) {
-    const y = fromY + (toY - fromY) * (index / segments);
-    points.push(designNoseWingCornerPoint(p, definition, side, edge, y));
-  }
-  return points;
-}
-
 function designNoseWingCornerPoints(p, definition, side) {
   const construction = normalizeDesignConstruction(definition?.construction);
   if (construction.noseWingHeight <= 0.02) return [];
@@ -3664,36 +3652,54 @@ function designNoseWingLineSegments(p, definition, side) {
   ];
 }
 
-function designNoseWingFootprintRing(p, definition, side) {
+function designNoseWingRuledRows(p, definition, side) {
   const corners = designNoseWingCornerPoints(p, definition, side);
   if (corners.length < 4) return [];
   const [topOuter, topInner, bottomInner, bottomOuter] = corners.map((corner) => corner.point);
-  const innerBoundary = designNoseWingBoundarySamples(p, definition, side, "inner", topInner[1], bottomInner[1]);
-  const outerBoundary = designNoseWingBoundarySamples(p, definition, side, "outer", bottomOuter[1], topOuter[1]);
-  return designCleanRing([
-    topOuter,
-    topInner,
-    ...innerBoundary,
-    bottomInner,
-    bottomOuter,
-    ...outerBoundary
+  const span = Math.max(
+    designPointDistance2D(topOuter, bottomOuter),
+    designPointDistance2D(topInner, bottomInner),
+    Math.abs(topOuter[1] - bottomOuter[1]),
+    Math.abs(topInner[1] - bottomInner[1])
+  );
+  const rowCount = Math.max(4, Math.min(28, Math.ceil(span / 0.65)));
+  const rows = [];
+  for (let index = 0; index <= rowCount; index += 1) {
+    const t = index / rowCount;
+    const outerY = topOuter[1] + (bottomOuter[1] - topOuter[1]) * t;
+    const innerY = topInner[1] + (bottomInner[1] - topInner[1]) * t;
+    const outer = index === 0 ? topOuter : index === rowCount
+      ? bottomOuter
+      : designNoseWingCornerPoint(p, definition, side, "outer", outerY);
+    const inner = index === 0 ? topInner : index === rowCount
+      ? bottomInner
+      : designNoseWingCornerPoint(p, definition, side, "inner", innerY);
+    const width = side * (inner[0] - outer[0]);
+    if (Number.isFinite(width) && width > 0.18) rows.push({ outer, inner });
+  }
+  return rows;
+}
+
+function designNoseWingFootprintRing(p, definition, side) {
+  const rows = designNoseWingRuledRows(p, definition, side);
+  if (rows.length < 2) return [];
+  const fallback = designCleanRing([
+    rows[0].outer,
+    rows[0].inner,
+    rows[rows.length - 1].inner,
+    rows[rows.length - 1].outer
   ]);
+  const ring = designCleanRing([
+    ...rows.map((row) => row.outer),
+    ...[...rows].reverse().map((row) => row.inner)
+  ]);
+  if (ring.length < 3 || designRingHasSelfIntersection(ring)) return fallback;
+  return ring;
 }
 
 function designNoseWingFootprintPolygons(p, definition, side) {
   const ring = designNoseWingFootprintRing(p, definition, side);
   if (ring.length < 3) return [];
-  try {
-    const clipped = polygonClipping.intersection(
-      designFrontPlanarPolygons(p, definition, 0),
-      [ring]
-    );
-    if (Array.isArray(clipped) && clipped.some((polygon) => Array.isArray(polygon?.[0]) && polygon[0].length >= 3)) {
-      return clipped;
-    }
-  } catch {
-    return [[ring]];
-  }
   return [[ring]];
 }
 
@@ -3999,6 +4005,51 @@ function designNoseWingBlendEdgeIndices(ring) {
 function designPointDistance2D(a, b) {
   if (!Array.isArray(a) || !Array.isArray(b)) return Infinity;
   return Math.hypot(a[0] - b[0], a[1] - b[1]);
+}
+
+function designSegmentOrientation(a, b, c) {
+  return (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
+}
+
+function designPointOnSegment(a, b, point) {
+  const epsilon = 0.0001;
+  return Math.abs(designSegmentOrientation(a, b, point)) <= epsilon
+    && point[0] >= Math.min(a[0], b[0]) - epsilon
+    && point[0] <= Math.max(a[0], b[0]) + epsilon
+    && point[1] >= Math.min(a[1], b[1]) - epsilon
+    && point[1] <= Math.max(a[1], b[1]) + epsilon;
+}
+
+function designSegmentsIntersect2D(a, b, c, d) {
+  const epsilon = 0.0001;
+  const o1 = designSegmentOrientation(a, b, c);
+  const o2 = designSegmentOrientation(a, b, d);
+  const o3 = designSegmentOrientation(c, d, a);
+  const o4 = designSegmentOrientation(c, d, b);
+  if (Math.abs(o1) <= epsilon && designPointOnSegment(a, b, c)) return true;
+  if (Math.abs(o2) <= epsilon && designPointOnSegment(a, b, d)) return true;
+  if (Math.abs(o3) <= epsilon && designPointOnSegment(c, d, a)) return true;
+  if (Math.abs(o4) <= epsilon && designPointOnSegment(c, d, b)) return true;
+  return (o1 > epsilon) !== (o2 > epsilon) && (o3 > epsilon) !== (o4 > epsilon);
+}
+
+function designRingHasSelfIntersection(ring) {
+  const cleanRing = designCleanRing(ring);
+  if (cleanRing.length < 4) return false;
+  for (let index = 0; index < cleanRing.length; index += 1) {
+    const next = (index + 1) % cleanRing.length;
+    for (let other = index + 1; other < cleanRing.length; other += 1) {
+      const otherNext = (other + 1) % cleanRing.length;
+      const adjacent = index === other
+        || next === other
+        || otherNext === index;
+      if (adjacent) continue;
+      if (designSegmentsIntersect2D(cleanRing[index], cleanRing[next], cleanRing[other], cleanRing[otherNext])) {
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
 function designNoseWingTargetEdgeIndex(ring, target, usedIndices = new Set()) {
