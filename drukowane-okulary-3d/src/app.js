@@ -3447,7 +3447,8 @@ function designFrontPlanarBounds(p, definition) {
 function designTopVisorControls(p, definition = state.designDraft) {
   const construction = normalizeDesignConstruction(definition?.construction);
   const bounds = designFrontPlanarBounds(p, definition);
-  const rimPoints = [-1, 1].flatMap((side) => designOuterRimRing(side, p, definition));
+  const authoredSide = 1;
+  const rimPoints = designOuterRimRing(authoredSide, p, definition);
   const rimBounds = rimPoints.reduce((next, [x, y]) => ({
     minX: Math.min(next.minX, x),
     maxX: Math.max(next.maxX, x),
@@ -3460,13 +3461,15 @@ function designTopVisorControls(p, definition = state.designDraft) {
     && Number.isFinite(rimBounds.maxY);
   const selectionBounds = hasRimBounds ? rimBounds : bounds;
   const margin = Math.max(1.2, p.rim_thickness * 0.32);
-  const minGap = Math.max(10, p.rim_thickness * 2.8);
+  const minGap = Math.max(6, p.rim_thickness * 1.8);
   const minX = selectionBounds.minX + margin;
   const maxX = selectionBounds.maxX - margin;
   const usableStart = Math.min(minX, maxX - minGap);
   const usableEnd = Math.max(maxX, usableStart + minGap);
-  const rawStart = parseDesignNumber(construction.topVisorStartX, -Math.min(60, p.head_width * 0.42));
-  const rawEnd = parseDesignNumber(construction.topVisorEndX, Math.min(60, p.head_width * 0.42));
+  const defaultStart = usableStart;
+  const defaultEnd = usableEnd;
+  const rawStart = parseDesignNumber(construction.topVisorStartX, defaultStart);
+  const rawEnd = parseDesignNumber(construction.topVisorEndX, defaultEnd);
   const sortedStart = Math.min(rawStart, rawEnd - minGap);
   let startX = THREE.MathUtils.clamp(sortedStart, usableStart, usableEnd - minGap);
   let endX = THREE.MathUtils.clamp(Math.max(rawEnd, startX + minGap), startX + minGap, usableEnd);
@@ -3495,30 +3498,38 @@ function designTopVisorControls(p, definition = state.designDraft) {
     minGap,
     topY,
     bottomY,
-    handleY: bottomY + bandHeight * 0.5
+    handleY: bottomY + bandHeight * 0.5,
+    segments: [
+      { side: -1, startX: -endX, endX: -startX },
+      { side: 1, startX, endX }
+    ]
   };
 }
 
 function designTopVisorPlanarPolygons(p, definition = state.designDraft) {
   const controls = designTopVisorControls(p, definition);
   if (!controls.enabled || controls.depth <= 0.02) return [];
-  const width = Math.max(0.1, controls.endX - controls.startX);
   const height = Math.max(0.1, controls.topY - controls.bottomY);
-  const rectangle = designRoundedRectRing(
-    width,
-    height,
-    Math.min(controls.radius, width / 2 - 0.01, height / 2 - 0.01),
-    (controls.startX + controls.endX) / 2,
-    (controls.topY + controls.bottomY) / 2
-  );
-  try {
-    return polygonClipping.intersection(
-      designFrontPlanarPolygons(p, definition, 0),
-      [[rectangle]]
+  return controls.segments.flatMap((segment) => {
+    const width = Math.max(0.1, segment.endX - segment.startX);
+    const rectangle = designRoundedRectRing(
+      width,
+      height,
+      Math.min(controls.radius, width / 2 - 0.01, height / 2 - 0.01),
+      (segment.startX + segment.endX) / 2,
+      (controls.topY + controls.bottomY) / 2
     );
-  } catch {
-    return [];
-  }
+    try {
+      const center = designLensCenter(p);
+      const rim = polygonClipping.difference(
+        [designOutlineRing(segment.side * center, p, definition, p.rim_thickness, segment.side < 0)],
+        [designOutlineRing(segment.side * center, p, definition, 0, segment.side < 0)]
+      );
+      return polygonClipping.intersection(rim, [[rectangle]]);
+    } catch {
+      return [];
+    }
+  });
 }
 
 function ringPath(ring, path = new THREE.Shape()) {
@@ -3753,21 +3764,25 @@ function drawDesignTopVisorSketch(ctx, metrics, style) {
   ctx.stroke();
   ctx.setLineDash([]);
   ctx.lineWidth = Math.max(1.6, scale * 0.13);
-  const guideStart = toCanvas([controls.startX, controls.handleY]);
-  const guideEnd = toCanvas([controls.endX, controls.handleY]);
-  ctx.beginPath();
-  ctx.moveTo(guideStart.x, guideStart.y);
-  ctx.lineTo(guideEnd.x, guideEnd.y);
-  ctx.stroke();
+  controls.segments.forEach((segment) => {
+    const guideStart = toCanvas([segment.startX, controls.handleY]);
+    const guideEnd = toCanvas([segment.endX, controls.handleY]);
+    ctx.beginPath();
+    ctx.moveTo(guideStart.x, guideStart.y);
+    ctx.lineTo(guideEnd.x, guideEnd.y);
+    ctx.stroke();
+  });
   ctx.setLineDash([6, 5]);
   ctx.lineWidth = 1.3;
-  [controls.startX, controls.endX].forEach((x) => {
-    const top = toCanvas([x, controls.topY]);
-    const bottom = toCanvas([x, controls.bottomY]);
-    ctx.beginPath();
-    ctx.moveTo(top.x, top.y);
-    ctx.lineTo(bottom.x, bottom.y);
-    ctx.stroke();
+  controls.segments.forEach((segment) => {
+    [segment.startX, segment.endX].forEach((x) => {
+      const top = toCanvas([x, controls.topY]);
+      const bottom = toCanvas([x, controls.bottomY]);
+      ctx.beginPath();
+      ctx.moveTo(top.x, top.y);
+      ctx.lineTo(bottom.x, bottom.y);
+      ctx.stroke();
+    });
   });
   ctx.restore();
 }
@@ -5267,7 +5282,7 @@ function syncDesignSelectedCornerField() {
     const handleIndex = THREE.MathUtils.clamp(designTopVisorSelectionHandleIndex(designSketchSelectedIndex), 0, 1);
     designSketchSelectedIndex = designTopVisorHandleSelectionOffset + handleIndex;
     if (els.designSelectedCornerLabel) {
-      els.designSelectedCornerLabel.textContent = handleIndex === 0 ? "Top shield start" : "Top shield end";
+      els.designSelectedCornerLabel.textContent = handleIndex === 0 ? "Right lens shield start" : "Right lens shield end";
     }
     if (els.designSelectedCornerRadius) {
       els.designSelectedCornerRadius.value = "";
@@ -10911,8 +10926,8 @@ top_visor_enabled = ${construction.topVisorEnabled ? "true" : "false"};
 top_visor_depth = ${formatNumber(construction.topVisorDepth)};
 top_visor_band_height = ${formatNumber(construction.topVisorBandHeight)};
 top_visor_radius = ${formatNumber(construction.topVisorRadius)};
-top_visor_start_x = ${formatNumber(construction.topVisorStartX)};
-top_visor_end_x = ${formatNumber(construction.topVisorEndX)};
+top_visor_start_x = ${formatNumber(topVisorControls.startX)};
+top_visor_end_x = ${formatNumber(topVisorControls.endX)};
 top_visor_top_y = ${formatNumber(topVisorControls.topY)};
 top_visor_bottom_y = top_visor_top_y - top_visor_band_height;
 hinge_pad_size = ${formatNumber(designHingePadSize)};
@@ -11059,14 +11074,23 @@ module nose_wing_profile(side=1) {
       polygon(path);
 }
 
-module top_visor_profile() {
-  shield_width = max(0.1, top_visor_end_x - top_visor_start_x);
+module top_visor_side_profile(side=1) {
+  side_start_x = side < 0 ? -top_visor_end_x : top_visor_start_x;
+  side_end_x = side < 0 ? -top_visor_start_x : top_visor_end_x;
+  shield_width = max(0.1, side_end_x - side_start_x);
   shield_height = max(0.1, top_visor_top_y - top_visor_bottom_y);
   shield_radius = min(max(0, top_visor_radius), shield_width/2 - 0.01, shield_height/2 - 0.01);
   intersection() {
-    front_planar_profile();
-    translate([(top_visor_start_x + top_visor_end_x)/2, (top_visor_top_y + top_visor_bottom_y)/2])
+    rim_profile(side*lens_center);
+    translate([(side_start_x + side_end_x)/2, (top_visor_top_y + top_visor_bottom_y)/2])
       rounded_rect([shield_width, shield_height], shield_radius);
+  }
+}
+
+module top_visor_profile() {
+  union() {
+    top_visor_side_profile(-1);
+    top_visor_side_profile(1);
   }
 }
 
