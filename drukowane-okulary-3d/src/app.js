@@ -2361,11 +2361,11 @@ function designTopVisorSelectionHandleIndex(index) {
 
 function designNoseWingHandleLabel(index) {
   return [
-    "Top outer nose wing radius",
-    "Top inner nose wing radius",
-    "Bottom inner nose wing radius",
-    "Bottom outer nose wing radius"
-  ][THREE.MathUtils.clamp(index, 0, 3)] || "Nose wing radius";
+    "Top outer nose wing point",
+    "Top inner nose wing point",
+    "Bottom inner nose wing point",
+    "Bottom outer nose wing point"
+  ][THREE.MathUtils.clamp(index, 0, 3)] || "Nose wing point";
 }
 
 function designBridgeHandlePoints(p, definition = state.designDraft) {
@@ -4060,31 +4060,28 @@ function designNoseWingGeometryFromRows(rows, options) {
 
   const depth = Math.max(0.02, parseDesignNumber(options?.depth, 0.02));
   const topZ = parseDesignNumber(options?.topZ, 0);
-  const legacyRound = parseDesignNumber(options?.round, 0);
-  const topRound = THREE.MathUtils.clamp(parseDesignNumber(options?.topRound, legacyRound), 0, designNoseWingRoundMax);
-  const baseRound = THREE.MathUtils.clamp(parseDesignNumber(options?.baseRound, legacyRound), 0, designNoseWingRoundMax);
   const angle = THREE.MathUtils.clamp(parseDesignNumber(options?.angle, 0), -35, 35);
   const side = options?.side < 0 ? -1 : 1;
   const tiltX = side * Math.tan(THREE.MathUtils.degToRad(angle)) * depth;
-  const distances = designNoseWingRowDistances(cleanRows);
-  const totalLength = Math.max(0.001, distances[distances.length - 1]);
-  const columns = 16;
+  const columns = 24;
   const vertices = [];
   const indices = [];
   const topVertex = (rowIndex, colIndex) => rowIndex * (columns + 1) + colIndex;
+  const addFace = (a, b, c) => {
+    if (side < 0) {
+      indices.push(a, c, b);
+    } else {
+      indices.push(a, b, c);
+    }
+  };
 
-  cleanRows.forEach((row, rowIndex) => {
-    const fromTop = distances[rowIndex];
-    const fromBottom = totalLength - fromTop;
-    const topFade = topRound > 0.001 ? designSmoothStep(fromTop / topRound) : 1;
-    const bottomFade = baseRound > 0.001 ? designSmoothStep(fromBottom / baseRound) : 1;
-    const endFade = Math.min(topFade, bottomFade);
+  cleanRows.forEach((row) => {
     for (let colIndex = 0; colIndex <= columns; colIndex += 1) {
       const t = colIndex / columns;
       const x = row.outer[0] + (row.inner[0] - row.outer[0]) * t;
       const y = row.outer[1] + (row.inner[1] - row.outer[1]) * t;
-      const crossFade = Math.pow(Math.sin(Math.PI * t), 0.72);
-      const protrusion = depth * crossFade * endFade;
+      const u = 2 * t - 1;
+      const protrusion = depth * Math.sqrt(Math.max(0, 1 - u * u));
       vertices.push(x + tiltX * (protrusion / depth), y, topZ - protrusion);
     }
   });
@@ -4095,7 +4092,8 @@ function designNoseWingGeometryFromRows(rows, options) {
       const b = topVertex(rowIndex, colIndex + 1);
       const c = topVertex(rowIndex + 1, colIndex + 1);
       const d = topVertex(rowIndex + 1, colIndex);
-      indices.push(a, b, c, a, c, d);
+      addFace(a, b, c);
+      addFace(a, c, d);
     }
   }
 
@@ -4110,7 +4108,28 @@ function designNoseWingGeometryFromRows(rows, options) {
     ];
     const capContour = capRing.map(([x, y]) => new THREE.Vector2(x, y));
     THREE.ShapeUtils.triangulateShape(capContour, [])
-      .forEach(([a, b, c]) => indices.push(capIndices[c], capIndices[b], capIndices[a]));
+      .forEach(([a, b, c]) => addFace(capIndices[c], capIndices[b], capIndices[a]));
+  }
+
+  const closeEndRow = (rowIndex, reverse = false) => {
+    const row = cleanRows[rowIndex];
+    const centerX = (row.outer[0] + row.inner[0]) / 2;
+    const centerY = (row.outer[1] + row.inner[1]) / 2;
+    const centerIndex = vertices.length / 3;
+    vertices.push(centerX, centerY, topZ);
+    for (let colIndex = 0; colIndex < columns; colIndex += 1) {
+      const a = topVertex(rowIndex, colIndex);
+      const b = topVertex(rowIndex, colIndex + 1);
+      if (reverse) {
+        addFace(centerIndex, b, a);
+      } else {
+        addFace(centerIndex, a, b);
+      }
+    }
+  };
+  if (cleanRows.length >= 2) {
+    closeEndRow(0, false);
+    closeEndRow(cleanRows.length - 1, true);
   }
 
   const geometry = new THREE.BufferGeometry();
@@ -4159,8 +4178,6 @@ function addDesignNoseWings(p, material, definition, target = designModelGroup, 
   const depth = construction.noseWingHeight;
   if (depth <= 0.02) return;
   const features = normalizeDesignFeatures(definition?.features, p);
-  const topRound = Math.min(construction.noseWingTopRound, designNoseWingRoundMax);
-  const baseRound = Math.min(construction.noseWingBaseRound, designNoseWingRoundMax);
   const overlap = Math.min(0.42, Math.max(0.16, depth * 0.14));
   const topZ = Number.isFinite(options?.topZ) ? options.topZ : -features.extrude.depth / 2 + overlap;
   [-1, 1].forEach((side) => {
@@ -4168,8 +4185,6 @@ function addDesignNoseWings(p, material, definition, target = designModelGroup, 
     const geometry = designNoseWingGeometryFromRows(rows, {
       depth,
       topZ,
-      topRound,
-      baseRound,
       angle: construction.noseWingAngle,
       side
     });
@@ -5054,10 +5069,10 @@ function syncDesignSelectedCornerField() {
       els.designSelectedCornerLabel.textContent = designNoseWingHandleLabel(handleIndex);
     }
     if (els.designSelectedCornerRadius) {
-      els.designSelectedCornerRadius.disabled = false;
-      const construction = normalizeDesignConstruction(state.designDraft.construction);
-      const selectedRound = handleIndex <= 1 ? construction.noseWingTopRound : construction.noseWingBaseRound;
-      setDesignSliderFieldValue(els.designSelectedCornerRadius, selectedRound, "mm");
+      els.designSelectedCornerRadius.value = "";
+      els.designSelectedCornerRadius.disabled = true;
+      const unitLabel = els.designSelectedCornerRadius.nextElementSibling;
+      if (unitLabel?.tagName === "SMALL") unitLabel.textContent = "";
     }
     return;
   }
@@ -5099,22 +5114,7 @@ function syncDesignSelectedCornerField() {
 
 function updateSelectedDesignCorner(radius, options = {}) {
   if (isDesignNoseWingSelection(designSketchSelectedIndex)) {
-    const construction = normalizeDesignConstruction(state.designDraft.construction);
-    const handleIndex = THREE.MathUtils.clamp(designNoseWingSelectionHandleIndex(designSketchSelectedIndex), 0, 3);
-    const key = handleIndex <= 1 ? "noseWingTopRound" : "noseWingBaseRound";
-    const nextRadius = THREE.MathUtils.clamp(parseDesignNumber(radius, construction[key]), 0, designNoseWingRoundMax);
-    if (Math.abs(construction[key] - nextRadius) < 0.0001) return;
-    if (options.capture !== false) captureDesignHistory();
-    state.designDraft.construction = normalizeDesignConstruction({
-      ...state.designDraft.construction,
-      [key]: nextRadius,
-      noseWingRound: handleIndex <= 1 ? nextRadius : construction.noseWingTopRound
-    });
-    state.designDraft.manualCode = false;
     syncDesignSelectedCornerField();
-    syncDesignFields();
-    syncDesignCode();
-    renderDesignPreview({ fitView: false });
     return;
   }
   if (isDesignBridgeSelection(designSketchSelectedIndex)) {
