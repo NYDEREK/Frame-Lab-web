@@ -4063,10 +4063,15 @@ function designNoseWingGeometryFromRows(rows, options) {
   const angle = THREE.MathUtils.clamp(parseDesignNumber(options?.angle, 0), -35, 35);
   const side = options?.side < 0 ? -1 : 1;
   const tiltX = side * Math.tan(THREE.MathUtils.degToRad(angle)) * depth;
+  const distances = designNoseWingRowDistances(cleanRows);
+  const totalLength = Math.max(0.001, distances[distances.length - 1]);
   const columns = 24;
   const vertices = [];
   const indices = [];
-  const topVertex = (rowIndex, colIndex) => rowIndex * (columns + 1) + colIndex;
+  const stride = columns + 1;
+  const surfaceVertex = (rowIndex, colIndex) => rowIndex * stride + colIndex;
+  const baseStart = cleanRows.length * stride;
+  const baseVertex = (rowIndex, colIndex) => baseStart + rowIndex * stride + colIndex;
   const addFace = (a, b, c) => {
     if (side < 0) {
       indices.push(a, c, b);
@@ -4075,62 +4080,79 @@ function designNoseWingGeometryFromRows(rows, options) {
     }
   };
 
+  cleanRows.forEach((row, rowIndex) => {
+    const lengthT = distances[rowIndex] / totalLength;
+    const lengthU = 2 * lengthT - 1;
+    const protrusion = depth * Math.sqrt(Math.max(0, 1 - lengthU * lengthU));
+    const shiftX = tiltX * (protrusion / depth);
+    for (let colIndex = 0; colIndex <= columns; colIndex += 1) {
+      const t = colIndex / columns;
+      const x = row.outer[0] + (row.inner[0] - row.outer[0]) * t;
+      const y = row.outer[1] + (row.inner[1] - row.outer[1]) * t;
+      vertices.push(x + shiftX, y, topZ - protrusion);
+    }
+  });
+
   cleanRows.forEach((row) => {
     for (let colIndex = 0; colIndex <= columns; colIndex += 1) {
       const t = colIndex / columns;
       const x = row.outer[0] + (row.inner[0] - row.outer[0]) * t;
       const y = row.outer[1] + (row.inner[1] - row.outer[1]) * t;
-      const u = 2 * t - 1;
-      const protrusion = depth * Math.sqrt(Math.max(0, 1 - u * u));
-      vertices.push(x + tiltX * (protrusion / depth), y, topZ - protrusion);
+      vertices.push(x, y, topZ);
     }
   });
 
   for (let rowIndex = 0; rowIndex < cleanRows.length - 1; rowIndex += 1) {
     for (let colIndex = 0; colIndex < columns; colIndex += 1) {
-      const a = topVertex(rowIndex, colIndex);
-      const b = topVertex(rowIndex, colIndex + 1);
-      const c = topVertex(rowIndex + 1, colIndex + 1);
-      const d = topVertex(rowIndex + 1, colIndex);
+      const a = surfaceVertex(rowIndex, colIndex);
+      const b = surfaceVertex(rowIndex, colIndex + 1);
+      const c = surfaceVertex(rowIndex + 1, colIndex + 1);
+      const d = surfaceVertex(rowIndex + 1, colIndex);
       addFace(a, b, c);
       addFace(a, c, d);
     }
   }
 
-  const capRing = designCleanRing([
-    ...cleanRows.map((row) => row.outer),
-    ...[...cleanRows].reverse().map((row) => row.inner)
-  ]);
-  if (capRing.length >= 3 && !designRingHasSelfIntersection(capRing)) {
-    const capIndices = [
-      ...cleanRows.map((_, rowIndex) => topVertex(rowIndex, 0)),
-      ...cleanRows.map((_, rowIndex) => topVertex(cleanRows.length - 1 - rowIndex, columns))
-    ];
-    const capContour = capRing.map(([x, y]) => new THREE.Vector2(x, y));
-    THREE.ShapeUtils.triangulateShape(capContour, [])
-      .forEach(([a, b, c]) => addFace(capIndices[c], capIndices[b], capIndices[a]));
+  for (let rowIndex = 0; rowIndex < cleanRows.length - 1; rowIndex += 1) {
+    for (let colIndex = 0; colIndex < columns; colIndex += 1) {
+      const a = baseVertex(rowIndex, colIndex);
+      const b = baseVertex(rowIndex + 1, colIndex);
+      const c = baseVertex(rowIndex + 1, colIndex + 1);
+      const d = baseVertex(rowIndex, colIndex + 1);
+      addFace(a, c, b);
+      addFace(a, d, c);
+    }
   }
 
-  const closeEndRow = (rowIndex, reverse = false) => {
-    const row = cleanRows[rowIndex];
-    const centerX = (row.outer[0] + row.inner[0]) / 2;
-    const centerY = (row.outer[1] + row.inner[1]) / 2;
-    const centerIndex = vertices.length / 3;
-    vertices.push(centerX, centerY, topZ);
+  const closeColumn = (colIndex) => {
+    for (let rowIndex = 0; rowIndex < cleanRows.length - 1; rowIndex += 1) {
+      const surfaceA = surfaceVertex(rowIndex, colIndex);
+      const surfaceB = surfaceVertex(rowIndex + 1, colIndex);
+      const baseA = baseVertex(rowIndex, colIndex);
+      const baseB = baseVertex(rowIndex + 1, colIndex);
+      addFace(baseA, surfaceB, surfaceA);
+      addFace(baseA, baseB, surfaceB);
+    }
+  };
+  const closeRow = (rowIndex, reverse = false) => {
     for (let colIndex = 0; colIndex < columns; colIndex += 1) {
-      const a = topVertex(rowIndex, colIndex);
-      const b = topVertex(rowIndex, colIndex + 1);
+      const surfaceA = surfaceVertex(rowIndex, colIndex);
+      const surfaceB = surfaceVertex(rowIndex, colIndex + 1);
+      const baseA = baseVertex(rowIndex, colIndex);
+      const baseB = baseVertex(rowIndex, colIndex + 1);
       if (reverse) {
-        addFace(centerIndex, b, a);
+        addFace(baseA, surfaceB, baseB);
+        addFace(baseA, surfaceA, surfaceB);
       } else {
-        addFace(centerIndex, a, b);
+        addFace(baseA, baseB, surfaceB);
+        addFace(baseA, surfaceB, surfaceA);
       }
     }
   };
-  if (cleanRows.length >= 2) {
-    closeEndRow(0, false);
-    closeEndRow(cleanRows.length - 1, true);
-  }
+  closeColumn(0);
+  closeColumn(columns);
+  closeRow(0, false);
+  closeRow(cleanRows.length - 1, true);
 
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute("position", new THREE.Float32BufferAttribute(vertices, 3));
