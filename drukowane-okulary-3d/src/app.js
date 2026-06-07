@@ -2966,7 +2966,7 @@ function renderDesignPreview(options = {}) {
   const center = p.bridge_width / 2 + outerLensWidth / 2;
   addDesignFrontBody(p, frontMaterial, definition);
   addDesignTopVisor(p, frontMaterial, definition);
-  addDesignNoseWings(p, frontMaterial, definition, designModelGroup, { includeMountFace: false });
+  addDesignNoseWings(p, frontMaterial, definition, designModelGroup, { includeMountFace: false, previewContact: true });
   [-1, 1].forEach((side) => {
     addDesignLens(side * center, p, lensMaterial, definition);
     addDesignTemple(side, p, outerLensWidth, templeMaterial, detailMaterial, style, definition);
@@ -4204,7 +4204,10 @@ function addDesignNoseWings(p, material, definition, target = designModelGroup, 
   if (depth <= 0.02) return;
   const features = normalizeDesignFeatures(definition?.features, p);
   const overlap = Math.min(0.42, Math.max(0.16, depth * 0.14));
-  const topZ = Number.isFinite(options?.topZ) ? options.topZ : -features.extrude.depth / 2 + overlap;
+  const rearFaceZ = -features.extrude.depth / 2;
+  const previewContactOffset = 0.015;
+  const defaultTopZ = options?.previewContact ? rearFaceZ - previewContactOffset : rearFaceZ + overlap;
+  const topZ = Number.isFinite(options?.topZ) ? options.topZ : defaultTopZ;
   [-1, 1].forEach((side) => {
     const rows = designNoseWingRuledRows(p, definition, side);
     const geometry = designNoseWingGeometryFromRows(rows, {
@@ -8086,7 +8089,7 @@ function renderPublishedDesignPreview() {
   const center = p.bridge_width / 2 + outerLensWidth / 2;
   addDesignFrontBody(p, frontMaterial, definition, modelGroup);
   addDesignTopVisor(p, frontMaterial, definition, modelGroup);
-  addDesignNoseWings(p, frontMaterial, definition, modelGroup, { includeMountFace: false });
+  addDesignNoseWings(p, frontMaterial, definition, modelGroup, { includeMountFace: false, previewContact: true });
   [-1, 1].forEach((side) => {
     addDesignLens(side * center, p, lensMaterial, definition, modelGroup);
     addDesignTemple(side, p, outerLensWidth, templeMaterial, detailMaterial, style, definition, modelGroup);
