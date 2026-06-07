@@ -2966,7 +2966,7 @@ function renderDesignPreview(options = {}) {
   const center = p.bridge_width / 2 + outerLensWidth / 2;
   addDesignFrontBody(p, frontMaterial, definition);
   addDesignTopVisor(p, frontMaterial, definition);
-  addDesignNoseWings(p, frontMaterial, definition, designModelGroup, { includeMountFace: false, previewContact: true });
+  addDesignNoseWings(p, frontMaterial, definition, designModelGroup, { includeMountFace: true, previewContact: true });
   [-1, 1].forEach((side) => {
     addDesignLens(side * center, p, lensMaterial, definition);
     addDesignTemple(side, p, outerLensWidth, templeMaterial, detailMaterial, style, definition);
@@ -4073,7 +4073,35 @@ function designNoseWingGeometryFromRows(rows, options) {
   const surfaceVertex = (rowIndex, colIndex) => rowIndex * stride + colIndex;
   const baseStart = cleanRows.length * stride;
   const baseVertex = (rowIndex, colIndex) => baseStart + rowIndex * stride + colIndex;
+  const cloneVertex = (index) => {
+    const source = index * 3;
+    const clone = vertices.length / 3;
+    vertices.push(vertices[source], vertices[source + 1], vertices[source + 2]);
+    return clone;
+  };
+  const triangleAreaSquared = (a, b, c) => {
+    const ax = vertices[a * 3];
+    const ay = vertices[a * 3 + 1];
+    const az = vertices[a * 3 + 2];
+    const bx = vertices[b * 3];
+    const by = vertices[b * 3 + 1];
+    const bz = vertices[b * 3 + 2];
+    const cx = vertices[c * 3];
+    const cy = vertices[c * 3 + 1];
+    const cz = vertices[c * 3 + 2];
+    const abx = bx - ax;
+    const aby = by - ay;
+    const abz = bz - az;
+    const acx = cx - ax;
+    const acy = cy - ay;
+    const acz = cz - az;
+    const nx = aby * acz - abz * acy;
+    const ny = abz * acx - abx * acz;
+    const nz = abx * acy - aby * acx;
+    return nx * nx + ny * ny + nz * nz;
+  };
   const addFace = (a, b, c) => {
+    if (triangleAreaSquared(a, b, c) <= 1e-10) return;
     if (side < 0) {
       indices.push(a, c, b);
     } else {
@@ -4129,20 +4157,20 @@ function designNoseWingGeometryFromRows(rows, options) {
 
   const closeColumn = (colIndex) => {
     for (let rowIndex = 0; rowIndex < cleanRows.length - 1; rowIndex += 1) {
-      const surfaceA = surfaceVertex(rowIndex, colIndex);
-      const surfaceB = surfaceVertex(rowIndex + 1, colIndex);
-      const baseA = baseVertex(rowIndex, colIndex);
-      const baseB = baseVertex(rowIndex + 1, colIndex);
+      const surfaceA = cloneVertex(surfaceVertex(rowIndex, colIndex));
+      const surfaceB = cloneVertex(surfaceVertex(rowIndex + 1, colIndex));
+      const baseA = cloneVertex(baseVertex(rowIndex, colIndex));
+      const baseB = cloneVertex(baseVertex(rowIndex + 1, colIndex));
       addFace(baseA, surfaceB, surfaceA);
       addFace(baseA, baseB, surfaceB);
     }
   };
   const closeRow = (rowIndex, reverse = false) => {
     for (let colIndex = 0; colIndex < columns; colIndex += 1) {
-      const surfaceA = surfaceVertex(rowIndex, colIndex);
-      const surfaceB = surfaceVertex(rowIndex, colIndex + 1);
-      const baseA = baseVertex(rowIndex, colIndex);
-      const baseB = baseVertex(rowIndex, colIndex + 1);
+      const surfaceA = cloneVertex(surfaceVertex(rowIndex, colIndex));
+      const surfaceB = cloneVertex(surfaceVertex(rowIndex, colIndex + 1));
+      const baseA = cloneVertex(baseVertex(rowIndex, colIndex));
+      const baseB = cloneVertex(baseVertex(rowIndex, colIndex + 1));
       if (reverse) {
         addFace(baseA, surfaceB, baseB);
         addFace(baseA, surfaceA, surfaceB);
@@ -8089,7 +8117,7 @@ function renderPublishedDesignPreview() {
   const center = p.bridge_width / 2 + outerLensWidth / 2;
   addDesignFrontBody(p, frontMaterial, definition, modelGroup);
   addDesignTopVisor(p, frontMaterial, definition, modelGroup);
-  addDesignNoseWings(p, frontMaterial, definition, modelGroup, { includeMountFace: false, previewContact: true });
+  addDesignNoseWings(p, frontMaterial, definition, modelGroup, { includeMountFace: true, previewContact: true });
   [-1, 1].forEach((side) => {
     addDesignLens(side * center, p, lensMaterial, definition, modelGroup);
     addDesignTemple(side, p, outerLensWidth, templeMaterial, detailMaterial, style, definition, modelGroup);
