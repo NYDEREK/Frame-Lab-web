@@ -2966,10 +2966,7 @@ function renderDesignPreview(options = {}) {
   const center = p.bridge_width / 2 + outerLensWidth / 2;
   addDesignFrontBodyWithRearNoseWingCutouts(p, frontMaterial, definition);
   addDesignTopVisor(p, frontMaterial, definition);
-  addDesignNoseWings(p, frontMaterial, definition, designModelGroup, {
-    openTop: true,
-    topZ: -normalizeDesignFeatures(definition?.features, p).extrude.depth / 2
-  });
+  addDesignNoseWings(p, frontMaterial, definition);
   [-1, 1].forEach((side) => {
     addDesignLens(side * center, p, lensMaterial, definition);
     addDesignTemple(side, p, outerLensWidth, templeMaterial, detailMaterial, style, definition);
@@ -4099,9 +4096,15 @@ function designNoseWingScaleRing(ring, scale) {
   ]);
 }
 
+function designSmoothStep(value) {
+  const t = THREE.MathUtils.clamp(value, 0, 1);
+  return t * t * (3 - 2 * t);
+}
+
 function designNoseWingGeometryFromRing(ring, options) {
-  const cleanRing = designCleanRing(ring);
+  let cleanRing = designCleanRing(ring);
   if (cleanRing.length < 3) return null;
+  if (designRingArea(cleanRing) < 0) cleanRing = [...cleanRing].reverse();
   const depth = Math.max(0.02, parseDesignNumber(options?.depth, 0.02));
   const topZ = parseDesignNumber(options?.topZ, 0);
   const legacyRound = parseDesignNumber(options?.round, 0);
@@ -4111,29 +4114,23 @@ function designNoseWingGeometryFromRing(ring, options) {
   const side = options?.side < 0 ? -1 : 1;
   const bodyRing = cleanRing.map((point) => [...point]);
   const tiltX = side * Math.tan(THREE.MathUtils.degToRad(angle)) * depth;
-  const xOffsetAtZ = (z) => {
-    const t = THREE.MathUtils.clamp((topZ - z) / depth, 0, 1);
-    return tiltX * (1 - Math.cos(t * Math.PI / 2));
-  };
   const topRoundRatio = THREE.MathUtils.clamp(topRound / Math.max(depth, 0.001), 0, 1);
   const baseRoundRatio = THREE.MathUtils.clamp(baseRound / Math.max(depth, 0.001), 0, 1);
-  const capScale = THREE.MathUtils.lerp(0.34, 0.08, topRoundRatio);
-  const thetaMax = Math.acos(capScale);
-  const zScale = Math.max(0.001, Math.sin(thetaMax));
-  const basePower = THREE.MathUtils.lerp(0.72, 1.55, baseRoundRatio);
+  const capScale = THREE.MathUtils.lerp(0.68, 0.38, topRoundRatio);
+  const baseHold = THREE.MathUtils.clamp(0.05 + baseRoundRatio * 0.18, 0.05, 0.24);
+  const basePower = THREE.MathUtils.lerp(1.05, 2.2, baseRoundRatio);
   const layerSpecs = [];
-  const roundSegments = 18;
+  const roundSegments = 24;
   for (let segment = 0; segment <= roundSegments; segment += 1) {
     const progress = segment / roundSegments;
-    const eased = Math.pow(progress, basePower);
-    const theta = thetaMax * eased;
-    const scale = Math.cos(theta);
-    const zDrop = depth * (Math.sin(theta) / zScale);
-    const z = topZ - zDrop;
+    const roundedProgress = designSmoothStep((progress - baseHold) / Math.max(0.001, 1 - baseHold));
+    const eased = Math.pow(roundedProgress, basePower);
+    const scale = THREE.MathUtils.lerp(1, capScale, eased);
+    const z = topZ - depth * progress;
     layerSpecs.push({
       ring: segment === 0 ? bodyRing : designNoseWingScaleRing(bodyRing, scale),
       z,
-      xOffset: xOffsetAtZ(z)
+      xOffset: tiltX * designSmoothStep(progress)
     });
   }
 
@@ -4375,7 +4372,6 @@ function addDesignNoseWings(p, material, definition, target = designModelGroup, 
       });
       if (!geometry) return;
       const wingMaterial = material?.clone ? material.clone() : material;
-      if (wingMaterial) wingMaterial.side = THREE.DoubleSide;
       const wing = new THREE.Mesh(geometry, wingMaterial);
       wing.name = `nose-wing-${side < 0 ? "left" : "right"}`;
       target.add(wing);
@@ -6157,10 +6153,7 @@ function buildDesign3mfExportParts(projectRoot) {
     part("front", "front", `${projectRoot}-front.3mf`, `${state.designDraft.name || "Frame Lab Creator"} front`, (group) => {
       addDesignFrontBodyWithRearNoseWingCutouts(p, frontMaterial, definition, group);
       addDesignTopVisor(p, frontMaterial, definition, group);
-      addDesignNoseWings(p, frontMaterial, definition, group, {
-        openTop: true,
-        topZ: -normalizeDesignFeatures(definition?.features, p).extrude.depth / 2
-      });
+      addDesignNoseWings(p, frontMaterial, definition, group);
       [-1, 1].forEach((side) => addDesignHingeAsset(
         side < 0 ? "frontRight" : "frontLeft",
         designHingeDatum(side, p, definition),
@@ -8266,10 +8259,7 @@ function renderPublishedDesignPreview() {
   const center = p.bridge_width / 2 + outerLensWidth / 2;
   addDesignFrontBodyWithRearNoseWingCutouts(p, frontMaterial, definition, modelGroup);
   addDesignTopVisor(p, frontMaterial, definition, modelGroup);
-  addDesignNoseWings(p, frontMaterial, definition, modelGroup, {
-    openTop: true,
-    topZ: -normalizeDesignFeatures(definition?.features, p).extrude.depth / 2
-  });
+  addDesignNoseWings(p, frontMaterial, definition, modelGroup);
   [-1, 1].forEach((side) => {
     addDesignLens(side * center, p, lensMaterial, definition, modelGroup);
     addDesignTemple(side, p, outerLensWidth, templeMaterial, detailMaterial, style, definition, modelGroup);
