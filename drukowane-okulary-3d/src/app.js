@@ -3662,7 +3662,7 @@ function designNoseWingRuledRows(p, definition, side) {
     Math.abs(topOuter[1] - bottomOuter[1]),
     Math.abs(topInner[1] - bottomInner[1])
   );
-  const rowCount = Math.max(6, Math.min(72, Math.ceil(span / 0.32)));
+  const rowCount = Math.max(4, Math.min(28, Math.ceil(span / 0.65)));
   const rows = [];
   for (let index = 0; index <= rowCount; index += 1) {
     const t = index / rowCount;
@@ -4068,96 +4068,49 @@ function designNoseWingGeometryFromRows(rows, options) {
   const tiltX = side * Math.tan(THREE.MathUtils.degToRad(angle)) * depth;
   const distances = designNoseWingRowDistances(cleanRows);
   const totalLength = Math.max(0.001, distances[distances.length - 1]);
-  const columns = 36;
+  const columns = 16;
   const vertices = [];
   const indices = [];
-  const stride = columns + 1;
-  const rowTotal = cleanRows.length;
-  const surfaceVertex = (rowIndex, colIndex) => rowIndex * stride + colIndex;
-  const baseStart = rowTotal * stride;
-  const baseVertex = (rowIndex, colIndex) => baseStart + rowIndex * stride + colIndex;
-  const addFace = (a, b, c) => {
-    if (side < 0) {
-      indices.push(a, c, b);
-    } else {
-      indices.push(a, b, c);
-    }
-  };
-  const sampleRowPoint = (row, t) => [
-    row.outer[0] + (row.inner[0] - row.outer[0]) * t,
-    row.outer[1] + (row.inner[1] - row.outer[1]) * t
-  ];
-  const halfRoundProfile = (t) => {
-    const u = 2 * THREE.MathUtils.clamp(t, 0, 1) - 1;
-    return Math.sqrt(Math.max(0, 1 - u * u));
-  };
-  const endFadeAtRow = (rowIndex) => {
+  const topVertex = (rowIndex, colIndex) => rowIndex * (columns + 1) + colIndex;
+
+  cleanRows.forEach((row, rowIndex) => {
     const fromTop = distances[rowIndex];
     const fromBottom = totalLength - fromTop;
     const topFade = topRound > 0.001 ? designSmoothStep(fromTop / topRound) : 1;
     const bottomFade = baseRound > 0.001 ? designSmoothStep(fromBottom / baseRound) : 1;
-    return Math.min(topFade, bottomFade);
-  };
-
-  cleanRows.forEach((row, rowIndex) => {
-    const endFade = endFadeAtRow(rowIndex);
+    const endFade = Math.min(topFade, bottomFade);
     for (let colIndex = 0; colIndex <= columns; colIndex += 1) {
       const t = colIndex / columns;
-      const [x, y] = sampleRowPoint(row, t);
-      const protrusion = depth * halfRoundProfile(t) * endFade;
+      const x = row.outer[0] + (row.inner[0] - row.outer[0]) * t;
+      const y = row.outer[1] + (row.inner[1] - row.outer[1]) * t;
+      const crossFade = Math.pow(Math.sin(Math.PI * t), 0.72);
+      const protrusion = depth * crossFade * endFade;
       vertices.push(x + tiltX * (protrusion / depth), y, topZ - protrusion);
     }
   });
 
-  cleanRows.forEach((row) => {
-    for (let colIndex = 0; colIndex <= columns; colIndex += 1) {
-      const [x, y] = sampleRowPoint(row, colIndex / columns);
-      vertices.push(x, y, topZ);
-    }
-  });
-
-  for (let rowIndex = 0; rowIndex < rowTotal - 1; rowIndex += 1) {
+  for (let rowIndex = 0; rowIndex < cleanRows.length - 1; rowIndex += 1) {
     for (let colIndex = 0; colIndex < columns; colIndex += 1) {
-      const a = surfaceVertex(rowIndex, colIndex);
-      const b = surfaceVertex(rowIndex, colIndex + 1);
-      const c = surfaceVertex(rowIndex + 1, colIndex + 1);
-      const d = surfaceVertex(rowIndex + 1, colIndex);
-      addFace(a, b, c);
-      addFace(a, c, d);
+      const a = topVertex(rowIndex, colIndex);
+      const b = topVertex(rowIndex, colIndex + 1);
+      const c = topVertex(rowIndex + 1, colIndex + 1);
+      const d = topVertex(rowIndex + 1, colIndex);
+      indices.push(a, b, c, a, c, d);
     }
   }
 
-  for (let rowIndex = 0; rowIndex < rowTotal - 1; rowIndex += 1) {
-    for (let colIndex = 0; colIndex < columns; colIndex += 1) {
-      const a = baseVertex(rowIndex, colIndex);
-      const b = baseVertex(rowIndex + 1, colIndex);
-      const c = baseVertex(rowIndex + 1, colIndex + 1);
-      const d = baseVertex(rowIndex, colIndex + 1);
-      addFace(a, c, b);
-      addFace(a, d, c);
-    }
-  }
-
-  const closeEndRow = (rowIndex, reversed = false) => {
-    for (let colIndex = 0; colIndex < columns; colIndex += 1) {
-      const surfaceA = surfaceVertex(rowIndex, colIndex);
-      const surfaceB = surfaceVertex(rowIndex, colIndex + 1);
-      const baseA = baseVertex(rowIndex, colIndex);
-      const baseB = baseVertex(rowIndex, colIndex + 1);
-      if (reversed) {
-        addFace(baseA, surfaceB, baseB);
-        addFace(baseA, surfaceA, surfaceB);
-      } else {
-        addFace(baseA, baseB, surfaceB);
-        addFace(baseA, surfaceB, surfaceA);
-      }
-    }
-  };
-  if (endFadeAtRow(0) > 0.001) {
-    closeEndRow(0, false);
-  }
-  if (endFadeAtRow(rowTotal - 1) > 0.001) {
-    closeEndRow(rowTotal - 1, true);
+  const capRing = designCleanRing([
+    ...cleanRows.map((row) => row.outer),
+    ...[...cleanRows].reverse().map((row) => row.inner)
+  ]);
+  if (capRing.length >= 3 && !designRingHasSelfIntersection(capRing)) {
+    const capIndices = [
+      ...cleanRows.map((_, rowIndex) => topVertex(rowIndex, 0)),
+      ...cleanRows.map((_, rowIndex) => topVertex(cleanRows.length - 1 - rowIndex, columns))
+    ];
+    const capContour = capRing.map(([x, y]) => new THREE.Vector2(x, y));
+    THREE.ShapeUtils.triangulateShape(capContour, [])
+      .forEach(([a, b, c]) => indices.push(capIndices[c], capIndices[b], capIndices[a]));
   }
 
   const geometry = new THREE.BufferGeometry();
@@ -10935,7 +10888,7 @@ module top_visor_profile() {
 module nose_wing(side=1) {
   wing_depth = max(0, nose_wing_height);
   if (wing_depth > 0.01) {
-    translate([0, 0, -front_face_z - wing_depth / 2 + min(0.28, max(0.08, wing_depth * 0.1))])
+    translate([0, 0, -front_face_z - wing_depth / 2 + min(0.42, max(0.16, wing_depth * 0.14))])
       linear_extrude(height=wing_depth, convexity=6, center=true)
         nose_wing_profile(side);
   }
