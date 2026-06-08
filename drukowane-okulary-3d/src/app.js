@@ -3391,8 +3391,8 @@ function designBridgeLowerBlendRing(p, definition, side) {
   const cornerX = side * bridge.bottomHalfWidth;
   const cornerY = bridge.bottomJoinY;
   const segments = 12;
-  const startAngle = side > 0 ? Math.PI : 0;
-  const endAngle = side > 0 ? Math.PI * 1.5 : -Math.PI / 2;
+  const startAngle = side > 0 ? 0 : Math.PI;
+  const endAngle = side > 0 ? -Math.PI / 2 : Math.PI * 1.5;
   const points = [[cornerX, cornerY]];
   for (let index = 0; index <= segments; index += 1) {
     const t = index / segments;
@@ -3455,14 +3455,24 @@ function designLensSeatCutPolygons(p, definition) {
 function designFrontLensChannelPolygons(p, definition) {
   const basePolygons = designFrontPlanarPolygons(p, definition, 0);
   const seatCuts = designLensSeatCutPolygons(p, definition);
-  if (!basePolygons.length || !seatCuts.length) return designFrontPlanarPolygons(p, definition, normalizeDesignConstruction(definition?.construction).lensSeatDepth);
+  const fallback = () => designFrontPlanarPolygons(p, definition, normalizeDesignConstruction(definition?.construction).lensSeatDepth);
+  if (!basePolygons.length || !seatCuts.length) return fallback();
   try {
     const channelPolygons = polygonClipping.difference(basePolygons, ...seatCuts);
     if (Array.isArray(channelPolygons) && channelPolygons.length) return channelPolygons;
   } catch {
-    return designFrontPlanarPolygons(p, definition, normalizeDesignConstruction(definition?.construction).lensSeatDepth);
+    // Retry below one cut at a time; this is more tolerant of bridge/rim overlaps.
   }
-  return [];
+  try {
+    let channelPolygons = basePolygons;
+    seatCuts.forEach((cut) => {
+      channelPolygons = polygonClipping.difference(channelPolygons, cut);
+    });
+    if (Array.isArray(channelPolygons) && channelPolygons.length) return channelPolygons;
+  } catch {
+    return fallback();
+  }
+  return fallback();
 }
 
 function designFrontPlanarBounds(p, definition) {
