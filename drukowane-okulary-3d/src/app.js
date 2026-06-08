@@ -3384,22 +3384,29 @@ function designBridgeProfileRing(p, definition) {
 function designBridgeLowerBlendRing(p, definition, side) {
   const bridge = designBridgeMetrics(p, definition);
   const radius = THREE.MathUtils.clamp(
-    Math.min(bridge.height * 0.82, p.rim_thickness * 1.25),
+    Math.min(bridge.height * 0.72, p.rim_thickness * 1.15),
     1.2,
-    5.2
+    4.6
   );
   const cornerX = side * bridge.bottomHalfWidth;
   const cornerY = bridge.bottomJoinY;
+  const tangentX = cornerX - side * radius;
+  const tangentY = cornerY - radius;
+  const arcCenterX = tangentX;
+  const arcCenterY = tangentY;
   const segments = 12;
-  const startAngle = side > 0 ? 0 : Math.PI;
-  const endAngle = side > 0 ? -Math.PI / 2 : Math.PI * 1.5;
-  const points = [[cornerX, cornerY]];
+  const startAngle = Math.PI / 2;
+  const endAngle = side > 0 ? 0 : Math.PI;
+  const points = [
+    [cornerX, cornerY],
+    [tangentX, cornerY]
+  ];
   for (let index = 0; index <= segments; index += 1) {
     const t = index / segments;
     const angle = startAngle + (endAngle - startAngle) * t;
     points.push([
-      cornerX + Math.cos(angle) * radius,
-      cornerY + Math.sin(angle) * radius
+      arcCenterX + Math.cos(angle) * radius,
+      arcCenterY + Math.sin(angle) * radius
     ]);
   }
   return designCleanRing(points);
