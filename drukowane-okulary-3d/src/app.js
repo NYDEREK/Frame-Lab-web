@@ -259,6 +259,8 @@ const designHingePadSize = 6;
 // Keep the supplied hinge landing bonded to enough of the printed front body.
 const designHingePadOverlap = 1;
 const designHingeRearOverlap = 0.2;
+const designNoseWingRearOverlapMin = 0.18;
+const designNoseWingRearOverlapMax = 0.85;
 const designMinimumLensOpeningWidth = 20;
 // FL-H1 temple bounds after vertical-bore rotation; the authored arm grows from its rear face.
 const designTempleBarCenterY = 2.8;
@@ -273,6 +275,16 @@ const designHingeAssetManifest = {
   templeLeft: "./assets/hinges/temple-hinge-left.3mf",
   templeRight: "./assets/hinges/temple-hinge-right.3mf"
 };
+
+function designNoseWingRearOverlap(depth) {
+  const safeDepth = Math.max(0, Number.isFinite(depth) ? depth : 0);
+  if (safeDepth <= 0) return 0;
+  return Math.min(
+    designNoseWingRearOverlapMax,
+    safeDepth * 0.72,
+    Math.max(designNoseWingRearOverlapMin, safeDepth * 0.32)
+  );
+}
 
 function designHingeWidthAllowance() {
   return Math.max(0, (designHingePadSize - designHingePadOverlap) * 2);
@@ -2966,7 +2978,7 @@ function renderDesignPreview(options = {}) {
   const center = p.bridge_width / 2 + outerLensWidth / 2;
   addDesignFrontBody(p, frontMaterial, definition);
   addDesignTopVisor(p, frontMaterial, definition);
-  addDesignNoseWings(p, frontMaterial, definition, designModelGroup, { includeMountFace: true, previewContact: true });
+  addDesignNoseWings(p, frontMaterial, definition, designModelGroup);
   [-1, 1].forEach((side) => {
     addDesignLens(side * center, p, lensMaterial, definition);
     addDesignTemple(side, p, outerLensWidth, templeMaterial, detailMaterial, style, definition);
@@ -4231,10 +4243,9 @@ function addDesignNoseWings(p, material, definition, target = designModelGroup, 
   const depth = construction.noseWingHeight;
   if (depth <= 0.02) return;
   const features = normalizeDesignFeatures(definition?.features, p);
-  const overlap = Math.min(0.42, Math.max(0.16, depth * 0.14));
+  const overlap = designNoseWingRearOverlap(depth);
   const rearFaceZ = -features.extrude.depth / 2;
-  const previewContactOffset = 0.015;
-  const defaultTopZ = options?.previewContact ? rearFaceZ - previewContactOffset : rearFaceZ + overlap;
+  const defaultTopZ = rearFaceZ + overlap;
   const topZ = Number.isFinite(options?.topZ) ? options.topZ : defaultTopZ;
   [-1, 1].forEach((side) => {
     const rows = designNoseWingRuledRows(p, definition, side);
@@ -8117,7 +8128,7 @@ function renderPublishedDesignPreview() {
   const center = p.bridge_width / 2 + outerLensWidth / 2;
   addDesignFrontBody(p, frontMaterial, definition, modelGroup);
   addDesignTopVisor(p, frontMaterial, definition, modelGroup);
-  addDesignNoseWings(p, frontMaterial, definition, modelGroup, { includeMountFace: true, previewContact: true });
+  addDesignNoseWings(p, frontMaterial, definition, modelGroup);
   [-1, 1].forEach((side) => {
     addDesignLens(side * center, p, lensMaterial, definition, modelGroup);
     addDesignTemple(side, p, outerLensWidth, templeMaterial, detailMaterial, style, definition, modelGroup);
@@ -10784,6 +10795,7 @@ hinge_rear_overlap = ${formatNumber(designHingeRearOverlap)};
 front_depth = extrude_depth;
 front_face_z = front_depth / 2;
 hinge_rear_z = -front_face_z + hinge_rear_overlap; // Mechanical hinge is bonded behind the planar pad.
+nose_wing_rear_overlap = min(min(${formatNumber(designNoseWingRearOverlapMax)}, max(0, nose_wing_height) * 0.72), max(${formatNumber(designNoseWingRearOverlapMin)}, max(0, nose_wing_height) * 0.32));
 temple_straight = ${formatNumber(construction.templeStraight)};
 temple_hook = ${formatNumber(construction.templeHook)};
 temple_hook_angle = ${formatNumber(construction.templeHookAngle)};
@@ -10945,7 +10957,7 @@ module top_visor_profile() {
 module nose_wing(side=1) {
   wing_depth = max(0, nose_wing_height);
   if (wing_depth > 0.01) {
-    translate([0, 0, -front_face_z - wing_depth / 2 + min(0.42, max(0.16, wing_depth * 0.14))])
+    translate([0, 0, -front_face_z - wing_depth / 2 + nose_wing_rear_overlap])
       linear_extrude(height=wing_depth, convexity=6, center=true)
         nose_wing_profile(side);
   }
