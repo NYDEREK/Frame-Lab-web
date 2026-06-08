@@ -3378,8 +3378,37 @@ function designRoundedRectRing(width, height, radius, centerX = 0, centerY = 0) 
 }
 
 function designBridgeProfileRing(p, definition) {
-  const outline = designBridgeProfileOutline(p, definition);
-  return sampledRoundedPolygon(outline.points, outline.radii, 10);
+  return designBridgeProfileOutline(p, definition).points.map(({ x, y }) => [x, y]);
+}
+
+function designBridgeLowerBlendRing(p, definition, side) {
+  const bridge = designBridgeMetrics(p, definition);
+  const radius = THREE.MathUtils.clamp(
+    Math.min(bridge.height * 0.82, p.rim_thickness * 1.25),
+    1.2,
+    5.2
+  );
+  const cornerX = side * bridge.bottomHalfWidth;
+  const cornerY = bridge.bottomJoinY;
+  const segments = 12;
+  const startAngle = side > 0 ? Math.PI : 0;
+  const endAngle = side > 0 ? Math.PI * 1.5 : -Math.PI / 2;
+  const points = [[cornerX, cornerY]];
+  for (let index = 0; index <= segments; index += 1) {
+    const t = index / segments;
+    const angle = startAngle + (endAngle - startAngle) * t;
+    points.push([
+      cornerX + Math.cos(angle) * radius,
+      cornerY + Math.sin(angle) * radius
+    ]);
+  }
+  return designCleanRing(points);
+}
+
+function designBridgeLowerBlendRings(p, definition) {
+  return [-1, 1]
+    .map((side) => designBridgeLowerBlendRing(p, definition, side))
+    .filter((ring) => ring.length >= 3);
 }
 
 function designFrontPlanarPolygons(p, definition, innerExpansion = 0) {
@@ -3396,6 +3425,7 @@ function designFrontPlanarPolygons(p, definition, innerExpansion = 0) {
     ...leftRim,
     ...rightRim,
     [designBridgeProfileRing(p, definition)],
+    ...designBridgeLowerBlendRings(p, definition).map((ring) => [ring]),
     [designHingePadConnectorRing(-1, p, definition)],
     [designHingePadConnectorRing(1, p, definition)]
   ];
@@ -3889,20 +3919,17 @@ function designBridgeMetrics(p, definition = state.designDraft) {
 
 function designBridgeProfileOutline(p, definition = state.designDraft) {
   const bridge = designBridgeMetrics(p, definition);
-  const joinRadius = THREE.MathUtils.clamp(
-    Math.min(bridge.height * 0.48, p.rim_thickness * 0.9),
-    0.6,
-    3.4
-  );
   const points = [
     { x: -bridge.topHalfWidth, y: bridge.topJoinY },
+    { x: 0, y: bridge.topY },
     { x: bridge.topHalfWidth, y: bridge.topJoinY },
     { x: bridge.bottomHalfWidth, y: bridge.bottomJoinY },
+    { x: 0, y: bridge.bottomY },
     { x: -bridge.bottomHalfWidth, y: bridge.bottomJoinY }
   ];
   return {
     points,
-    radii: points.map(() => joinRadius)
+    radii: points.map(() => 0)
   };
 }
 
@@ -10712,6 +10739,9 @@ function buildDesignScad(draft = state.designDraft) {
   const bridgeProfilePath = designBridgeProfileRing(p, definition)
     .map(([x, y]) => `[${formatNumber(x)}, ${formatNumber(y)}]`)
     .join(", ");
+  const bridgeLowerBlendPaths = designBridgeLowerBlendRings(p, definition)
+    .map((ring) => `[${ring.map(([x, y]) => `[${formatNumber(x)}, ${formatNumber(y)}]`).join(", ")}]`)
+    .join(", ");
   const noseWingPathList = (side) => {
     const paths = designNoseWingFootprintPolygons(p, definition, side)
       .map((polygon) => designCleanRing(polygon?.[0] || []))
@@ -10752,6 +10782,7 @@ profile_points = [${profilePoints}];
 profile_corner_radii = [${profileCornerRadii}]; // Radius at each authored drawing point.
 profile_path = [${profilePath}]; // Local corner fillets resolved from the drawing.
 bridge_profile_path = [${bridgeProfilePath}]; // Nose bridge profile with draggable horizontal lines.
+bridge_lower_blend_paths = [${bridgeLowerBlendPaths}]; // Smooth lower bridge-to-rim transition patches.
 nose_wing_left_paths = ${noseWingPathList(-1)}; // Rear nose wing footprints resolved from the 2D front profile.
 nose_wing_right_paths = ${noseWingPathList(1)};
 hinge_connector_left_path = [${hingeConnectorLeftPath}]; // Keeps the left pad bonded to the rim when mount height changes.
@@ -10914,7 +10945,12 @@ module hinge_pad(side=1) {
 }
 
 module bridge_profile() {
-  polygon(bridge_profile_path);
+  union() {
+    polygon(bridge_profile_path);
+    for (path = bridge_lower_blend_paths)
+      if (len(path) >= 3)
+        polygon(path);
+  }
 }
 
 module hinge_pad_profile(side=1) {
