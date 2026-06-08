@@ -3888,13 +3888,31 @@ function designBridgeMetrics(p, definition = state.designDraft) {
 
 function designBridgeProfileOutline(p, definition = state.designDraft) {
   const bridge = designBridgeMetrics(p, definition);
+  const capSegments = 14;
+  const capBulge = THREE.MathUtils.clamp(bridge.height * 0.45, 0.7, Math.max(0.8, p.rim_thickness * 0.85));
+  const capPoints = (side) => {
+    const points = [];
+    const centerY = (bridge.topJoinY + bridge.bottomJoinY) / 2;
+    const halfHeight = Math.max(0.001, bridge.height / 2);
+    for (let index = 0; index <= capSegments; index += 1) {
+      const t = index / capSegments;
+      const theta = t * Math.PI;
+      const halfWidth = bridge.topHalfWidth + (bridge.bottomHalfWidth - bridge.topHalfWidth) * t;
+      points.push({
+        x: side * (halfWidth + capBulge * Math.sin(theta)),
+        y: centerY + halfHeight * Math.cos(theta)
+      });
+    }
+    return points;
+  };
+  const rightCap = capPoints(1);
+  const leftCap = capPoints(-1).reverse();
   const points = [
     { x: -bridge.topHalfWidth, y: bridge.topJoinY },
-    { x: 0, y: bridge.topY },
     { x: bridge.topHalfWidth, y: bridge.topJoinY },
-    { x: bridge.bottomHalfWidth, y: bridge.bottomJoinY },
-    { x: 0, y: bridge.bottomY },
-    { x: -bridge.bottomHalfWidth, y: bridge.bottomJoinY }
+    ...rightCap.slice(1),
+    { x: -bridge.bottomHalfWidth, y: bridge.bottomJoinY },
+    ...leftCap.slice(1, -1)
   ];
   return {
     points,
