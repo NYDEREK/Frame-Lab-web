@@ -3378,7 +3378,8 @@ function designRoundedRectRing(width, height, radius, centerX = 0, centerY = 0) 
 }
 
 function designBridgeProfileRing(p, definition) {
-  return designBridgeProfileOutline(p, definition).points.map(({ x, y }) => [x, y]);
+  const outline = designBridgeProfileOutline(p, definition);
+  return sampledRoundedPolygon(outline.points, outline.radii, 10);
 }
 
 function designFrontPlanarPolygons(p, definition, innerExpansion = 0) {
@@ -3888,35 +3889,20 @@ function designBridgeMetrics(p, definition = state.designDraft) {
 
 function designBridgeProfileOutline(p, definition = state.designDraft) {
   const bridge = designBridgeMetrics(p, definition);
-  const capSegments = 14;
-  const capBulge = THREE.MathUtils.clamp(bridge.height * 0.45, 0.7, Math.max(0.8, p.rim_thickness * 0.85));
-  const capPoints = (side) => {
-    const points = [];
-    const centerY = (bridge.topJoinY + bridge.bottomJoinY) / 2;
-    const halfHeight = Math.max(0.001, bridge.height / 2);
-    for (let index = 0; index <= capSegments; index += 1) {
-      const t = index / capSegments;
-      const theta = t * Math.PI;
-      const halfWidth = bridge.topHalfWidth + (bridge.bottomHalfWidth - bridge.topHalfWidth) * t;
-      points.push({
-        x: side * (halfWidth + capBulge * Math.sin(theta)),
-        y: centerY + halfHeight * Math.cos(theta)
-      });
-    }
-    return points;
-  };
-  const rightCap = capPoints(1);
-  const leftCap = capPoints(-1).reverse();
+  const joinRadius = THREE.MathUtils.clamp(
+    Math.min(bridge.height * 0.48, p.rim_thickness * 0.9),
+    0.6,
+    3.4
+  );
   const points = [
     { x: -bridge.topHalfWidth, y: bridge.topJoinY },
     { x: bridge.topHalfWidth, y: bridge.topJoinY },
-    ...rightCap.slice(1),
-    { x: -bridge.bottomHalfWidth, y: bridge.bottomJoinY },
-    ...leftCap.slice(1, -1)
+    { x: bridge.bottomHalfWidth, y: bridge.bottomJoinY },
+    { x: -bridge.bottomHalfWidth, y: bridge.bottomJoinY }
   ];
   return {
     points,
-    radii: points.map(() => 0)
+    radii: points.map(() => joinRadius)
   };
 }
 
