@@ -215,6 +215,7 @@ const defaultDesignConstruction = {
   hingeMountHeight: 10,
   hingeMountOffset: 0,
   bridgeThickness: 6,
+  bridgeBlendRadius: 3.45,
   bridgeTopJoinOffset: 3,
   bridgeBottomJoinOffset: -3,
   noseWingHeight: 2.4,
@@ -913,6 +914,7 @@ const els = {
   designHingeMountHeight: document.querySelector("#designHingeMountHeight"),
   designHingeMountOffset: document.querySelector("#designHingeMountOffset"),
   designBridgeThickness: document.querySelector("#designBridgeThickness"),
+  designBridgeBlendRadius: document.querySelector("#designBridgeBlendRadius"),
   designNoseWingHeight: document.querySelector("#designNoseWingHeight"),
   designNoseWingAngle: document.querySelector("#designNoseWingAngle"),
   designNoseWingRound: document.querySelector("#designNoseWingRound"),
@@ -1456,6 +1458,7 @@ function normalizeDesignConstruction(construction = {}) {
     hingeMountHeight: bounded("hingeMountHeight", -12, 12),
     hingeMountOffset: bounded("hingeMountOffset", -4, 0),
     bridgeThickness,
+    bridgeBlendRadius: bounded("bridgeBlendRadius", 0, 8),
     bridgeTopJoinOffset: bounded("bridgeTopJoinOffset", -18, 18, bridgeThickness / 2),
     bridgeBottomJoinOffset: bounded("bridgeBottomJoinOffset", -18, 18, -bridgeThickness / 2),
     noseWingHeight: bounded("noseWingHeight", 0, 6),
@@ -3383,11 +3386,14 @@ function designBridgeProfileRing(p, definition) {
 
 function designBridgeLowerBlendRing(p, definition, side) {
   const bridge = designBridgeMetrics(p, definition);
+  const construction = normalizeDesignConstruction(definition?.construction);
+  const maxRadius = Math.max(0, Math.min(bridge.height * 0.98, p.rim_thickness * 2.2, 8));
   const radius = THREE.MathUtils.clamp(
-    Math.min(bridge.height * 0.72, p.rim_thickness * 1.15),
-    1.2,
-    4.6
+    parseDesignNumber(construction.bridgeBlendRadius, defaultDesignConstruction.bridgeBlendRadius),
+    0,
+    maxRadius
   );
+  if (radius <= 0.01) return [];
   const cornerX = side * bridge.bottomHalfWidth;
   const cornerY = bridge.bottomJoinY;
   const tangentX = cornerX - side * radius;
@@ -5153,6 +5159,7 @@ function syncDesignFields() {
   setDesignFieldValue(els.designHingeMountHeight, construction.hingeMountHeight);
   setDesignFieldValue(els.designHingeMountOffset, construction.hingeMountOffset);
   setDesignFieldValue(els.designBridgeThickness, construction.bridgeThickness);
+  setDesignSliderFieldValue(els.designBridgeBlendRadius, construction.bridgeBlendRadius, "mm");
   setDesignSliderFieldValue(els.designNoseWingHeight, construction.noseWingHeight, "mm");
   setDesignSliderFieldValue(els.designNoseWingAngle, construction.noseWingAngle, "deg");
   setDesignSliderFieldValue(els.designNoseWingRound, construction.noseWingTopRound, "mm");
@@ -5430,6 +5437,7 @@ function syncDesignDraftFromControlValues(options = {}) {
     hingeMountHeight: numberValue(els.designHingeMountHeight, currentConstruction.hingeMountHeight),
     hingeMountOffset: numberValue(els.designHingeMountOffset, currentConstruction.hingeMountOffset),
     bridgeThickness: nextBridgeThickness,
+    bridgeBlendRadius: numberValue(els.designBridgeBlendRadius, currentConstruction.bridgeBlendRadius),
     bridgeTopJoinOffset: state.designDraft.construction?.bridgeTopJoinOffset,
     bridgeBottomJoinOffset: state.designDraft.construction?.bridgeBottomJoinOffset,
     noseWingHeight: numberValue(els.designNoseWingHeight, currentConstruction.noseWingHeight),
@@ -5527,7 +5535,8 @@ function handleDesignOperationChange(event) {
     return;
   }
   const liveBridgeControls = [
-    els.designBridgeThickness
+    els.designBridgeThickness,
+    els.designBridgeBlendRadius
   ];
   if (
     event.type === "input"
@@ -5572,6 +5581,7 @@ function handleDesignOperationChange(event) {
     els.designHingeMountHeight,
     els.designHingeMountOffset,
     els.designBridgeThickness,
+    els.designBridgeBlendRadius,
     els.designNoseWingHeight,
     els.designNoseWingAngle,
     els.designNoseWingRound,
@@ -5621,6 +5631,7 @@ function handleDesignOperationChange(event) {
       hingeMountHeight: els.designHingeMountHeight?.value,
       hingeMountOffset: els.designHingeMountOffset?.value,
       bridgeThickness: nextBridgeThickness,
+      bridgeBlendRadius: els.designBridgeBlendRadius?.value,
       bridgeTopJoinOffset: state.designDraft.construction?.bridgeTopJoinOffset,
       bridgeBottomJoinOffset: state.designDraft.construction?.bridgeBottomJoinOffset,
       noseWingHeight: els.designNoseWingHeight?.value,
@@ -5870,6 +5881,7 @@ function parseDesignCode(source) {
       hingeMountHeight: readNumber("hinge_mount_height", state.designDraft.construction?.hingeMountHeight),
       hingeMountOffset: readNumber("hinge_mount_offset", state.designDraft.construction?.hingeMountOffset),
       bridgeThickness: readNumber("bridge_thickness", state.designDraft.construction?.bridgeThickness),
+      bridgeBlendRadius: readNumber("bridge_blend_radius", state.designDraft.construction?.bridgeBlendRadius),
       bridgeTopJoinOffset: readNumber("bridge_top_join_offset", state.designDraft.construction?.bridgeTopJoinOffset),
       bridgeBottomJoinOffset: readNumber("bridge_bottom_join_offset", state.designDraft.construction?.bridgeBottomJoinOffset),
       noseWingHeight: readNumber("nose_wing_height", state.designDraft.construction?.noseWingHeight),
@@ -8534,6 +8546,7 @@ function mergeDesignConstructionFromScad(design, scadSource) {
     hingeMountHeight: "hinge_mount_height",
     hingeMountOffset: "hinge_mount_offset",
     bridgeThickness: "bridge_thickness",
+    bridgeBlendRadius: "bridge_blend_radius",
     bridgeTopJoinOffset: "bridge_top_join_offset",
     bridgeBottomJoinOffset: "bridge_bottom_join_offset",
     noseWingHeight: "nose_wing_height",
@@ -10825,6 +10838,7 @@ hinge_standard = "${construction.hingeStandard}";
 hinge_mount_height = ${formatNumber(construction.hingeMountHeight)};
 hinge_mount_offset = ${formatNumber(construction.hingeMountOffset)};
 bridge_thickness = ${formatNumber(construction.bridgeThickness)};
+bridge_blend_radius = ${formatNumber(construction.bridgeBlendRadius)};
 bridge_top_join_offset = ${formatNumber(construction.bridgeTopJoinOffset)};
 bridge_bottom_join_offset = ${formatNumber(construction.bridgeBottomJoinOffset)};
 nose_wing_height = ${formatNumber(construction.noseWingHeight)};
