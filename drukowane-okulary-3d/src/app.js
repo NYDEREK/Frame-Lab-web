@@ -4076,6 +4076,7 @@ function designNoseWingGeometryFromRows(rows, options) {
   const side = options?.side < 0 ? -1 : 1;
   const tiltX = side * Math.tan(THREE.MathUtils.degToRad(angle)) * depth;
   const includeMountFace = options?.includeMountFace !== false;
+  const shoulderDepth = Math.min(depth * 0.52, 1.25);
   const distances = designNoseWingRowDistances(cleanRows);
   const totalLength = Math.max(0.001, distances[distances.length - 1]);
   const columns = 24;
@@ -4124,7 +4125,8 @@ function designNoseWingGeometryFromRows(rows, options) {
   cleanRows.forEach((row, rowIndex) => {
     const lengthT = distances[rowIndex] / totalLength;
     const lengthU = 2 * lengthT - 1;
-    const protrusion = depth * Math.sqrt(Math.max(0, 1 - lengthU * lengthU));
+    const roundedRise = Math.sqrt(Math.max(0, 1 - lengthU * lengthU));
+    const protrusion = Math.min(depth, shoulderDepth + Math.max(0, depth - shoulderDepth) * roundedRise);
     const shiftX = tiltX * (protrusion / depth);
     for (let colIndex = 0; colIndex <= columns; colIndex += 1) {
       const t = colIndex / columns;
@@ -4247,6 +4249,11 @@ function addDesignNoseWings(p, material, definition, target = designModelGroup, 
   const rearFaceZ = -features.extrude.depth / 2;
   const defaultTopZ = rearFaceZ + overlap;
   const topZ = Number.isFinite(options?.topZ) ? options.topZ : defaultTopZ;
+  const wingMaterial = material?.clone ? material.clone() : material;
+  if (wingMaterial) {
+    wingMaterial.side = THREE.DoubleSide;
+    wingMaterial.needsUpdate = true;
+  }
   [-1, 1].forEach((side) => {
     const rows = designNoseWingRuledRows(p, definition, side);
     const geometry = designNoseWingGeometryFromRows(rows, {
@@ -4257,7 +4264,7 @@ function addDesignNoseWings(p, material, definition, target = designModelGroup, 
       includeMountFace: options.includeMountFace
     });
     if (!geometry) return;
-    const wing = new THREE.Mesh(geometry, material);
+    const wing = new THREE.Mesh(geometry, wingMaterial || material);
     wing.name = `nose-wing-${side < 0 ? "left" : "right"}`;
     target.add(wing);
   });
