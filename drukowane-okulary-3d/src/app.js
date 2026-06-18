@@ -4371,6 +4371,67 @@ function addDesignLens(x, p, material, definition, target = designModelGroup) {
   target.add(lens);
 }
 
+function designLaserSvgPathFromRing(ring, bounds) {
+  const points = designCleanRing(ring);
+  if (!points.length) return "";
+  const commands = points.map(([x, y], index) => {
+    const command = index === 0 ? "M" : "L";
+    return `${command} ${formatSvgNumber(x - bounds.minX)} ${formatSvgNumber(bounds.maxY - y)}`;
+  });
+  commands.push("Z");
+  return commands.join(" ");
+}
+
+function buildDesignLensesLaserSvg(projectRoot, definition = designDefinitionFromDraft()) {
+  const p = designGeometryParams();
+  const construction = normalizeDesignConstruction(definition?.construction);
+  const seatingExpansion = designLensInsertExpansion(construction);
+  const lensCenter = designLensCenter(p);
+  const rings = [
+    {
+      id: "left-lens",
+      label: "Left lens",
+      ring: designCleanRing(designOutlineRing(-lensCenter, p, definition, seatingExpansion, true))
+    },
+    {
+      id: "right-lens",
+      label: "Right lens",
+      ring: designCleanRing(designOutlineRing(lensCenter, p, definition, seatingExpansion, false))
+    }
+  ].filter((item) => item.ring.length >= 3);
+  const allPoints = rings.flatMap((item) => item.ring);
+  if (!allPoints.length) throw new Error("No lens outline for laser SVG.");
+  const padding = 2;
+  const bounds = allPoints.reduce((next, [x, y]) => ({
+    minX: Math.min(next.minX, x),
+    minY: Math.min(next.minY, y),
+    maxX: Math.max(next.maxX, x),
+    maxY: Math.max(next.maxY, y)
+  }), { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity });
+  bounds.minX -= padding;
+  bounds.minY -= padding;
+  bounds.maxX += padding;
+  bounds.maxY += padding;
+  const width = Math.max(1, bounds.maxX - bounds.minX);
+  const height = Math.max(1, bounds.maxY - bounds.minY);
+  const paths = rings.map((item) => {
+    const d = designLaserSvgPathFromRing(item.ring, bounds);
+    return `  <path id="${escapeXml(item.id)}" aria-label="${escapeXml(item.label)}" d="${d}"/>`;
+  }).join("\n");
+  const title = `${projectRoot || "frame-lab-creator"} lenses for laser`;
+  return [
+    `<?xml version="1.0" encoding="UTF-8"?>`,
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${formatSvgNumber(width)}mm" height="${formatSvgNumber(height)}mm" viewBox="0 0 ${formatSvgNumber(width)} ${formatSvgNumber(height)}">`,
+    `  <title>${escapeXml(title)}</title>`,
+    `  <desc>1:1 lens cutting outlines in millimeters. Use as line cutting geometry.</desc>`,
+    `  <g fill="none" stroke="#000000" stroke-width="0.1" vector-effect="non-scaling-stroke">`,
+    paths,
+    `  </g>`,
+    `</svg>`,
+    ``
+  ].join("\n");
+}
+
 function designHingePadOrigin(side, p, definition = state.designDraft) {
   const construction = normalizeDesignConstruction(definition?.construction);
   return new THREE.Vector3(
@@ -6040,10 +6101,17 @@ async function exportDesign3mf() {
       `${projectRoot}/${part.fileName}`,
       make3mfBytes(part.mesh, { title: part.title, lens: part.lens })
     ]));
+    const laserFileName = `laser/${projectRoot}-lenses-for-laser.svg`;
+    files[`${projectRoot}/${laserFileName}`] = strToU8(buildDesignLensesLaserSvg(projectRoot, designDefinitionFromDraft()));
     files[`${projectRoot}/manifest.json`] = strToU8(JSON.stringify({
       project: state.designDraft.name || "Frame Lab Creator",
       exportedAt: new Date().toISOString(),
       format: "Frame Lab Creator split 3MF package",
+      laser: {
+        fileName: laserFileName,
+        units: "millimeter",
+        process: "line cutting"
+      },
       parts: parts.map((part) => ({
         id: part.id,
         fileName: part.fileName,
@@ -6052,7 +6120,7 @@ async function exportDesign3mf() {
       }))
     }, null, 2));
     downloadBlob(fileName, new Blob([zipSync(files)], { type: "application/zip" }));
-    setDesignNote(`3MF parts exported: front, lenses, left temple and right temple (${totals.triangles.toLocaleString("en-US")} triangles).`);
+    setDesignNote(`3MF parts exported with lens laser SVG: front, lenses, left temple and right temple (${totals.triangles.toLocaleString("en-US")} triangles).`);
   } catch (error) {
     setDesignNote(`Could not export 3MF: ${error.message}`);
     log(`Could not export Creator 3MF: ${error.message}`);
@@ -11858,6 +11926,10 @@ function triangleNormal(a, b, c) {
 
 function formatMeshNumber(value) {
   return Number(value).toFixed(5).replace(/\.?0+$/, "");
+}
+
+function formatSvgNumber(value) {
+  return Number(value).toFixed(3).replace(/\.?0+$/, "");
 }
 
 function escapeXml(value) {
