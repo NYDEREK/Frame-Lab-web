@@ -9658,7 +9658,6 @@ function makeLicenseCertificatePdfBlob({ code, type, plan, reusable }) {
   const soft = "#2b2118";
   const line = "#3a332d";
   const benefits = licenseCertificateBenefits(plan, type);
-  const generatedAt = new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
   const accessLine = reusable ? "Reusable activation code" : "One-use activation code";
 
   pdfRect(commands, page, 0, 0, page.width, page.height, background);
@@ -9676,14 +9675,11 @@ function makeLicenseCertificatePdfBlob({ code, type, plan, reusable }) {
 
   pdfText(commands, page, "TIER", 72, 228, 10, "F2", muted);
   pdfText(commands, page, plan.name || type.label, 72, 249, 20, "F2", cream);
-  if (plan.price) {
-    pdfText(commands, page, `${plan.price} ${plan.period || ""}`.trim(), 374, 249, 18, "F2", accent);
-  }
 
-  pdfText(commands, page, "ACTIVATION CODE", 76, 304, 10, "F2", muted);
-  pdfText(commands, page, code, 76, 362, 36, "F3", cream);
-  pdfText(commands, page, accessLine, 76, 390, 11, "F2", accent);
-  pdfWrappedText(commands, page, "Select and copy this code from the PDF, then paste it into the activation field in Frame Lab.", 258, 306, 255, 11, "F1", muted, 15);
+  pdfCenteredText(commands, page, "ACTIVATION CODE", 58, 304, 479, 10, "F2", muted);
+  pdfCenteredText(commands, page, code, 58, 362, 479, 36, "F3", cream);
+  pdfCenteredText(commands, page, accessLine, 58, 390, 479, 11, "F2", accent);
+  pdfCenteredText(commands, page, "Copy this code into Frame Lab to activate the plan.", 58, 408, 479, 10, "F1", muted);
 
   pdfText(commands, page, "Included", 72, 470, 18, "F2", cream);
   pdfBulletList(commands, page, benefits, 76, 502, 430, accent, muted);
@@ -9691,9 +9687,7 @@ function makeLicenseCertificatePdfBlob({ code, type, plan, reusable }) {
   pdfText(commands, page, "Frame Lab note", 72, 633, 12, "F2", cream);
   pdfWrappedText(commands, page, pdfSafeText(plan.description || "Creator access activated by code."), 72, 656, 430, 11, "F1", muted, 15);
 
-  pdfText(commands, page, "Generated", 72, 727, 10, "F2", muted);
-  pdfText(commands, page, generatedAt, 72, 750, 14, "F2", cream);
-  pdfText(commands, page, "framelab.com.pl", 386, 750, 14, "F2", accent);
+  pdfCenteredText(commands, page, "framelab.com.pl", 48, 750, 499, 14, "F2", accent);
 
   return buildSimplePdf(commands.join("\n"), page);
 }
@@ -9738,6 +9732,12 @@ function pdfText(commands, page, text, x, y, size = 12, font = "F1", color = "#f
   commands.push(`${pdfFillColor(color)} BT /${font} ${pdfNumber(size)} Tf ${pdfNumber(x)} ${pdfNumber(page.height - y)} Td (${pdfEscapeText(text)}) Tj ET`);
 }
 
+function pdfCenteredText(commands, page, text, x, y, width, size = 12, font = "F1", color = "#ffffff") {
+  const safeText = pdfSafeText(text);
+  const offset = Math.max(0, (width - pdfApproxTextWidth(safeText, size, font)) / 2);
+  pdfText(commands, page, safeText, x + offset, y, size, font, color);
+}
+
 function pdfWrappedText(commands, page, text, x, y, maxWidth, size = 12, font = "F1", color = "#ffffff", lineHeight = size * 1.35) {
   const lines = pdfWrapText(text, maxWidth, size);
   lines.forEach((line, index) => pdfText(commands, page, line, x, y + index * lineHeight, size, font, color));
@@ -9769,6 +9769,11 @@ function pdfWrapText(value, maxWidth, size) {
   });
   if (line) lines.push(line);
   return lines.length ? lines : [""];
+}
+
+function pdfApproxTextWidth(text, size, font = "F1") {
+  const factor = font === "F3" ? 0.6 : font === "F2" ? 0.56 : 0.52;
+  return pdfSafeText(text).length * size * factor;
 }
 
 function pdfSafeText(value) {
