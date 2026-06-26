@@ -9663,7 +9663,7 @@ function makeLicenseCertificatePdfBlob({ code, type, plan, reusable }) {
   pdfRect(commands, page, 0, 0, page.width, page.height, background);
   pdfRect(commands, page, 0, 0, page.width, 18, accent);
   pdfRect(commands, page, 48, 58, 5, 118, accent);
-  pdfRect(commands, page, 72, 580, 452, 1, line);
+  pdfRect(commands, page, 72, 600, 452, 1, line);
   pdfRect(commands, page, 44, 255, 507, 170, surface, line);
   pdfRect(commands, page, 58, 269, 479, 142, soft, accent);
   pdfRect(commands, page, 48, 702, 499, 72, surface, line);
@@ -9676,16 +9676,16 @@ function makeLicenseCertificatePdfBlob({ code, type, plan, reusable }) {
   pdfText(commands, page, "TIER", 72, 228, 10, "F2", muted);
   pdfText(commands, page, plan.name || type.label, 72, 249, 20, "F2", cream);
 
-  pdfCenteredText(commands, page, "ACTIVATION CODE", 58, 304, 479, 10, "F2", muted);
-  pdfCenteredText(commands, page, code, 58, 362, 479, 36, "F3", cream);
-  pdfCenteredText(commands, page, accessLine, 58, 390, 479, 11, "F2", accent);
-  pdfCenteredText(commands, page, "Copy this code into Frame Lab to activate the plan.", 58, 408, 479, 10, "F1", muted);
+  pdfCenteredText(commands, page, "ACTIVATION CODE", 58, 306, 479, 10, "F2", muted);
+  pdfCenteredText(commands, page, code, 58, 361, 479, 36, "F3", cream);
+  pdfCenteredText(commands, page, accessLine, 58, 393, 479, 11, "F2", accent);
+  pdfCenteredText(commands, page, "Copy this code into Frame Lab to activate the plan.", 44, 444, 507, 10, "F1", muted);
 
-  pdfText(commands, page, "Included", 72, 470, 18, "F2", cream);
-  pdfBulletList(commands, page, benefits, 76, 502, 430, accent, muted);
+  pdfText(commands, page, "Included", 72, 488, 18, "F2", cream);
+  pdfBulletList(commands, page, benefits, 76, 520, 430, accent, muted);
 
-  pdfText(commands, page, "Frame Lab note", 72, 633, 12, "F2", cream);
-  pdfWrappedText(commands, page, pdfSafeText(plan.description || "Creator access activated by code."), 72, 656, 430, 11, "F1", muted, 15);
+  pdfText(commands, page, "Frame Lab note", 72, 645, 12, "F2", cream);
+  pdfWrappedText(commands, page, pdfSafeText(plan.description || "Creator access activated by code."), 72, 668, 430, 11, "F1", muted, 15);
 
   pdfCenteredText(commands, page, "framelab.com.pl", 48, 750, 499, 14, "F2", accent);
 
