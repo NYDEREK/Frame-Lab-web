@@ -442,6 +442,7 @@ const licenseCodeTypes = {
   commercial_year: { label: "Commercial Year", plan: "pro", duration: "year" },
   personal_lifetime: { label: "Lifetime Personal", plan: "basic", duration: "lifetime" },
   commercial_lifetime: { label: "Lifetime Commercial", plan: "pro", duration: "lifetime" },
+  supporter: { label: "Supporter", plan: "free", duration: "supporter" },
   ultra_support: { label: "Ultra Support / lifetime commercial", plan: "studio", duration: "lifetime" },
   basic_month: { label: "Legacy Basic / 1 month", plan: "basic", duration: "month" },
   pro_month: { label: "Legacy Pro / 1 month", plan: "pro", duration: "month" },
@@ -4896,6 +4897,8 @@ function bindUi() {
   els.resetBrandSettings?.addEventListener("click", () => resetBrandSettings());
   els.refreshStorageDebug?.addEventListener("click", () => loadStorageDebug());
   els.generateLicenseCodes.addEventListener("click", () => generateLicenseCodes());
+  els.staticLicenseCodeList?.addEventListener("click", handleLicenseCertificateClick);
+  els.licenseCodeList?.addEventListener("click", handleLicenseCertificateClick);
   els.heroBrowse.addEventListener("click", scrollGalleryIntoView);
   els.heroEditor.addEventListener("click", () => {
     if (!canOpenCreator()) return;
@@ -9560,9 +9563,19 @@ function renderStaticLicenseCodeList() {
           <code>${escapeHtml(item.code)}</code>
           <small>${escapeHtml(item.label || type.label)} · fixed reusable access</small>
         </div>
-        <div class="license-code-meta">
-          <span>Reusable</span>
-          <small>${escapeHtml(planLabel(type.plan))} · ${escapeHtml(licenseDurationLabel(type.duration))}</small>
+        <div class="license-code-side">
+          <div class="license-code-meta">
+            <span>Reusable</span>
+            <small>${escapeHtml(licenseAccessLabel(type))} · ${escapeHtml(licenseDurationLabel(type.duration))}</small>
+          </div>
+          <button
+            type="button"
+            class="license-code-pdf"
+            data-license-certificate
+            data-license-code="${escapeAttr(item.code)}"
+            data-license-type="${escapeAttr(item.type)}"
+            data-license-reusable="true"
+          >PDF</button>
         </div>
       </article>
     `;
@@ -9570,9 +9583,229 @@ function renderStaticLicenseCodeList() {
 }
 
 function licenseDurationLabel(duration) {
+  if (duration === "supporter") return "Support";
   if (duration === "lifetime") return "Lifetime";
   if (duration === "year") return "Yearly";
   return "Monthly";
+}
+
+function licenseAccessLabel(type = {}) {
+  if (type.duration === "supporter") return "Supporter";
+  return planLabel(type.plan);
+}
+
+function handleLicenseCertificateClick(event) {
+  const button = event.target.closest("[data-license-certificate]");
+  if (!button) return;
+  event.preventDefault();
+  downloadLicenseCertificate(button.dataset.licenseCode, button.dataset.licenseType, {
+    reusable: button.dataset.licenseReusable === "true"
+  });
+}
+
+function downloadLicenseCertificate(codeValue, typeKey, options = {}) {
+  const code = formatLicenseCode(codeValue);
+  const type = licenseCodeTypes[typeKey] || licenseCodeTypes.commercial_year;
+  const plan = licenseCertificatePlanContent(typeKey, type);
+  const blob = makeLicenseCertificatePdfBlob({ code, type, plan, reusable: options.reusable === true });
+  const fileName = `${slugify(`${plan.name || type.label}-${normalizeLicenseCode(code)}`)}-certificate.pdf`;
+  downloadBlob(fileName, blob);
+  if (els.licenseAdminNote) {
+    els.licenseAdminNote.textContent = `PDF certificate downloaded for ${plan.name || type.label}.`;
+  }
+}
+
+function licenseCertificatePlanContent(typeKey, type = {}) {
+  const content = normalizeContentSettings(state.brandSettings.content);
+  const plan = content.plans.find((item) => item.plan === typeKey)
+    || defaultContentSettings.plans.find((item) => item.plan === typeKey);
+  if (plan) return plan;
+  return {
+    plan: typeKey,
+    access: type.plan || "free",
+    name: type.label || "Frame Lab access",
+    price: "",
+    period: licenseDurationLabel(type.duration),
+    exports: type.duration === "supporter" ? "Support contribution" : "Creator access",
+    description: type.duration === "supporter"
+      ? "Support Frame Lab development without plan benefits."
+      : "Creator access activated by code.",
+    benefits: []
+  };
+}
+
+function licenseCertificateBenefits(plan = {}, type = {}) {
+  if (type.duration === "supporter" || plan.plan === "supporter") {
+    return [
+      "Thank you for backing Frame Lab development.",
+      "Support contribution - no Creator access is included.",
+      "Your support helps fund production-ready eyewear tools."
+    ];
+  }
+  return normalizePlanBenefits(plan.benefits, [plan.exports, plan.description])
+    .filter((benefit) => !/makerworld/i.test(benefit))
+    .slice(0, 5);
+}
+
+function makeLicenseCertificatePdfBlob({ code, type, plan, reusable }) {
+  const commands = [];
+  const page = { width: 595.28, height: 841.89 };
+  const accent = state.brandSettings.accentColor || defaultAccentColor;
+  const cream = "#f4e5c7";
+  const muted = "#aaa29a";
+  const background = "#111211";
+  const surface = "#1a1a18";
+  const soft = "#2b2118";
+  const line = "#3a332d";
+  const benefits = licenseCertificateBenefits(plan, type);
+  const generatedAt = new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  const accessLine = reusable ? "Reusable activation code" : "One-use activation code";
+
+  pdfRect(commands, page, 0, 0, page.width, page.height, background);
+  pdfRect(commands, page, 0, 0, page.width, 18, accent);
+  pdfRect(commands, page, 48, 58, 5, 118, accent);
+  pdfRect(commands, page, 72, 580, 452, 1, line);
+  pdfRect(commands, page, 44, 255, 507, 170, surface, line);
+  pdfRect(commands, page, 58, 269, 479, 142, soft, accent);
+  pdfRect(commands, page, 48, 702, 499, 72, surface, line);
+
+  pdfText(commands, page, "Frame Lab", 72, 82, 24, "F2", cream);
+  pdfText(commands, page, "Creator Access Certificate", 72, 112, 36, "F2", cream);
+  pdfText(commands, page, "Thank you for supporting the Frame Lab project.", 72, 152, 14, "F2", accent);
+  pdfWrappedText(commands, page, "Your contribution helps develop configurable 3D printed eyewear, cleaner exports and better production tooling for the maker community.", 72, 178, 425, 11, "F1", muted, 15);
+
+  pdfText(commands, page, "TIER", 72, 228, 10, "F2", muted);
+  pdfText(commands, page, plan.name || type.label, 72, 249, 20, "F2", cream);
+  if (plan.price) {
+    pdfText(commands, page, `${plan.price} ${plan.period || ""}`.trim(), 374, 249, 18, "F2", accent);
+  }
+
+  pdfText(commands, page, "ACTIVATION CODE", 76, 304, 10, "F2", muted);
+  pdfText(commands, page, code, 76, 362, 36, "F3", cream);
+  pdfText(commands, page, accessLine, 76, 390, 11, "F2", accent);
+  pdfWrappedText(commands, page, "Select and copy this code from the PDF, then paste it into the activation field in Frame Lab.", 258, 306, 255, 11, "F1", muted, 15);
+
+  pdfText(commands, page, "Included", 72, 470, 18, "F2", cream);
+  pdfBulletList(commands, page, benefits, 76, 502, 430, accent, muted);
+
+  pdfText(commands, page, "Frame Lab note", 72, 633, 12, "F2", cream);
+  pdfWrappedText(commands, page, pdfSafeText(plan.description || "Creator access activated by code."), 72, 656, 430, 11, "F1", muted, 15);
+
+  pdfText(commands, page, "Generated", 72, 727, 10, "F2", muted);
+  pdfText(commands, page, generatedAt, 72, 750, 14, "F2", cream);
+  pdfText(commands, page, "framelab.com.pl", 386, 750, 14, "F2", accent);
+
+  return buildSimplePdf(commands.join("\n"), page);
+}
+
+function buildSimplePdf(contentStream, page) {
+  const encoder = new TextEncoder();
+  const streamLength = encoder.encode(contentStream).length;
+  const objects = [
+    "<< /Type /Catalog /Pages 2 0 R >>",
+    "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+    `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pdfNumber(page.width)} ${pdfNumber(page.height)}] /Resources << /Font << /F1 4 0 R /F2 5 0 R /F3 6 0 R >> >> /Contents 7 0 R >>`,
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>",
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Courier-Bold >>",
+    `<< /Length ${streamLength} >>\nstream\n${contentStream}\nendstream`
+  ];
+  let pdf = "%PDF-1.4\n";
+  const offsets = [0];
+  objects.forEach((object, index) => {
+    offsets.push(encoder.encode(pdf).length);
+    pdf += `${index + 1} 0 obj\n${object}\nendobj\n`;
+  });
+  const xrefOffset = encoder.encode(pdf).length;
+  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  offsets.slice(1).forEach((offset) => {
+    pdf += `${String(offset).padStart(10, "0")} 00000 n \n`;
+  });
+  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`;
+  return new Blob([encoder.encode(pdf)], { type: "application/pdf" });
+}
+
+function pdfRect(commands, page, x, y, width, height, fill, stroke = "") {
+  const operation = stroke ? "B" : "f";
+  commands.push([
+    pdfFillColor(fill),
+    stroke ? pdfStrokeColor(stroke) : "",
+    `${pdfNumber(x)} ${pdfNumber(page.height - y - height)} ${pdfNumber(width)} ${pdfNumber(height)} re ${operation}`
+  ].filter(Boolean).join(" "));
+}
+
+function pdfText(commands, page, text, x, y, size = 12, font = "F1", color = "#ffffff") {
+  commands.push(`${pdfFillColor(color)} BT /${font} ${pdfNumber(size)} Tf ${pdfNumber(x)} ${pdfNumber(page.height - y)} Td (${pdfEscapeText(text)}) Tj ET`);
+}
+
+function pdfWrappedText(commands, page, text, x, y, maxWidth, size = 12, font = "F1", color = "#ffffff", lineHeight = size * 1.35) {
+  const lines = pdfWrapText(text, maxWidth, size);
+  lines.forEach((line, index) => pdfText(commands, page, line, x, y + index * lineHeight, size, font, color));
+  return y + lines.length * lineHeight;
+}
+
+function pdfBulletList(commands, page, items, x, y, maxWidth, accent, color) {
+  let cursor = y;
+  items.forEach((item) => {
+    pdfRect(commands, page, x, cursor - 7, 5, 5, accent);
+    cursor = pdfWrappedText(commands, page, item, x + 18, cursor, maxWidth, 11, "F1", color, 17) + 8;
+  });
+  return cursor;
+}
+
+function pdfWrapText(value, maxWidth, size) {
+  const words = pdfSafeText(value).split(/\s+/).filter(Boolean);
+  const maxChars = Math.max(16, Math.floor(maxWidth / Math.max(1, size * 0.52)));
+  const lines = [];
+  let line = "";
+  words.forEach((word) => {
+    const candidate = line ? `${line} ${word}` : word;
+    if (candidate.length > maxChars && line) {
+      lines.push(line);
+      line = word;
+    } else {
+      line = candidate;
+    }
+  });
+  if (line) lines.push(line);
+  return lines.length ? lines : [""];
+}
+
+function pdfSafeText(value) {
+  return String(value ?? "")
+    .normalize("NFKD")
+    .replace(/[^\x20-\x7E]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function pdfEscapeText(value) {
+  return pdfSafeText(value).replace(/[\\()]/g, "\\$&");
+}
+
+function pdfNumber(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return "0";
+  return Number.isInteger(number) ? String(number) : number.toFixed(2).replace(/\.?0+$/, "");
+}
+
+function pdfFillColor(hex) {
+  const { r, g, b } = pdfHexToRgb(hex);
+  return `${pdfNumber(r / 255)} ${pdfNumber(g / 255)} ${pdfNumber(b / 255)} rg`;
+}
+
+function pdfStrokeColor(hex) {
+  const { r, g, b } = pdfHexToRgb(hex);
+  return `${pdfNumber(r / 255)} ${pdfNumber(g / 255)} ${pdfNumber(b / 255)} RG`;
+}
+
+function pdfHexToRgb(hex) {
+  const clean = sanitizeHexColor(hex, defaultAccentColor).slice(1);
+  return {
+    r: parseInt(clean.slice(0, 2), 16),
+    g: parseInt(clean.slice(2, 4), 16),
+    b: parseInt(clean.slice(4, 6), 16)
+  };
 }
 
 function renderLicenseCodeList() {
@@ -9599,9 +9832,19 @@ function renderLicenseCodeList() {
           <code>${escapeHtml(item.code)}</code>
           <small>${escapeHtml(type.label)} · ${licenseDateLabel(item.createdAt)}</small>
         </div>
-        <div class="license-code-meta">
-          <span>${redeemed ? "Redeemed" : "Active"}</span>
-          ${redeemed ? `<small>${escapeHtml(item.redeemedByEmail || "used")} · ${licenseDateLabel(item.redeemedAt)}</small>` : "<small>Ready to share</small>"}
+        <div class="license-code-side">
+          <div class="license-code-meta">
+            <span>${redeemed ? "Redeemed" : "Active"}</span>
+            ${redeemed ? `<small>${escapeHtml(item.redeemedByEmail || "used")} · ${licenseDateLabel(item.redeemedAt)}</small>` : "<small>Ready to share</small>"}
+          </div>
+          <button
+            type="button"
+            class="license-code-pdf"
+            data-license-certificate
+            data-license-code="${escapeAttr(item.code)}"
+            data-license-type="${escapeAttr(item.type)}"
+            data-license-reusable="false"
+          >PDF</button>
         </div>
       </article>
     `;
@@ -9620,6 +9863,7 @@ function subscriptionStatusLabel() {
   if (state.account.subscriptionStatus === "lifetime") return "Lifetime access";
   if (state.account.subscriptionStatus === "active") return ends ? `Subscription active until ${ends}` : "Subscription active";
   if (state.account.subscriptionStatus === "cancel_at_period_end") return ends ? `Cancels on ${ends}` : "Cancelling";
+  if (state.account.subscriptionMode === "supporter") return "Supporter";
   if (state.account.subscriptionMode === "license_year") return ends ? `Year access until ${ends}` : "Year access";
   if (state.account.subscriptionMode === "license_month") return ends ? `Code access until ${ends}` : "Code access";
   if (state.account.subscriptionStatus === "paid_once") return ends ? `Code access until ${ends}` : "Code access";

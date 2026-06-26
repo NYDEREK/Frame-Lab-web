@@ -191,6 +191,7 @@ const licenseCodeTypes = {
   commercial_year: { label: "Commercial Year", plan: "pro", duration: "year" },
   personal_lifetime: { label: "Lifetime Personal", plan: "basic", duration: "lifetime" },
   commercial_lifetime: { label: "Lifetime Commercial", plan: "pro", duration: "lifetime" },
+  supporter: { label: "Supporter", plan: "free", duration: "supporter" },
   ultra_support: { label: "Ultra Support / lifetime commercial", plan: "studio", duration: "lifetime" },
   basic_month: { label: "Legacy Basic / 1 month", plan: "basic", duration: "month" },
   pro_month: { label: "Legacy Pro / 1 month", plan: "pro", duration: "month" },
@@ -207,6 +208,7 @@ const staticLicenseCodes = [
   { id: "static-commercial-year", code: "6752-1850-6811", type: "commercial_year", label: "Commercial Year reusable code" },
   { id: "static-personal-lifetime", code: "1847-2294-6103", type: "personal_lifetime", label: "Lifetime Personal reusable code" },
   { id: "static-commercial-lifetime", code: "5729-6041-8832", type: "commercial_lifetime", label: "Lifetime Commercial reusable code" },
+  { id: "static-supporter", code: "8104-7702-1099", type: "supporter", label: "Supporter reusable code" },
   { id: "static-ultra-support", code: "9364-1558-2706", type: "ultra_support", label: "Ultra Support reusable code" }
 ];
 
@@ -1341,6 +1343,17 @@ function applyLicenseCode(user, license) {
     user.planEndsAt = null;
     user.updatedAt = new Date().toISOString();
     return { message: "Developer access is already unlimited.", consume: false };
+  }
+
+  if (details.duration === "supporter") {
+    if (normalizePlan(user.plan) === "free") {
+      user.plan = "free";
+      user.subscriptionStatus = "supporter";
+      user.subscriptionMode = "supporter";
+      user.planEndsAt = null;
+    }
+    user.updatedAt = new Date().toISOString();
+    return { message: "Supporter code activated. Thank you for supporting Frame Lab.", consume: true };
   }
 
   const now = new Date();
