@@ -9658,7 +9658,6 @@ function makeLicenseCertificatePdfBlob({ code, type, plan, reusable }) {
   const soft = "#2b2118";
   const line = "#3a332d";
   const benefits = licenseCertificateBenefits(plan, type);
-  const accessLine = reusable ? "Reusable activation code" : "One-use activation code";
 
   pdfRect(commands, page, 0, 0, page.width, page.height, background);
   pdfRect(commands, page, 0, 0, page.width, 18, accent);
@@ -9676,9 +9675,8 @@ function makeLicenseCertificatePdfBlob({ code, type, plan, reusable }) {
   pdfText(commands, page, "TIER", 72, 228, 10, "F2", muted);
   pdfText(commands, page, plan.name || type.label, 72, 249, 20, "F2", cream);
 
-  pdfCenteredText(commands, page, "ACTIVATION CODE", 58, 306, 479, 10, "F2", muted);
-  pdfCenteredText(commands, page, code, 58, 361, 479, 36, "F3", cream);
-  pdfCenteredText(commands, page, accessLine, 58, 393, 479, 11, "F2", accent);
+  pdfCenteredText(commands, page, "ACTIVATION CODE", 58, 315, 479, 10, "F2", muted);
+  pdfCenteredText(commands, page, code, 58, 369, 479, 36, "F3", cream);
   pdfCenteredText(commands, page, "Copy this code into Frame Lab to activate the plan.", 44, 444, 507, 10, "F1", muted);
 
   pdfText(commands, page, "Included", 72, 488, 18, "F2", cream);
@@ -9687,7 +9685,7 @@ function makeLicenseCertificatePdfBlob({ code, type, plan, reusable }) {
   pdfText(commands, page, "Frame Lab note", 72, 645, 12, "F2", cream);
   pdfWrappedText(commands, page, pdfSafeText(plan.description || "Creator access activated by code."), 72, 668, 430, 11, "F1", muted, 15);
 
-  pdfCenteredText(commands, page, "framelab.com.pl", 48, 750, 499, 14, "F2", accent);
+  pdfCenteredText(commands, page, "framelab.com.pl", 48, 742, 499, 14, "F2", accent);
 
   return buildSimplePdf(commands.join("\n"), page);
 }
