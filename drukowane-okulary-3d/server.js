@@ -185,7 +185,7 @@ const defaultBrandSettings = {
 const maxRequestBodySize = 80_000_000;
 const maxComponentFileDataSize = 60_000_000;
 const planRank = { free: 0, basic: 1, pro: 2, studio: 3 };
-const monthlyDownloadLimits = { free: 0, basic: 15, pro: 50, studio: null };
+const monthlyDownloadLimits = { free: 0, basic: null, pro: null, studio: null };
 const licenseCodeTypes = {
   personal_year: { label: "Personal Year", plan: "basic", duration: "year" },
   commercial_year: { label: "Commercial Year", plan: "pro", duration: "year" },
@@ -1641,12 +1641,6 @@ async function handleApi(req, res, url) {
     const user = currentUser(req, db);
     if (!user) return sendJson(res, 401, { error: "Login is required." });
     const quota = downloadQuotaForUser(user, db);
-    if (quota.limit !== null && quota.remaining <= 0) {
-      return sendJson(res, 402, {
-        error: `${quota.label} monthly download limit reached. Upgrade your plan to continue exporting 3MF files.`,
-        quota
-      });
-    }
     const body = await readBody(req);
     const download = sanitizeDownload({ ...body, createdAt: new Date().toISOString() }, user.id);
     const existing = db.downloads || [];

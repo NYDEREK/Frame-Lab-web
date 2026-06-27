@@ -9297,9 +9297,7 @@ function downloadQuotaLabel() {
   if (isDeveloper()) return "Unlimited";
   if (state.account.role === "visitor" || !state.account.email) return "Plan required";
   if (state.account.plan === "free") return "Plan required";
-  if (!state.downloadQuota) return "Loading";
-  if (state.downloadQuota.limit === null) return "Unlimited";
-  return `${state.downloadQuota.used} / ${state.downloadQuota.limit} this month`;
+  return "Unlimited";
 }
 
 function syncFitProfileUi() {
@@ -11587,12 +11585,6 @@ async function ensureDownloadAllowed(model) {
     return false;
   }
   await loadDownloadQuota({ silent: true });
-  const quota = state.downloadQuota;
-  if (quota && quota.limit !== null && quota.remaining <= 0) {
-    openPlansPanel(`${planLabel(state.account.plan)} monthly download limit reached. Upgrade your plan to continue exporting 3MF files.`);
-    log(`${planLabel(state.account.plan)} monthly download limit reached.`);
-    return false;
-  }
   return true;
 }
 
@@ -11755,7 +11747,6 @@ async function recordDownload(fileName, mesh) {
     renderDownloadFolder();
     return true;
   } catch (error) {
-    if (/download limit|Upgrade your plan/i.test(error.message || "")) openPlansPanel(error.message);
     log(error.message || "Could not save download history.");
     return false;
   }
@@ -11803,7 +11794,6 @@ async function recordDesignDownload(fileName, mesh) {
     renderDownloadFolder();
     return true;
   } catch (error) {
-    if (/download limit|Upgrade your plan/i.test(error.message || "")) openPlansPanel(error.message);
     setDesignNote(error.message || "Could not save Creator export history.");
     return false;
   }
